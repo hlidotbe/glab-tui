@@ -18,7 +18,7 @@ struct Theme {
     text_normal: Color,
     text_muted: Color,
     
-    // Status colors (Catppuccin Mocha themed)
+    // Status colors (Sunset themed)
     green: Color,      // success, open
     green_bg: Color,   // status pill bg
     red: Color,        // failed, closed
@@ -32,24 +32,24 @@ struct Theme {
 }
 
 const THEME: Theme = Theme {
-    bg: Color::Rgb(30, 30, 46),            // Catppuccin Mocha Base
-    border: Color::Rgb(88, 91, 112),       // Surface1
-    border_focused: Color::Rgb(137, 180, 250), // Blue
-    header_fg: Color::Rgb(180, 190, 254),  // Lavender
-    highlight_bg: Color::Rgb(49, 50, 68),  // Surface0
-    text_normal: Color::Rgb(205, 214, 244),// Text
-    text_muted: Color::Rgb(166, 173, 200), // Subtext0
+    bg: Color::Rgb(17, 17, 17),            // base: #111111
+    border: Color::Rgb(119, 119, 119),     // cmnt: #777777
+    border_focused: Color::Rgb(238, 119, 17), // fire: #EE7711
+    header_fg: Color::Rgb(238, 187, 119),  // peach: #EEBB77
+    highlight_bg: Color::Rgb(51, 51, 51),  // sel: #333333
+    text_normal: Color::Rgb(238, 238, 238),// text: #EEEEEE
+    text_muted: Color::Rgb(119, 119, 119), // cmnt: #777777
     
-    green: Color::Rgb(166, 227, 161),
-    green_bg: Color::Rgb(34, 58, 38),
-    red: Color::Rgb(243, 139, 168),
-    red_bg: Color::Rgb(68, 34, 38),
-    blue: Color::Rgb(137, 180, 250),
-    blue_bg: Color::Rgb(34, 48, 68),
-    yellow: Color::Rgb(249, 226, 175),
-    yellow_bg: Color::Rgb(58, 54, 38),
-    purple: Color::Rgb(203, 166, 247),
-    purple_bg: Color::Rgb(48, 34, 58),
+    green: Color::Rgb(102, 204, 51),       // grass: #66CC33
+    green_bg: Color::Rgb(34, 51, 17),      // dark green
+    red: Color::Rgb(238, 119, 119),        // rose: #EE7777
+    red_bg: Color::Rgb(51, 17, 17),        // dark red
+    blue: Color::Rgb(119, 170, 170),       // sky: #77AAAA
+    blue_bg: Color::Rgb(17, 34, 34),       // dark blue
+    yellow: Color::Rgb(238, 238, 17),      // sun: #EEEE11
+    yellow_bg: Color::Rgb(51, 51, 17),      // dark yellow
+    purple: Color::Rgb(119, 85, 153),      // wine: #775599
+    purple_bg: Color::Rgb(34, 17, 34),      // dark purple
 };
 
 struct StageSummary {
