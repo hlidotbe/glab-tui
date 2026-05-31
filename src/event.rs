@@ -8,10 +8,17 @@ pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
     Resize(u16, u16),
+    PipelineJobs(u64, Vec<crate::gitlab::pipelines::Job>),
+    IssuesFetched(Vec<crate::gitlab::issues::Issue>),
+    MrsFetched(Vec<crate::gitlab::mr::MergeRequest>),
+    PipelinesFetched(Vec<crate::gitlab::pipelines::Pipeline>),
+    RunnersFetched(Vec<crate::gitlab::runners::Runner>),
+    ReleasesFetched(Vec<crate::gitlab::releases::Release>),
 }
 
 #[derive(Debug)]
 pub struct EventHandler {
+    sender: mpsc::UnboundedSender<Event>,
     receiver: mpsc::UnboundedReceiver<Event>,
 }
 
@@ -30,18 +37,24 @@ impl EventHandler {
 
                 if event::poll(timeout).expect("failed to poll new events") {
                     let e = match event::read().expect("failed to read event") {
-                        CrosstermEvent::Key(e) => Event::Key(e),
+                        CrosstermEvent::Key(e) => {
+                            if e.kind == event::KeyEventKind::Press {
+                                Event::Key(e)
+                            } else {
+                                continue;
+                            }
+                        },
                         CrosstermEvent::Mouse(e) => Event::Mouse(e),
                         CrosstermEvent::Resize(w, h) => Event::Resize(w, h),
                         _ => continue,
                     };
-                    if sender.send(e).is_err() {
+                    if _sender.send(e).is_err() {
                         break;
                     }
                 }
 
                 if last_tick.elapsed() >= tick_rate {
-                    if sender.send(Event::Tick).is_err() {
+                    if _sender.send(Event::Tick).is_err() {
                         break;
                     }
                     last_tick = Instant::now();
@@ -49,7 +62,11 @@ impl EventHandler {
             }
         });
 
-        Self { receiver }
+        Self { sender, receiver }
+    }
+
+    pub fn sender(&self) -> mpsc::UnboundedSender<Event> {
+        self.sender.clone()
     }
 
     pub async fn next(&mut self) -> Option<Event> {

@@ -24,6 +24,21 @@ impl GitlabClient {
         let data: T = serde_json::from_slice(&output.stdout)?;
         Ok(data)
     }
+
+    pub async fn fetch_raw_api(&self, endpoint: &str) -> Result<String> {
+        let output = Command::new("glab")
+            .args(["api", endpoint])
+            .output()
+            .await
+            .context("Failed to execute glab api command")?;
+
+        if !output.status.success() {
+            let err_msg = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("glab api failed: {}", err_msg);
+        }
+
+        Ok(String::from_utf8(output.stdout)?)
+    }
 }
 
 pub async fn get_project_context() -> Result<String> {

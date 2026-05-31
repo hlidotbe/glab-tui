@@ -80,7 +80,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(Color::Rgb(137, 180, 250)))
-        .title(format!(" {} ", app.active_tab.title()));
+        .title(if app.loading_tabs.contains(&app.active_tab) {
+            format!(" {} (loading...) ", app.active_tab.title())
+        } else {
+            format!(" {} ", app.active_tab.title())
+        });
     
     let sq = app.search_query.to_lowercase();
     let highlight_style = Style::default().bg(Color::Rgb(69, 71, 90)).add_modifier(Modifier::BOLD);
@@ -88,9 +92,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     match app.active_tab {
         Tab::Issues => {
-            let filtered_issues: Vec<_> = app.issues.items.iter()
-                .filter(|i| sq.is_empty() || i.title.to_lowercase().contains(&sq))
-                .collect();
+            if app.issues.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
+                f.render_widget(Paragraph::new("Loading issues...").alignment(Alignment::Center).block(main_block.clone()), middle_chunks[1]);
+                f.render_widget(Paragraph::new("Select an item to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ")).style(Style::default().fg(Color::DarkGray)), middle_chunks[2]);
+            } else {
+                let filtered_issues: Vec<_> = app.issues.items.iter()
+                    .filter(|i| sq.is_empty() || i.title.to_lowercase().contains(&sq))
+                    .collect();
                 
             let rows = filtered_issues.iter().map(|i| {
                 let state_color = if i.state == "opened" { Color::Green } else { Color::Red };
@@ -115,7 +123,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .header(Row::new(vec!["ID", "State", "Title", "Author", "Updated"]).style(header_style).height(1))
                 .block(main_block)
                 .row_highlight_style(highlight_style)
-                .highlight_symbol(" 🚀 ");
+                .highlight_symbol(" ▶ ");
             
             f.render_stateful_widget(table, middle_chunks[1], &mut app.issues.state);
 
@@ -135,11 +143,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
             } else {
                 f.render_widget(Paragraph::new("Select an item to view details...").block(preview_block).style(Style::default().fg(Color::DarkGray)), middle_chunks[2]);
             }
+            }
         },
         Tab::MergeRequests => {
-            let filtered_mrs: Vec<_> = app.mrs.items.iter()
-                .filter(|m| sq.is_empty() || m.title.to_lowercase().contains(&sq))
-                .collect();
+            if app.mrs.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
+                f.render_widget(Paragraph::new("Loading merge requests...").alignment(Alignment::Center).block(main_block.clone()), middle_chunks[1]);
+                f.render_widget(Paragraph::new("Select an item to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ")).style(Style::default().fg(Color::DarkGray)), middle_chunks[2]);
+            } else {
+                let filtered_mrs: Vec<_> = app.mrs.items.iter()
+                    .filter(|m| sq.is_empty() || m.title.to_lowercase().contains(&sq))
+                    .collect();
                 
             let rows = filtered_mrs.iter().map(|m| {
                 let state_color = if m.state == "opened" { Color::Green } else { Color::Red };
@@ -164,7 +177,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .header(Row::new(vec!["ID", "State", "Title", "Author", "Updated"]).style(header_style).height(1))
                 .block(main_block)
                 .row_highlight_style(highlight_style)
-                .highlight_symbol(" 🚀 ");
+                .highlight_symbol(" ▶ ");
             
             f.render_stateful_widget(table, middle_chunks[1], &mut app.mrs.state);
 
@@ -184,48 +197,209 @@ pub fn render(f: &mut Frame, app: &mut App) {
             } else {
                 f.render_widget(Paragraph::new("Select an item to view details...").block(preview_block).style(Style::default().fg(Color::DarkGray)), middle_chunks[2]);
             }
+            }
         },
         Tab::Pipelines => {
-            let filtered_pipelines: Vec<_> = app.pipelines.items.iter()
-                .filter(|p| sq.is_empty() || p.r#ref.to_lowercase().contains(&sq))
-                .collect();
+            if app.pipelines.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
+                f.render_widget(Paragraph::new("Loading pipelines...").alignment(Alignment::Center).block(main_block.clone()), middle_chunks[1]);
+                f.render_widget(Paragraph::new("Select a pipeline to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ")).style(Style::default().fg(Color::DarkGray)), middle_chunks[2]);
+            } else {
+                if let Some(jobs) = &app.selected_pipeline_jobs {
+                    let rows = jobs.iter().enumerate().map(|(i, j)| {
+                    let (status_icon, status_color) = match j.status.as_str() {
+                        "success" => ("🟢 success", Color::Green),
+                        "failed" => ("🔴 failed", Color::Red),
+                        "running" => ("🔵 running", Color::Cyan),
+                        "canceled" => ("⚫ canceled", Color::DarkGray),
+                        "pending" => ("🟡 pending", Color::Yellow),
+                        "skipped" => ("⚪ skipped", Color::DarkGray),
+                        "manual" => ("⚪ manual", Color::DarkGray),
+                        _ => ("🟣 unknown", Color::DarkGray),
+                    };
+                    let style = if Some(i) == app.selected_job_index {
+                        Style::default().bg(Color::Rgb(69, 71, 90)).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+                    Row::new(vec![
+                        Cell::from(j.id.to_string()),
+                        Cell::from(j.stage.clone()),
+                        Cell::from(status_icon).style(Style::default().fg(status_color)),
+                        Cell::from(j.name.clone()),
+                    ]).style(style).height(1)
+                });
+
+                let widths = [
+                    Constraint::Length(10),
+                    Constraint::Length(15),
+                    Constraint::Length(12),
+                    Constraint::Percentage(60),
+                ];
+
+                let table = Table::new(rows, widths)
+                    .header(Row::new(vec!["ID", "Stage", "Status", "Name"]).style(header_style).height(1))
+                    .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Jobs (Esc to go back) ").border_style(Style::default().fg(Color::Rgb(137, 180, 250))));
                 
-            let rows = filtered_pipelines.iter().map(|p| {
-                let status_color = match p.status.as_str() {
-                    "success" => Color::Green,
-                    "failed" => Color::Red,
-                    "running" => Color::Cyan,
+                f.render_widget(table, middle_chunks[1]);
+
+                let preview_block = Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details / Trace ");
+                if let Some(trace) = &app.job_trace {
+                    f.render_widget(Paragraph::new(trace.as_str()).block(preview_block).wrap(ratatui::widgets::Wrap { trim: false }), middle_chunks[2]);
+                } else {
+                    let mut stage_names = Vec::new();
+                    let mut stage_jobs = std::collections::HashMap::new();
+                    for j in jobs {
+                        if !stage_names.contains(&j.stage) {
+                            stage_names.push(j.stage.clone());
+                        }
+                        stage_jobs.entry(j.stage.clone()).or_insert_with(Vec::new).push(j.status.clone());
+                    }
+
+                    let mut diagram = String::from("Stages Success Rate:\n\n");
+                    for stage in stage_names {
+                        if let Some(statuses) = stage_jobs.get(&stage) {
+                            let total = statuses.len();
+                            let success = statuses.iter().filter(|s| *s == "success").count();
+                            let percent = if total > 0 { (success * 100) / total } else { 0 };
+                            diagram.push_str(&format!("{:12} : {}% ({}/{})\n", stage, percent, success, total));
+                        }
+                    }
+                    diagram.push_str("\nPress Enter on a job to fetch trace.");
+                    f.render_widget(Paragraph::new(diagram).block(preview_block), middle_chunks[2]);
+                }
+            } else {
+                let filtered_pipelines: Vec<_> = app.pipelines.items.iter()
+                    .filter(|p| sq.is_empty() || p.r#ref.to_lowercase().contains(&sq))
+                    .collect();
+                    
+                let rows = filtered_pipelines.iter().map(|p| {
+                    let (status_icon, status_color) = match p.status.as_str() {
+                        "success" => ("🟢 success", Color::Green),
+                        "failed" => ("🔴 failed", Color::Red),
+                        "running" => ("🔵 running", Color::Cyan),
+                        "canceled" => ("⚫ canceled", Color::DarkGray),
+                        "pending" => ("🟡 pending", Color::Yellow),
+                        "skipped" => ("⚪ skipped", Color::DarkGray),
+                        "manual" => ("⚪ manual", Color::DarkGray),
+                        _ => ("🟣 unknown", Color::DarkGray),
+                    };
+                    let stages_dots = if let Some(jobs) = app.pipeline_jobs.get(&p.id) {
+                        get_stages_dots(jobs)
+                    } else {
+                        "⏳".to_string()
+                    };
+                    Row::new(vec![
+                        Cell::from(format!("#{}", p.id)),
+                        Cell::from(status_icon).style(Style::default().fg(status_color)),
+                        Cell::from(stages_dots),
+                        Cell::from(truncate(&p.r#ref, 40)),
+                        Cell::from(time_ago(&p.updated_at)),
+                    ]).height(1)
+                });
+
+                let widths = [
+                    Constraint::Length(10),
+                    Constraint::Length(12),
+                    Constraint::Length(14),
+                    Constraint::Percentage(45),
+                    Constraint::Length(15),
+                ];
+
+                let table = Table::new(rows, widths)
+                    .header(Row::new(vec!["ID", "Status", "Stages", "Ref", "Updated"]).style(header_style).height(1))
+                    .block(main_block)
+                    .row_highlight_style(highlight_style)
+                    .highlight_symbol(" ▶ ");
+                
+                f.render_stateful_widget(table, middle_chunks[1], &mut app.pipelines.state);
+
+                let preview_block = Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ");
+                if let Some(selected) = app.pipelines.state.selected() {
+                    if let Some(p) = filtered_pipelines.get(selected) {
+                        let mut details = format!(
+                            "Pipeline ID: {}\n\nRef: {}\nStatus: {}\nUpdated: {}\n\n",
+                            p.id, p.r#ref, p.status, time_ago(&p.updated_at)
+                        );
+                         if let Some(jobs) = app.pipeline_jobs.get(&p.id) {
+                            let mut stage_names = Vec::new();
+                            let mut stage_jobs = std::collections::HashMap::new();
+                            for j in jobs {
+                                if !stage_names.contains(&j.stage) {
+                                    stage_names.push(j.stage.clone());
+                                }
+                                stage_jobs.entry(j.stage.clone()).or_insert_with(Vec::new).push(j.status.clone());
+                            }
+
+                            details.push_str("Stages Success Rate:\n\n");
+                            for stage in stage_names {
+                                if let Some(statuses) = stage_jobs.get(&stage) {
+                                    let total = statuses.len();
+                                    let success = statuses.iter().filter(|s| *s == "success").count();
+                                    let percent = if total > 0 { (success * 100) / total } else { 0 };
+                                    details.push_str(&format!("{:12} : {}% ({}/{})\n", stage, percent, success, total));
+                                }
+                            }
+                        } else {
+                            details.push_str("Loading stages...\n");
+                        }
+                        details.push_str("\nPress Enter to view detailed job logs.");
+                        f.render_widget(Paragraph::new(details).block(preview_block).wrap(ratatui::widgets::Wrap { trim: false }), middle_chunks[2]);
+                    } else {
+                        f.render_widget(Paragraph::new("").block(preview_block), middle_chunks[2]);
+                    }
+                } else {
+                    f.render_widget(Paragraph::new("Select an item to view details...").block(preview_block).style(Style::default().fg(Color::DarkGray)), middle_chunks[2]);
+                }
+            }
+            }
+        },
+        Tab::Runners => {
+            if app.runners.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
+                f.render_widget(Paragraph::new("Loading runners...").alignment(Alignment::Center).block(main_block.clone()), middle_chunks[1]);
+                f.render_widget(Paragraph::new("Select a runner to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ")).style(Style::default().fg(Color::DarkGray)), middle_chunks[2]);
+            } else {
+                let filtered_runners: Vec<_> = app.runners.items.iter()
+                    .filter(|r| sq.is_empty() || r.id.to_string().contains(&sq) || r.description.as_deref().unwrap_or("").to_lowercase().contains(&sq))
+                    .collect();
+                
+            let rows = filtered_runners.iter().map(|r| {
+                let status_color = match r.status.as_str() {
+                    "online" => Color::Green,
+                    "paused" => Color::Yellow,
+                    "offline" => Color::Red,
                     _ => Color::DarkGray,
                 };
+                let desc = r.description.as_deref().unwrap_or("No description");
                 Row::new(vec![
-                    Cell::from(format!("#{}", p.id)),
-                    Cell::from(p.status.clone()).style(Style::default().fg(status_color)),
-                    Cell::from(truncate(&p.r#ref, 50)),
-                    Cell::from(time_ago(&p.updated_at)),
+                    Cell::from(r.id.to_string()),
+                    Cell::from(truncate(desc, 45)),
+                    Cell::from(r.status.clone()).style(Style::default().fg(status_color)),
+                    Cell::from(r.active.to_string()),
                 ]).height(1)
             });
 
             let widths = [
                 Constraint::Length(10),
-                Constraint::Length(10),
-                Constraint::Percentage(60),
-                Constraint::Length(15),
+                Constraint::Percentage(55),
+                Constraint::Length(12),
+                Constraint::Length(8),
             ];
 
             let table = Table::new(rows, widths)
-                .header(Row::new(vec!["ID", "Status", "Ref", "Updated"]).style(header_style).height(1))
+                .header(Row::new(vec!["ID", "Description", "Status", "Active"]).style(header_style).height(1))
                 .block(main_block)
                 .row_highlight_style(highlight_style)
-                .highlight_symbol(" 🚀 ");
+                .highlight_symbol(" ▶ ");
             
-            f.render_stateful_widget(table, middle_chunks[1], &mut app.pipelines.state);
+            f.render_stateful_widget(table, middle_chunks[1], &mut app.runners.state);
 
             let preview_block = Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ");
-            if let Some(selected) = app.pipelines.state.selected() {
-                if let Some(p) = filtered_pipelines.get(selected) {
+            if let Some(selected) = app.runners.state.selected() {
+                if let Some(r) = filtered_runners.get(selected) {
+                    let desc = r.description.as_deref().unwrap_or("None");
                     let details = format!(
-                        "Pipeline ID: {}\n\nRef: {}\nStatus: {}\nUpdated: {}",
-                        p.id, p.r#ref, p.status, time_ago(&p.updated_at)
+                        "Runner ID: {}\n\nDescription: {}\nStatus: {}\nActive: {}\n\nPress ctrl-p to pause\nPress ctrl-r to resume\nPress ctrl-e to edit",
+                        r.id, desc, r.status, r.active
                     );
                     f.render_widget(Paragraph::new(details).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
                 } else {
@@ -234,21 +408,64 @@ pub fn render(f: &mut Frame, app: &mut App) {
             } else {
                 f.render_widget(Paragraph::new("Select an item to view details...").block(preview_block).style(Style::default().fg(Color::DarkGray)), middle_chunks[2]);
             }
+            }
         },
-        _ => {
-            let paragraph = Paragraph::new("\n\n  Feature pending...").block(main_block).style(Style::default().fg(Color::DarkGray));
-            f.render_widget(paragraph, middle_chunks[1]);
+        Tab::Releases => {
+            if app.releases.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
+                f.render_widget(Paragraph::new("Loading releases...").alignment(Alignment::Center).block(main_block.clone()), middle_chunks[1]);
+                f.render_widget(Paragraph::new("Select a release to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ")).style(Style::default().fg(Color::DarkGray)), middle_chunks[2]);
+            } else {
+                let filtered_releases: Vec<_> = app.releases.items.iter()
+                    .filter(|r| sq.is_empty() || r.name.to_lowercase().contains(&sq) || r.tag_name.to_lowercase().contains(&sq))
+                    .collect();
+                
+            let rows = filtered_releases.iter().map(|r| {
+                Row::new(vec![
+                    Cell::from(r.tag_name.clone()).style(Style::default().fg(Color::Green)),
+                    Cell::from(truncate(&r.name, 45)),
+                    Cell::from(truncate(&r.released_at, 10)).style(Style::default().fg(Color::DarkGray)),
+                ]).height(1)
+            });
+
+            let widths = [
+                Constraint::Length(16),
+                Constraint::Percentage(60),
+                Constraint::Length(12),
+            ];
+
+            let table = Table::new(rows, widths)
+                .header(Row::new(vec!["Tag", "Release Name", "Date"]).style(header_style).height(1))
+                .block(main_block)
+                .row_highlight_style(highlight_style)
+                .highlight_symbol(" ▶ ");
             
+            f.render_stateful_widget(table, middle_chunks[1], &mut app.releases.state);
+
             let preview_block = Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ");
-            f.render_widget(Paragraph::new("").block(preview_block), middle_chunks[2]);
+            if let Some(selected) = app.releases.state.selected() {
+                if let Some(r) = filtered_releases.get(selected) {
+                    let details = format!(
+                        "Release: {}\nTag: {}\nDate: {}\n\nPress ctrl-o to open in browser",
+                        r.name, r.tag_name, r.released_at
+                    );
+                    f.render_widget(Paragraph::new(details).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
+                } else {
+                    f.render_widget(Paragraph::new("").block(preview_block), middle_chunks[2]);
+                }
+            } else {
+                f.render_widget(Paragraph::new("Select an item to view details...").block(preview_block).style(Style::default().fg(Color::DarkGray)), middle_chunks[2]);
+            }
+            }
         }
     }
 
     // Bottom: Help Bar
     let help_text = match app.active_tab {
-        Tab::Issues => "  h/l: Tabs • j/k: Navigate • /: Search • Enter: View • q: Quit  ",
-        Tab::MergeRequests => "  h/l: Tabs • j/k: Navigate • /: Search • a: Approve • m: Merge • q: Quit  ",
-        _ => "  h/l: Tabs • j/k: Navigate • /: Search • q: Quit  ",
+        Tab::Issues => "  h/l: Tabs • j/k: Nav • /: Search • ctrl-n: New • ctrl-t/l/a/d: Edit • F5: Refresh • Enter: View • q: Quit  ",
+        Tab::MergeRequests => "  h/l: Tabs • j/k: Nav • /: Search • ctrl-n/a/m/s: Manage MR • ctrl-t/l/a/d: Edit • F5: Refresh • q: Quit  ",
+        Tab::Pipelines => "  h/l: Tabs • j/k: Nav • /: Search • ctrl-p: Run MR Pipe • ctrl-r/d/o: Job acts • F5: Refresh • q: Quit  ",
+        Tab::Runners => "  h/l: Tabs • j/k: Nav • /: Search • ctrl-p/r: Pause/Resume • ctrl-e: Edit • F5: Refresh • q: Quit  ",
+        Tab::Releases => "  h/l: Tabs • j/k: Nav • /: Search • ctrl-o: Browser • Enter: Terminal • F5: Refresh • q: Quit  ",
     };
     let help = Paragraph::new(help_text)
         .style(Style::default().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(49, 50, 68)).add_modifier(Modifier::BOLD))
@@ -288,4 +505,45 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn get_stages_dots(jobs: &[crate::gitlab::pipelines::Job]) -> String {
+    let mut stage_names = Vec::new();
+    let mut stage_jobs = std::collections::HashMap::new();
+    for j in jobs {
+        if !stage_names.contains(&j.stage) {
+            stage_names.push(j.stage.clone());
+        }
+        stage_jobs.entry(j.stage.clone()).or_insert_with(Vec::new).push(j.status.clone());
+    }
+
+    let mut dots = String::new();
+    for stage in stage_names {
+        if let Some(statuses) = stage_jobs.get(&stage) {
+            let stage_status = if statuses.iter().any(|s| s == "failed") {
+                "failed"
+            } else if statuses.iter().any(|s| s == "running") {
+                "running"
+            } else if statuses.iter().any(|s| s == "pending") {
+                "pending"
+            } else if statuses.iter().any(|s| s == "canceled") {
+                "canceled"
+            } else if statuses.iter().all(|s| s == "success") {
+                "success"
+            } else {
+                "skipped"
+            };
+
+            let dot = match stage_status {
+                "success" => "🟢",
+                "failed" => "🔴",
+                "running" => "🔵",
+                "canceled" => "⚫",
+                "pending" => "🟡",
+                _ => "⚪",
+            };
+            dots.push_str(dot);
+        }
+    }
+    dots
 }

@@ -1,6 +1,6 @@
 use crate::utils::ui::StatefulTable;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tab {
     #[default]
     Issues,
@@ -40,7 +40,15 @@ pub struct App {
     pub pipelines: StatefulTable<crate::gitlab::pipelines::Pipeline>,
     pub search_query: String,
     pub is_typing_search: bool,
+    pub selected_pipeline_jobs: Option<Vec<crate::gitlab::pipelines::Job>>,
+    pub selected_job_index: Option<usize>,
+    pub job_trace: Option<String>,
     pub error_message: Option<String>,
+    pub runners: StatefulTable<crate::gitlab::runners::Runner>,
+    pub releases: StatefulTable<crate::gitlab::releases::Release>,
+    pub pipeline_jobs: std::collections::HashMap<u64, Vec<crate::gitlab::pipelines::Job>>,
+    pub fetching_pipelines: std::collections::HashSet<u64>,
+    pub loading_tabs: std::collections::HashSet<Tab>,
 }
 
 impl Default for App {
@@ -55,7 +63,15 @@ impl Default for App {
             pipelines: StatefulTable::with_items(vec![]),
             search_query: String::new(),
             is_typing_search: false,
+            selected_pipeline_jobs: None,
+            selected_job_index: None,
+            job_trace: None,
             error_message: None,
+            runners: StatefulTable::with_items(vec![]),
+            releases: StatefulTable::with_items(vec![]),
+            pipeline_jobs: std::collections::HashMap::new(),
+            fetching_pipelines: std::collections::HashSet::new(),
+            loading_tabs: std::collections::HashSet::new(),
         }
     }
 }

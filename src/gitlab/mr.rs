@@ -2,16 +2,17 @@ use super::client::GitlabClient;
 use anyhow::Result;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Author {
     pub username: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct MergeRequest {
     pub iid: u64,
     pub title: String,
     pub state: String,
+    #[serde(default)]
     pub labels: Vec<String>,
     pub updated_at: String,
     pub author: Author,
