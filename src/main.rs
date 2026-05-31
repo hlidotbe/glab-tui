@@ -38,12 +38,16 @@ async fn run_glab_cmd(args: &[&str]) {
     disable_raw_mode().unwrap();
     execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
     
-    let mut cmd = tokio::process::Command::new("glab");
+    let mut cmd = std::process::Command::new("glab");
     for arg in args {
         cmd.arg(arg);
     }
+    cmd.stdin(std::process::Stdio::inherit());
+    cmd.stdout(std::process::Stdio::inherit());
+    cmd.stderr(std::process::Stdio::inherit());
+    
     if let Ok(mut child) = cmd.spawn() {
-        let _ = child.wait().await;
+        let _ = child.wait();
     }
     
     enable_raw_mode().unwrap();
@@ -426,10 +430,13 @@ async fn main() -> Result<()> {
                                                     }
                                                     disable_raw_mode().unwrap();
                                                     execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
-                                                    let mut cmd = tokio::process::Command::new("hx");
+                                                    let mut cmd = std::process::Command::new("hx");
                                                     cmd.arg(&temp_file);
+                                                    cmd.stdin(std::process::Stdio::inherit());
+                                                    cmd.stdout(std::process::Stdio::inherit());
+                                                    cmd.stderr(std::process::Stdio::inherit());
                                                     if let Ok(mut child) = cmd.spawn() {
-                                                        let _ = child.wait().await;
+                                                        let _ = child.wait();
                                                     }
                                                     enable_raw_mode().unwrap();
                                                     execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
