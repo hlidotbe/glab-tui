@@ -38,6 +38,7 @@ pub struct MergeRequest {
     pub reviewers: Vec<Reviewer>,
     pub target_branch: String,
     pub draft: bool,
+    pub description: Option<String>,
 }
 
 pub async fn list_mrs(client: &GitlabClient, project_path: &str) -> Result<Vec<MergeRequest>> {

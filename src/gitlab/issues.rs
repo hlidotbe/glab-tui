@@ -29,6 +29,7 @@ pub struct Issue {
     pub milestone: Option<Milestone>,
     #[serde(default)]
     pub assignees: Vec<Assignee>,
+    pub description: Option<String>,
 }
 
 pub async fn list_issues(client: &GitlabClient, project_path: &str) -> Result<Vec<Issue>> {

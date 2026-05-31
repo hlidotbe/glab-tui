@@ -15,6 +15,59 @@ use event::{Event, EventHandler};
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io::{self, Write};
 
+fn edit_in_editor(current_val: &str) -> Option<String> {
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "helix".to_string());
+        
+    let temp_dir = std::env::temp_dir();
+    let temp_file = temp_dir.join("glab_tui_edit.txt");
+    
+    if let Ok(mut file) = std::fs::File::create(&temp_file) {
+        let _ = file.write_all(current_val.as_bytes());
+    } else {
+        return None;
+    }
+    
+    crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
+    disable_raw_mode().unwrap();
+    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
+    
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/c", &format!("{} \"{}\"", editor, temp_file.to_string_lossy())]);
+        c
+    } else {
+        let mut c = std::process::Command::new(&editor);
+        c.arg(&temp_file);
+        c
+    };
+    
+    cmd.stdin(std::process::Stdio::inherit());
+    cmd.stdout(std::process::Stdio::inherit());
+    cmd.stderr(std::process::Stdio::inherit());
+    
+    if let Ok(mut child) = cmd.spawn() {
+        let _ = child.wait();
+    }
+    
+    enable_raw_mode().unwrap();
+    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
+    crate::event::PAUSED.store(false, std::sync::atomic::Ordering::Relaxed);
+    
+    if let Ok(content) = std::fs::read_to_string(&temp_file) {
+        let _ = std::fs::remove_file(&temp_file);
+        let trimmed = content.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    } else {
+        None
+    }
+}
+
 fn prompt_user(prompt: &str) -> Option<String> {
     crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
     disable_raw_mode().unwrap();
@@ -239,7 +292,13 @@ fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
 async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: KeyCode, terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>) {
     match code {
         KeyCode::Char('t') => {
-            if let Some(new_title) = prompt_user("Enter new title: ") {
+            let current_title = if entity_type == "issue" {
+                app.issues.items.iter().find(|i| i.iid == iid).map(|i| i.title.clone()).unwrap_or_default()
+            } else {
+                app.mrs.items.iter().find(|m| m.iid == iid).map(|m| m.title.clone()).unwrap_or_default()
+            };
+
+            if let Some(new_title) = edit_in_editor(&current_title) {
                 run_glab_update(entity_type, iid, &["--title", &new_title]).await;
                 if entity_type == "issue" {
                     if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
@@ -252,75 +311,33 @@ async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: 
                 }
             }
         }
-        KeyCode::Char('l') => {
-            if let Some(new_labels) = prompt_user("Enter labels (comma separated, or 'none' to clear): ") {
-                let labels_vec = if new_labels.to_lowercase() == "none" {
-                    run_glab_update(entity_type, iid, &["--unlabel", "all"]).await;
-                    vec![]
-                } else {
-                    run_glab_update(entity_type, iid, &["--label", &new_labels]).await;
-                    new_labels.split(',').map(|s| s.trim().to_string()).collect()
-                };
-                if entity_type == "issue" {
-                    if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
-                        item.labels = labels_vec;
-                    }
-                } else if entity_type == "mr" {
-                    if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
-                        item.labels = labels_vec;
-                    }
-                }
-            }
-        }
-        KeyCode::Char('a') => {
-            if let Some(assignee) = prompt_user("Enter assignee username (or 'none' to clear): ") {
-                if assignee.to_lowercase() == "none" {
-                    run_glab_update(entity_type, iid, &["--unassign"]).await;
-                } else {
-                    run_glab_update(entity_type, iid, &["--assignee", &assignee]).await;
-                }
-            }
-        }
-        KeyCode::Char('m') => {
-            if let Some(milestone) = prompt_user("Enter milestone title (or 'none' to clear): ") {
-                if milestone.to_lowercase() == "none" {
-                    run_glab_update(entity_type, iid, &["--milestone", "0"]).await;
-                } else {
-                    run_glab_update(entity_type, iid, &["--milestone", &milestone]).await;
-                }
-            }
-        }
         KeyCode::Char('r') => {
             if entity_type == "mr" {
-                if let Some(status) = prompt_user("Mark MR as (d)raft or (r)eady? (d/r): ") {
-                    if status.to_lowercase() == "d" {
-                        run_glab_update(entity_type, iid, &["--draft"]).await;
-                    } else if status.to_lowercase() == "r" {
-                        run_glab_update(entity_type, iid, &["--ready"]).await;
-                    }
-                }
-            }
-        }
-        KeyCode::Char('v') => {
-            if entity_type == "mr" {
-                if let Some(reviewer) = prompt_user("Enter reviewer username (prefix with '!' to remove): ") {
-                    run_glab_update(entity_type, iid, &["--reviewer", &reviewer]).await;
+                let is_draft = app.mrs.items.iter().find(|m| m.iid == iid).map(|m| m.draft).unwrap_or(false);
+                let action = if is_draft { "--ready" } else { "--draft" };
+                run_glab_update(entity_type, iid, &[action]).await;
+                if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
+                    item.draft = !is_draft;
                 }
             }
         }
         KeyCode::Char('g') => {
             if entity_type == "mr" {
-                if let Some(target) = prompt_user("Enter target branch: ") {
+                let current_branch = app.mrs.items.iter().find(|m| m.iid == iid).map(|m| m.target_branch.clone()).unwrap_or_default();
+                if let Some(target) = edit_in_editor(&current_branch) {
                     run_glab_update(entity_type, iid, &["--target-branch", &target]).await;
+                    if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
+                        item.target_branch = target;
+                    }
                 }
             }
         }
         KeyCode::Char('c') => {
             if entity_type == "issue" {
-                if let Some(confidential) = prompt_user("Make confidential? (y/n): ") {
-                    if confidential.to_lowercase() == "y" {
+                if let Some(res) = edit_in_editor("public") {
+                    if res.to_lowercase().contains("confidential") {
                         run_glab_update(entity_type, iid, &["--confidential"]).await;
-                    } else if confidential.to_lowercase() == "n" {
+                    } else {
                         run_glab_update(entity_type, iid, &["--public"]).await;
                     }
                 }
@@ -328,9 +345,8 @@ async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: 
         }
         KeyCode::Char('u') => {
             if entity_type == "issue" {
-                if let Some(due_date) = prompt_user("Enter due date (YYYY-MM-DD, or 'none' to clear): ") {
-                    if due_date.to_lowercase() == "none" {
-                        // glab doesn't have a direct clear flag for due date in update cli docs, but passing empty string or none is standard
+                if let Some(due_date) = edit_in_editor("YYYY-MM-DD") {
+                    if due_date == "YYYY-MM-DD" || due_date.is_empty() {
                         run_glab_update(entity_type, iid, &["--due-date", ""]).await;
                     } else {
                         run_glab_update(entity_type, iid, &["--due-date", &due_date]).await;
@@ -340,13 +356,34 @@ async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: 
         }
         KeyCode::Char('w') => {
             if entity_type == "issue" {
-                if let Some(weight) = prompt_user("Enter weight (integer, or '0' to clear): ") {
+                if let Some(weight) = edit_in_editor("0") {
                     run_glab_update(entity_type, iid, &["--weight", &weight]).await;
                 }
             }
         }
         KeyCode::Char('d') => {
-            run_glab_update(entity_type, iid, &["--description", "-"]).await;
+            let current_desc = if entity_type == "issue" {
+                app.issues.items.iter().find(|i| i.iid == iid)
+                    .and_then(|i| i.description.clone())
+                    .unwrap_or_default()
+            } else {
+                app.mrs.items.iter().find(|m| m.iid == iid)
+                    .and_then(|m| m.description.clone())
+                    .unwrap_or_default()
+            };
+
+            if let Some(new_desc) = edit_in_editor(&current_desc) {
+                run_glab_update(entity_type, iid, &["--description", &new_desc]).await;
+                if entity_type == "issue" {
+                    if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
+                        item.description = Some(new_desc);
+                    }
+                } else if entity_type == "mr" {
+                    if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
+                        item.description = Some(new_desc);
+                    }
+                }
+            }
             terminal.clear().unwrap();
         }
         _ => {}
@@ -1082,7 +1119,8 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                         KeyCode::Char('e') => {
-                                            if let Some(desc) = prompt_user("Enter new description: ") {
+                                            let current_desc = item.description.clone().unwrap_or_default();
+                                            if let Some(desc) = edit_in_editor(&current_desc) {
                                                 run_glab_cmd(&["api", "-X", "PUT", &format!("runners/{}", runner_id), "-f", &format!("description={}", desc)]).await;
                                                 if let Some(runner) = app.runners.items.iter_mut().find(|r| r.id == runner_id) {
                                                     runner.description = Some(desc);
