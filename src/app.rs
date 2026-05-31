@@ -72,6 +72,25 @@ impl Selector {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum TextInputAction {
+    EditField {
+        entity_iid: u64,
+        entity_type: String,
+        field_type: String,
+    },
+    CreateIssue,
+    CreateMr,
+}
+
+#[derive(Clone, Debug)]
+pub struct TextInput {
+    pub title: String,
+    pub value: String,
+    pub cursor_idx: usize,
+    pub action: TextInputAction,
+}
+
 pub struct App {
     pub active_tab: Tab,
     pub running: bool,
@@ -94,6 +113,7 @@ pub struct App {
     pub loaded_tabs: std::collections::HashSet<Tab>,
     pub edit_menu: Option<EditMenu>,
     pub selector: Option<Selector>,
+    pub text_input: Option<TextInput>,
 }
 
 impl Default for App {
@@ -120,6 +140,7 @@ impl Default for App {
             loaded_tabs: std::collections::HashSet::new(),
             edit_menu: None,
             selector: None,
+            text_input: None,
         }
     }
 }

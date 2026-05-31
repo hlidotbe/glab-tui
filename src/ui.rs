@@ -1027,6 +1027,45 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
         f.render_widget(footer_p, chunks[2]);
     }
+
+    if let Some(text_input) = &app.text_input {
+        let block = Block::default()
+            .title(format!(" {} ", text_input.title))
+            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(THEME.border_focused))
+            .style(Style::default().bg(THEME.bg));
+            
+        let area = centered_rect(40, 15, size);
+        
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Min(0),    // Value input line
+                Constraint::Length(1), // Help footer
+            ].as_ref())
+            .split(area);
+            
+        let mut display_val = text_input.value.clone();
+        if text_input.cursor_idx <= display_val.len() {
+            display_val.insert(text_input.cursor_idx, '▋');
+        } else {
+            display_val.push('▋');
+        }
+        
+        let value_p = Paragraph::new(display_val)
+            .style(Style::default().fg(THEME.text_normal));
+            
+        let footer_p = Paragraph::new("  Enter: Confirm • Esc: Cancel  ")
+            .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC));
+            
+        f.render_widget(Clear, area);
+        f.render_widget(block, area);
+        f.render_widget(value_p, chunks[0]);
+        f.render_widget(footer_p, chunks[1]);
+    }
 }
 
 /// helper function to create a centered rect using up certain percentage of the available rect `r`
