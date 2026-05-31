@@ -511,13 +511,13 @@ async fn main() -> Result<()> {
         if app.active_tab == app::Tab::Pipelines {
             if let Some(client) = &app.gitlab_client {
                 if let Some(idx) = app.pipelines.state.selected() {
-                    if let Some(p) = app.pipelines.items.get(idx) {
-                        if !app.pipeline_jobs.contains_key(&p.id) && !app.fetching_pipelines.contains(&p.id) {
-                            app.fetching_pipelines.insert(p.id);
+                    let pipe_id = app.filtered_pipelines().get(idx).map(|p| p.id);
+                    if let Some(pipe_id) = pipe_id {
+                        if !app.pipeline_jobs.contains_key(&pipe_id) && !app.fetching_pipelines.contains(&pipe_id) {
+                            app.fetching_pipelines.insert(pipe_id);
                             let client_clone = client.clone();
                             let project_context = app.project_context.clone();
                             let tx = events.sender();
-                            let pipe_id = p.id;
                             tokio::spawn(async move {
                                 if let Ok(jobs) = gitlab::pipelines::list_pipeline_jobs(&client_clone, &project_context, pipe_id).await {
                                     let _ = tx.send(Event::PipelineJobs(pipe_id, jobs));
@@ -539,75 +539,46 @@ async fn main() -> Result<()> {
                 Event::PipelineJobs(id, jobs) => {
                     app.fetching_pipelines.remove(&id);
                     app.pipeline_jobs.insert(id, jobs.clone());
-                    if let Some(idx) = app.pipelines.state.selected() {
-                        if let Some(p) = app.pipelines.items.get(idx) {
-                            if p.id == id {
-                                app.selected_pipeline_jobs = Some(jobs);
-                            }
-                        }
+                    let match_id = if let Some(idx) = app.pipelines.state.selected() {
+                        app.filtered_pipelines().get(idx).map(|p| p.id) == Some(id)
+                    } else {
+                        false
+                    };
+                    if match_id {
+                        app.selected_pipeline_jobs = Some(jobs);
                     }
                 }
                 Event::IssuesFetched(issues) => {
                     app.loading_tabs.remove(&app::Tab::Issues);
                     app.loaded_tabs.insert(app::Tab::Issues);
-                    let old_selected = app.issues.state.selected();
                     app.issues.items = issues;
-                    if !app.issues.items.is_empty() {
-                        let new_selected = old_selected.map(|idx| idx.min(app.issues.items.len() - 1)).unwrap_or(0);
-                        app.issues.state.select(Some(new_selected));
-                    } else {
-                        app.issues.state.select(None);
-                    }
+                    app.update_filter_selection();
                 }
                 Event::MrsFetched(mrs) => {
                     app.loading_tabs.remove(&app::Tab::MergeRequests);
                     app.loaded_tabs.insert(app::Tab::MergeRequests);
-                    let old_selected = app.mrs.state.selected();
                     app.mrs.items = mrs;
-                    if !app.mrs.items.is_empty() {
-                        let new_selected = old_selected.map(|idx| idx.min(app.mrs.items.len() - 1)).unwrap_or(0);
-                        app.mrs.state.select(Some(new_selected));
-                    } else {
-                        app.mrs.state.select(None);
-                    }
+                    app.update_filter_selection();
                 }
                 Event::PipelinesFetched(pipelines) => {
                     app.loading_tabs.remove(&app::Tab::Pipelines);
                     app.loaded_tabs.insert(app::Tab::Pipelines);
-                    let old_selected = app.pipelines.state.selected();
                     app.pipelines.items = pipelines;
-                    if !app.pipelines.items.is_empty() {
-                        let new_selected = old_selected.map(|idx| idx.min(app.pipelines.items.len() - 1)).unwrap_or(0);
-                        app.pipelines.state.select(Some(new_selected));
-                    } else {
-                        app.pipelines.state.select(None);
-                    }
+                    app.update_filter_selection();
                     app.pipeline_jobs.clear();
                     app.fetching_pipelines.clear();
                 }
                 Event::RunnersFetched(runners) => {
                     app.loading_tabs.remove(&app::Tab::Runners);
                     app.loaded_tabs.insert(app::Tab::Runners);
-                    let old_selected = app.runners.state.selected();
                     app.runners.items = runners;
-                    if !app.runners.items.is_empty() {
-                        let new_selected = old_selected.map(|idx| idx.min(app.runners.items.len() - 1)).unwrap_or(0);
-                        app.runners.state.select(Some(new_selected));
-                    } else {
-                        app.runners.state.select(None);
-                    }
+                    app.update_filter_selection();
                 }
                 Event::ReleasesFetched(releases) => {
                     app.loading_tabs.remove(&app::Tab::Releases);
                     app.loaded_tabs.insert(app::Tab::Releases);
-                    let old_selected = app.releases.state.selected();
                     app.releases.items = releases;
-                    if !app.releases.items.is_empty() {
-                        let new_selected = old_selected.map(|idx| idx.min(app.releases.items.len() - 1)).unwrap_or(0);
-                        app.releases.state.select(Some(new_selected));
-                    } else {
-                        app.releases.state.select(None);
-                    }
+                    app.update_filter_selection();
                 }
                 Event::SelectorItemsFetched(items) => {
                     if let Some(mut selector) = app.selector.take() {
@@ -999,9 +970,11 @@ async fn main() -> Result<()> {
                             KeyCode::Enter | KeyCode::Esc => app.is_typing_search = false,
                             KeyCode::Backspace => {
                                 app.search_query.pop();
+                                app.update_filter_selection();
                             }
                             KeyCode::Char(c) => {
                                 app.search_query.push(c);
+                                app.update_filter_selection();
                             }
                             _ => {}
                         }
@@ -1022,7 +995,8 @@ async fn main() -> Result<()> {
                                 }
                                 KeyCode::Char('e') => {
                                     if let Some(selected_idx) = app.issues.state.selected() {
-                                        if let Some(issue) = app.issues.items.get(selected_idx) {
+                                        let filtered = app.filtered_issues();
+                                        if let Some(issue) = filtered.get(selected_idx) {
                                             let labels = if issue.labels.is_empty() { "None".to_string() } else { issue.labels.join(", ") };
                                             let milestone = issue.milestone.as_ref().map(|m| m.title.clone()).unwrap_or_else(|| "None".to_string());
                                             let assignees = if issue.assignees.is_empty() {
@@ -1054,7 +1028,8 @@ async fn main() -> Result<()> {
                         }
                         app::Tab::MergeRequests => {
                             if let Some(selected_idx) = app.mrs.state.selected() {
-                                let mr_info = app.mrs.items.get(selected_idx).map(|item| (item.iid, item.title.clone()));
+                                let filtered = app.filtered_mrs();
+                                let mr_info = filtered.get(selected_idx).map(|item| (item.iid, item.title.clone()));
                                 if let Some((mr_iid, mr_title)) = mr_info {
                                     match key_event.code {
                                         KeyCode::Char('n') => {
@@ -1066,7 +1041,7 @@ async fn main() -> Result<()> {
                                             });
                                         }
                                         KeyCode::Char('e') => {
-                                            let mr = app.mrs.items.get(selected_idx).unwrap();
+                                            let mr = filtered.get(selected_idx).unwrap();
                                             let labels = if mr.labels.is_empty() { "None".to_string() } else { mr.labels.join(", ") };
                                             let milestone = mr.milestone.as_ref().map(|m| m.title.clone()).unwrap_or_else(|| "None".to_string());
                                             let assignees = if mr.assignees.is_empty() {
@@ -1105,13 +1080,10 @@ async fn main() -> Result<()> {
                                         }
                                         KeyCode::Char('m') => {
                                             run_glab_cmd(&["mr", "merge", &mr_iid.to_string(), "--remove-source-branch", "--squash"]).await;
-                                            app.mrs.items.remove(selected_idx);
-                                            if app.mrs.items.is_empty() {
-                                                app.mrs.state.select(None);
-                                            } else {
-                                                let new_sel = selected_idx.min(app.mrs.items.len() - 1);
-                                                app.mrs.state.select(Some(new_sel));
+                                            if let Some(pos) = app.mrs.items.iter().position(|m| m.iid == mr_iid) {
+                                                app.mrs.items.remove(pos);
                                             }
+                                            app.update_filter_selection();
                                             if let Some(client) = &app.gitlab_client {
                                                 spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
                                             }
@@ -1166,7 +1138,7 @@ async fn main() -> Result<()> {
                                                     }
                                                     let client_clone = client.clone();
                                                     let project_context = app.project_context.clone();
-                                                    let pipe_id = app.pipelines.items.get(app.pipelines.state.selected().unwrap()).unwrap().id;
+                                                     let pipe_id = app.filtered_pipelines().get(app.pipelines.state.selected().unwrap()).unwrap().id;
                                                     let tx = events.sender();
                                                     tokio::spawn(async move {
                                                         let endpoint = format!("projects/{}/jobs/{}/retry", project_context.replace("/", "%2F"), job_id);
@@ -1216,7 +1188,7 @@ async fn main() -> Result<()> {
                                     handled = false;
                                 }
                             } else if let Some(selected_idx) = app.pipelines.state.selected() {
-                                if let Some(item) = app.pipelines.items.get(selected_idx) {
+                                if let Some(item) = app.filtered_pipelines().get(selected_idx) {
                                     let pipe_id = item.id;
                                     match key_event.code {
                                         KeyCode::Char('r') => {
@@ -1265,7 +1237,7 @@ async fn main() -> Result<()> {
                         }
                         app::Tab::Runners => {
                             if let Some(selected_idx) = app.runners.state.selected() {
-                                if let Some(item) = app.runners.items.get(selected_idx) {
+                                if let Some(item) = app.filtered_runners().get(selected_idx) {
                                     let runner_id = item.id;
                                     match key_event.code {
                                         KeyCode::Char('p') => {
@@ -1306,7 +1278,7 @@ async fn main() -> Result<()> {
                         }
                         app::Tab::Releases => {
                             if let Some(selected_idx) = app.releases.state.selected() {
-                                if let Some(item) = app.releases.items.get(selected_idx) {
+                                if let Some(item) = app.filtered_releases().get(selected_idx) {
                                     match key_event.code {
                                         KeyCode::Char('o') => {
                                             run_glab_cmd(&["release", "view", &item.tag_name, "-w"]).await;
@@ -1365,7 +1337,7 @@ async fn main() -> Result<()> {
                                             }
                                         } else {
                                             if let Some(idx) = app.pipelines.state.selected() {
-                                                if let Some(p) = app.pipelines.items.get(idx) {
+                                                if let Some(p) = app.filtered_pipelines().get(idx) {
                                                     if let Some(client) = &app.gitlab_client {
                                                         if let Ok(jobs) = gitlab::pipelines::list_pipeline_jobs(client, &app.project_context, p.id).await {
                                                             app.selected_pipeline_jobs = Some(jobs);
@@ -1381,7 +1353,7 @@ async fn main() -> Result<()> {
                                     }
                                     app::Tab::Releases => {
                                         if let Some(idx) = app.releases.state.selected() {
-                                            if let Some(r) = app.releases.items.get(idx) {
+                                            if let Some(r) = app.filtered_releases().get(idx) {
                                                 run_glab_cmd(&["release", "view", &r.tag_name]).await;
                                                 if let Some(client) = &app.gitlab_client {
                                                     app.loading_tabs.insert(app.active_tab);
@@ -1417,8 +1389,8 @@ async fn main() -> Result<()> {
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 match app.active_tab {
-                                    app::Tab::Issues => app.issues.next(app.issues.items.len()),
-                                    app::Tab::MergeRequests => app.mrs.next(app.mrs.items.len()),
+                                    app::Tab::Issues => app.issues.next(app.filtered_issues().len()),
+                                    app::Tab::MergeRequests => app.mrs.next(app.filtered_mrs().len()),
                                     app::Tab::Pipelines => {
                                         if let Some(jobs) = &app.selected_pipeline_jobs {
                                             if let Some(idx) = &mut app.selected_job_index {
@@ -1428,17 +1400,17 @@ async fn main() -> Result<()> {
                                                 }
                                             }
                                         } else {
-                                            app.pipelines.next(app.pipelines.items.len());
+                                            app.pipelines.next(app.filtered_pipelines().len());
                                         }
                                     }
-                                    app::Tab::Runners => app.runners.next(app.runners.items.len()),
-                                    app::Tab::Releases => app.releases.next(app.releases.items.len()),
+                                    app::Tab::Runners => app.runners.next(app.filtered_runners().len()),
+                                    app::Tab::Releases => app.releases.next(app.filtered_releases().len()),
                                 }
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
                                 match app.active_tab {
-                                    app::Tab::Issues => app.issues.previous(app.issues.items.len()),
-                                    app::Tab::MergeRequests => app.mrs.previous(app.mrs.items.len()),
+                                    app::Tab::Issues => app.issues.previous(app.filtered_issues().len()),
+                                    app::Tab::MergeRequests => app.mrs.previous(app.filtered_mrs().len()),
                                     app::Tab::Pipelines => {
                                         if app.selected_pipeline_jobs.is_some() {
                                             if let Some(idx) = &mut app.selected_job_index {
@@ -1448,11 +1420,11 @@ async fn main() -> Result<()> {
                                                 }
                                             }
                                         } else {
-                                            app.pipelines.previous(app.pipelines.items.len());
+                                            app.pipelines.previous(app.filtered_pipelines().len());
                                         }
                                     }
-                                    app::Tab::Runners => app.runners.previous(app.runners.items.len()),
-                                    app::Tab::Releases => app.releases.previous(app.releases.items.len()),
+                                    app::Tab::Runners => app.runners.previous(app.filtered_runners().len()),
+                                    app::Tab::Releases => app.releases.previous(app.filtered_releases().len()),
                                 }
                             }
                             _ => {}

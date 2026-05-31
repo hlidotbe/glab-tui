@@ -197,7 +197,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
         .title(tab_title)
         .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
     
-    let sq = app.search_query.to_lowercase();
     let highlight_style = Style::default().bg(THEME.highlight_bg).fg(THEME.border_focused).add_modifier(Modifier::BOLD);
     let header_style = Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD);
 
@@ -207,9 +206,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 f.render_widget(Paragraph::new("\n\n Loading issues...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
                 f.render_widget(Paragraph::new("Select an item to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             } else {
-                let filtered_issues: Vec<_> = app.issues.items.iter()
-                    .filter(|i| sq.is_empty() || i.title.to_lowercase().contains(&sq))
-                    .collect();
+                let filtered_issues = App::filter_issues_list(&app.issues.items, &app.search_query);
                 
                 let rows = filtered_issues.iter().map(|i| {
                     let (state_text, state_style) = if i.state == "opened" {
@@ -325,9 +322,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 f.render_widget(Paragraph::new("\n\n Loading merge requests...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
                 f.render_widget(Paragraph::new("Select an item to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             } else {
-                let filtered_mrs: Vec<_> = app.mrs.items.iter()
-                    .filter(|m| sq.is_empty() || m.title.to_lowercase().contains(&sq))
-                    .collect();
+                let filtered_mrs = App::filter_mrs_list(&app.mrs.items, &app.search_query);
                 
                 let rows = filtered_mrs.iter().map(|m| {
                     let (state_text, state_style) = if m.state == "opened" {
@@ -574,9 +569,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
                     }
                 } else {
-                    let filtered_pipelines: Vec<_> = app.pipelines.items.iter()
-                        .filter(|p| sq.is_empty() || p.r#ref.to_lowercase().contains(&sq))
-                        .collect();
+                    let filtered_pipelines = App::filter_pipelines_list(&app.pipelines.items, &app.search_query, &app.pipeline_jobs);
                         
                     let rows = filtered_pipelines.iter().map(|p| {
                         let (status_text, status_color, bg_color) = match p.status.as_str() {
@@ -721,9 +714,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 f.render_widget(Paragraph::new("\n\n Loading runners...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
                 f.render_widget(Paragraph::new("Select a runner to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             } else {
-                let filtered_runners: Vec<_> = app.runners.items.iter()
-                    .filter(|r| sq.is_empty() || r.id.to_string().contains(&sq) || r.description.as_deref().unwrap_or("").to_lowercase().contains(&sq))
-                    .collect();
+                let filtered_runners = App::filter_runners_list(&app.runners.items, &app.search_query);
                 
                 let rows = filtered_runners.iter().map(|r| {
                     let (status_text, status_color, bg_color) = match r.status.as_str() {
@@ -800,9 +791,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 f.render_widget(Paragraph::new("\n\n Loading releases...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
                 f.render_widget(Paragraph::new("Select a release to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             } else {
-                let filtered_releases: Vec<_> = app.releases.items.iter()
-                    .filter(|r| sq.is_empty() || r.name.to_lowercase().contains(&sq) || r.tag_name.to_lowercase().contains(&sq))
-                    .collect();
+                let filtered_releases = App::filter_releases_list(&app.releases.items, &app.search_query);
                 
                 let rows = filtered_releases.iter().map(|r| {
                     Row::new(vec![

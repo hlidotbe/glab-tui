@@ -160,6 +160,7 @@ impl App {
         let current_index = Tab::ALL.iter().position(|t| t == &self.active_tab).unwrap_or(0);
         let next_index = (current_index + 1) % Tab::ALL.len();
         self.active_tab = Tab::ALL[next_index];
+        self.update_filter_selection();
     }
 
     pub fn previous_tab(&mut self) {
@@ -170,5 +171,338 @@ impl App {
             current_index - 1
         };
         self.active_tab = Tab::ALL[prev_index];
+        self.update_filter_selection();
+    }
+
+    pub fn filter_issues_list<'a>(items: &'a [crate::gitlab::issues::Issue], query: &str) -> Vec<&'a crate::gitlab::issues::Issue> {
+        let sq = query.to_lowercase();
+        items.iter()
+            .filter(|i| {
+                if sq.is_empty() {
+                    return true;
+                }
+                // ID
+                if format!("#{}", i.iid).contains(&sq) || i.iid.to_string().contains(&sq) {
+                    return true;
+                }
+                // State
+                if i.state.to_lowercase().contains(&sq) || (i.state == "opened" && "open".contains(&sq)) || (i.state == "closed" && "closed".contains(&sq)) {
+                    return true;
+                }
+                // Title
+                if i.title.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Author
+                if i.author.username.to_lowercase().contains(&sq) || format!("@{}", i.author.username).to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Updated Time
+                if crate::utils::format::time_ago(&i.updated_at).to_lowercase().contains(&sq) || i.updated_at.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Milestone
+                if let Some(m) = &i.milestone {
+                    if m.title.to_lowercase().contains(&sq) {
+                        return true;
+                    }
+                }
+                // Labels
+                for label in &i.labels {
+                    if label.to_lowercase().contains(&sq) {
+                        return true;
+                    }
+                }
+                // Assignees
+                for assignee in &i.assignees {
+                    if assignee.username.to_lowercase().contains(&sq) || format!("@{}", assignee.username).to_lowercase().contains(&sq) {
+                        return true;
+                    }
+                }
+                // Description
+                if let Some(desc) = &i.description {
+                    if desc.to_lowercase().contains(&sq) {
+                        return true;
+                    }
+                }
+                false
+            })
+            .collect()
+    }
+
+    pub fn filtered_issues(&self) -> Vec<&crate::gitlab::issues::Issue> {
+        Self::filter_issues_list(&self.issues.items, &self.search_query)
+    }
+
+    pub fn filter_mrs_list<'a>(items: &'a [crate::gitlab::mr::MergeRequest], query: &str) -> Vec<&'a crate::gitlab::mr::MergeRequest> {
+        let sq = query.to_lowercase();
+        items.iter()
+            .filter(|m| {
+                if sq.is_empty() {
+                    return true;
+                }
+                // ID
+                if format!("!{}", m.iid).contains(&sq) || m.iid.to_string().contains(&sq) {
+                    return true;
+                }
+                // State
+                if m.state.to_lowercase().contains(&sq) || (m.state == "opened" && "open".contains(&sq)) || (m.state == "merged" && "merged".contains(&sq)) || (m.state == "closed" && "closed".contains(&sq)) {
+                    return true;
+                }
+                // Title
+                if m.title.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Author
+                if m.author.username.to_lowercase().contains(&sq) || format!("@{}", m.author.username).to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Updated Time
+                if crate::utils::format::time_ago(&m.updated_at).to_lowercase().contains(&sq) || m.updated_at.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Milestone
+                if let Some(ms) = &m.milestone {
+                    if ms.title.to_lowercase().contains(&sq) {
+                        return true;
+                    }
+                }
+                // Target Branch
+                if m.target_branch.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Labels
+                for label in &m.labels {
+                    if label.to_lowercase().contains(&sq) {
+                        return true;
+                    }
+                }
+                // Assignees
+                for assignee in &m.assignees {
+                    if assignee.username.to_lowercase().contains(&sq) || format!("@{}", assignee.username).to_lowercase().contains(&sq) {
+                        return true;
+                    }
+                }
+                // Reviewers
+                for reviewer in &m.reviewers {
+                    if reviewer.username.to_lowercase().contains(&sq) || format!("@{}", reviewer.username).to_lowercase().contains(&sq) {
+                        return true;
+                    }
+                }
+                // Description
+                if let Some(desc) = &m.description {
+                    if desc.to_lowercase().contains(&sq) {
+                        return true;
+                    }
+                }
+                false
+            })
+            .collect()
+    }
+
+    pub fn filtered_mrs(&self) -> Vec<&crate::gitlab::mr::MergeRequest> {
+        Self::filter_mrs_list(&self.mrs.items, &self.search_query)
+    }
+
+    pub fn filter_pipelines_list<'a>(
+        items: &'a [crate::gitlab::pipelines::Pipeline],
+        query: &str,
+        pipeline_jobs: &std::collections::HashMap<u64, Vec<crate::gitlab::pipelines::Job>>,
+    ) -> Vec<&'a crate::gitlab::pipelines::Pipeline> {
+        let sq = query.to_lowercase();
+        items.iter()
+            .filter(|p| {
+                if sq.is_empty() {
+                    return true;
+                }
+                // ID
+                if format!("#{}", p.id).contains(&sq) || p.id.to_string().contains(&sq) {
+                    return true;
+                }
+                // Status
+                if p.status.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Ref
+                if p.r#ref.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Updated Time
+                if crate::utils::format::time_ago(&p.updated_at).to_lowercase().contains(&sq) || p.updated_at.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Pipeline Jobs details
+                if let Some(jobs) = pipeline_jobs.get(&p.id) {
+                    for job in jobs {
+                        if job.name.to_lowercase().contains(&sq) || job.stage.to_lowercase().contains(&sq) || job.status.to_lowercase().contains(&sq) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            })
+            .collect()
+    }
+
+    pub fn filtered_pipelines(&self) -> Vec<&crate::gitlab::pipelines::Pipeline> {
+        Self::filter_pipelines_list(&self.pipelines.items, &self.search_query, &self.pipeline_jobs)
+    }
+
+    pub fn filter_runners_list<'a>(items: &'a [crate::gitlab::runners::Runner], query: &str) -> Vec<&'a crate::gitlab::runners::Runner> {
+        let sq = query.to_lowercase();
+        items.iter()
+            .filter(|r| {
+                if sq.is_empty() {
+                    return true;
+                }
+                // ID
+                if r.id.to_string().contains(&sq) {
+                    return true;
+                }
+                // Description
+                if let Some(desc) = &r.description {
+                    if desc.to_lowercase().contains(&sq) {
+                        return true;
+                    }
+                }
+                // Status
+                if r.status.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Active
+                let active_str = if r.active { "active" } else { "inactive" };
+                if active_str.contains(&sq) || r.active.to_string().contains(&sq) {
+                    return true;
+                }
+                false
+            })
+            .collect()
+    }
+
+    pub fn filtered_runners(&self) -> Vec<&crate::gitlab::runners::Runner> {
+        Self::filter_runners_list(&self.runners.items, &self.search_query)
+    }
+
+    pub fn filter_releases_list<'a>(items: &'a [crate::gitlab::releases::Release], query: &str) -> Vec<&'a crate::gitlab::releases::Release> {
+        let sq = query.to_lowercase();
+        items.iter()
+            .filter(|r| {
+                if sq.is_empty() {
+                    return true;
+                }
+                // Tag Name
+                if r.tag_name.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Name
+                if r.name.to_lowercase().contains(&sq) {
+                    return true;
+                }
+                // Date
+                if r.released_at.to_lowercase().contains(&sq) || crate::utils::format::time_ago(&r.released_at).to_lowercase().contains(&sq) {
+                    return true;
+                }
+                false
+            })
+            .collect()
+    }
+
+    pub fn filtered_releases(&self) -> Vec<&crate::gitlab::releases::Release> {
+        Self::filter_releases_list(&self.releases.items, &self.search_query)
+    }
+
+    pub fn update_filter_selection(&mut self) {
+        match self.active_tab {
+            Tab::Issues => {
+                let len = self.filtered_issues().len();
+                let sel = self.issues.state.selected();
+                if len == 0 {
+                    self.issues.state.select(None);
+                } else {
+                    match sel {
+                        Some(idx) => {
+                            if idx >= len {
+                                self.issues.state.select(Some(len - 1));
+                            }
+                        }
+                        None => {
+                            self.issues.state.select(Some(0));
+                        }
+                    }
+                }
+            }
+            Tab::MergeRequests => {
+                let len = self.filtered_mrs().len();
+                let sel = self.mrs.state.selected();
+                if len == 0 {
+                    self.mrs.state.select(None);
+                } else {
+                    match sel {
+                        Some(idx) => {
+                            if idx >= len {
+                                self.mrs.state.select(Some(len - 1));
+                            }
+                        }
+                        None => {
+                            self.mrs.state.select(Some(0));
+                        }
+                    }
+                }
+            }
+            Tab::Pipelines => {
+                let len = self.filtered_pipelines().len();
+                let sel = self.pipelines.state.selected();
+                if len == 0 {
+                    self.pipelines.state.select(None);
+                } else {
+                    match sel {
+                        Some(idx) => {
+                            if idx >= len {
+                                self.pipelines.state.select(Some(len - 1));
+                            }
+                        }
+                        None => {
+                            self.pipelines.state.select(Some(0));
+                        }
+                    }
+                }
+            }
+            Tab::Runners => {
+                let len = self.filtered_runners().len();
+                let sel = self.runners.state.selected();
+                if len == 0 {
+                    self.runners.state.select(None);
+                } else {
+                    match sel {
+                        Some(idx) => {
+                            if idx >= len {
+                                self.runners.state.select(Some(len - 1));
+                            }
+                        }
+                        None => {
+                            self.runners.state.select(Some(0));
+                        }
+                    }
+                }
+            }
+            Tab::Releases => {
+                let len = self.filtered_releases().len();
+                let sel = self.releases.state.selected();
+                if len == 0 {
+                    self.releases.state.select(None);
+                } else {
+                    match sel {
+                        Some(idx) => {
+                            if idx >= len {
+                                self.releases.state.select(Some(len - 1));
+                            }
+                        }
+                        None => {
+                            self.releases.state.select(Some(0));
+                        }
+                    }
+                }
+            }
+        }
     }
 }
