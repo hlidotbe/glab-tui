@@ -864,11 +864,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     // Bottom: Help Bar
     let help_text = match app.active_tab {
-        Tab::Issues => "  h/l: Tabs • j/k: Nav • /: Search • ctrl-n: New • ctrl-t/l/a/d: Edit • F5: Refresh • Enter: View • q: Quit  ",
-        Tab::MergeRequests => "  h/l: Tabs • j/k: Nav • /: Search • ctrl-n/a/m/s: Manage MR • ctrl-t/l/a/d: Edit • F5: Refresh • q: Quit  ",
-        Tab::Pipelines => "  h/l: Tabs • j/k: Nav • /: Search • ctrl-p: Run MR Pipe • ctrl-r/d/o: Job acts • F5: Refresh • q: Quit  ",
-        Tab::Runners => "  h/l: Tabs • j/k: Nav • /: Search • ctrl-p/r: Pause/Resume • ctrl-e: Edit • F5: Refresh • q: Quit  ",
-        Tab::Releases => "  h/l: Tabs • j/k: Nav • /: Search • ctrl-o: Browser • Enter: Terminal • F5: Refresh • q: Quit  ",
+        Tab::Issues => "  h/l: Tabs • j/k: Nav • f: Search • n: New • e: Edit • F5: Refresh • Enter: View • q: Quit  ",
+        Tab::MergeRequests => "  h/l: Tabs • j/k: Nav • f: Search • n: New • e: Edit • a: Approve • m: Merge • v: Diff • s: Draft Toggle • F5: Refresh • q: Quit  ",
+        Tab::Pipelines => "  h/l: Tabs • j/k: Nav • f: Search • p: Run MR Pipe • r: Retry • d: Cancel/Download • o: Browser • e: Helix • F5: Refresh • q: Quit  ",
+        Tab::Runners => "  h/l: Tabs • j/k: Nav • f: Search • p: Pause • r: Resume • e: Edit Desc • F5: Refresh • q: Quit  ",
+        Tab::Releases => "  h/l: Tabs • j/k: Nav • f: Search • o: Browser • Enter: Notes • F5: Refresh • q: Quit  ",
     };
     let help = Paragraph::new(help_text)
         .style(Style::default().fg(THEME.text_normal).bg(THEME.highlight_bg).add_modifier(Modifier::BOLD))
@@ -891,6 +891,141 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let area = centered_rect(60, 20, size);
         f.render_widget(Clear, area); //this clears out the background
         f.render_widget(paragraph, area);
+    }
+
+    if let Some(menu) = &app.edit_menu {
+        let block = Block::default()
+            .title(format!(" {} ", menu.title))
+            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(THEME.border_focused))
+            .style(Style::default().bg(THEME.bg));
+            
+        let area = centered_rect(50, 45, size);
+        
+        let items: Vec<ListItem> = menu.fields.iter().enumerate().map(|(i, (label, val))| {
+            let style = if i == menu.selected_idx {
+                Style::default().bg(THEME.highlight_bg).fg(THEME.border_focused).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(THEME.text_normal)
+            };
+            ListItem::new(vec![
+                Line::from(vec![
+                    Span::styled(format!("  {:20} ", label), Style::default().fg(THEME.text_muted)),
+                    Span::styled(" ❯ ", Style::default().fg(THEME.text_muted)),
+                    Span::styled(val, style),
+                ])
+            ])
+        }).collect();
+        
+        let list = List::new(items)
+            .block(block)
+            .style(Style::default().bg(THEME.bg));
+            
+        f.render_widget(Clear, area);
+        f.render_widget(list, area);
+    }
+
+    if let Some(selector) = &app.selector {
+        let block = Block::default()
+            .title(format!(" {} ", selector.title))
+            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(THEME.border_focused))
+            .style(Style::default().bg(THEME.bg));
+            
+        let area = centered_rect(50, 60, size);
+        
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(3), // Search/Filter
+                Constraint::Min(0),    // List of items
+                Constraint::Length(2), // Help/Info footer
+            ].as_ref())
+            .split(area);
+            
+        let border_color = if selector.is_filtering { THEME.border_focused } else { THEME.text_muted };
+        let search_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(border_color))
+            .title(" Filter (press 'f' or '/' to focus) ");
+            
+        let search_text = if selector.is_filtering {
+            format!("{}▋", selector.search_query)
+        } else if selector.search_query.is_empty() {
+            "Type to filter...".to_string()
+        } else {
+            selector.search_query.clone()
+        };
+        
+        let search_style = if selector.search_query.is_empty() && !selector.is_filtering {
+            Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC)
+        } else {
+            Style::default().fg(THEME.text_normal)
+        };
+        
+        let search_p = Paragraph::new(search_text)
+            .block(search_block)
+            .style(search_style);
+            
+        let footer_text = if selector.is_filtering {
+            "  Esc/Enter: Stop filtering • Backspace: Delete  "
+        } else {
+            "  j/k: Navigate • Space: Toggle • Enter: Save & Exit • f: Filter • Esc: Back  "
+        };
+        let footer_p = Paragraph::new(footer_text)
+            .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC));
+            
+        f.render_widget(Clear, area);
+        f.render_widget(block, area);
+        f.render_widget(search_p, chunks[0]);
+        
+        if selector.is_loading {
+            let p = Paragraph::new("\n  Loading options from GitLab...")
+                .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC));
+            f.render_widget(p, chunks[1]);
+        } else {
+            let filtered_items = selector.get_filtered_items();
+            if filtered_items.is_empty() {
+                let p = Paragraph::new("\n  No matching options found.")
+                    .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC));
+                f.render_widget(p, chunks[1]);
+            } else {
+                let items: Vec<ListItem> = filtered_items.iter().enumerate().map(|(i, item)| {
+                    let is_selected = if item.starts_with("+ Create \"") {
+                        let clean_val = selector.search_query.trim().to_string();
+                        selector.selected_items.contains(&clean_val)
+                    } else {
+                        selector.selected_items.contains(item)
+                    };
+                    
+                    let marker = if is_selected { " ▣ " } else { " ☐ " };
+                    let marker_color = if is_selected { THEME.border_focused } else { THEME.text_muted };
+                    
+                    let style = if i == selector.cursor_idx {
+                        Style::default().bg(THEME.highlight_bg).fg(THEME.border_focused).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(THEME.text_normal)
+                    };
+                    
+                    ListItem::new(vec![
+                        Line::from(vec![
+                            Span::styled(marker, Style::default().fg(marker_color).add_modifier(Modifier::BOLD)),
+                            Span::styled(item.clone(), style),
+                        ])
+                    ])
+                }).collect();
+                
+                let list = List::new(items).style(Style::default().bg(THEME.bg));
+                f.render_widget(list, chunks[1]);
+            }
+        }
+        f.render_widget(footer_p, chunks[2]);
     }
 }
 

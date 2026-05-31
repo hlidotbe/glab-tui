@@ -30,6 +30,48 @@ impl Tab {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct EditMenu {
+    pub title: String,
+    pub fields: Vec<(String, String)>, // (Label, Value)
+    pub selected_idx: usize,
+    pub entity_iid: u64,
+    pub entity_type: String, // "issue", "mr"
+}
+
+#[derive(Clone, Debug)]
+pub struct Selector {
+    pub title: String,
+    pub all_items: Vec<String>,
+    pub selected_items: std::collections::HashSet<String>,
+    pub cursor_idx: usize,
+    pub search_query: String,
+    pub is_filtering: bool,
+    pub is_loading: bool,
+    pub entity_iid: u64,
+    pub entity_type: String, // "issue", "mr"
+    pub field_type: String,  // "labels", "assignees", "reviewers", "milestone"
+    pub multi_select: bool,
+}
+
+impl Selector {
+    pub fn get_filtered_items(&self) -> Vec<String> {
+        let query = self.search_query.to_lowercase();
+        let mut items: Vec<String> = self.all_items.iter()
+            .filter(|item| item.to_lowercase().contains(&query))
+            .cloned()
+            .collect();
+            
+        if !query.trim().is_empty() {
+            let exact_match = self.all_items.iter().any(|item| item.to_lowercase() == query.trim());
+            if !exact_match {
+                items.insert(0, format!("+ Create \"{}\"", self.search_query.trim()));
+            }
+        }
+        items
+    }
+}
+
 pub struct App {
     pub active_tab: Tab,
     pub running: bool,
@@ -49,6 +91,9 @@ pub struct App {
     pub pipeline_jobs: std::collections::HashMap<u64, Vec<crate::gitlab::pipelines::Job>>,
     pub fetching_pipelines: std::collections::HashSet<u64>,
     pub loading_tabs: std::collections::HashSet<Tab>,
+    pub loaded_tabs: std::collections::HashSet<Tab>,
+    pub edit_menu: Option<EditMenu>,
+    pub selector: Option<Selector>,
 }
 
 impl Default for App {
@@ -72,6 +117,9 @@ impl Default for App {
             pipeline_jobs: std::collections::HashMap::new(),
             fetching_pipelines: std::collections::HashSet::new(),
             loading_tabs: std::collections::HashSet::new(),
+            loaded_tabs: std::collections::HashSet::new(),
+            edit_menu: None,
+            selector: None,
         }
     }
 }

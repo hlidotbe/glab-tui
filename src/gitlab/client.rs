@@ -39,6 +39,39 @@ impl GitlabClient {
 
         Ok(String::from_utf8(output.stdout)?)
     }
+
+    pub async fn fetch_labels(&self, project_path: &str) -> Result<Vec<String>> {
+        #[derive(serde::Deserialize)]
+        struct GitlabLabel {
+            name: String,
+        }
+        let encoded_path = project_path.replace("/", "%2F");
+        let endpoint = format!("/projects/{}/labels?per_page=100", encoded_path);
+        let labels: Vec<GitlabLabel> = self.fetch_api(&endpoint).await?;
+        Ok(labels.into_iter().map(|l| l.name).collect())
+    }
+
+    pub async fn fetch_members(&self, project_path: &str) -> Result<Vec<String>> {
+        #[derive(serde::Deserialize)]
+        struct GitlabMember {
+            username: String,
+        }
+        let encoded_path = project_path.replace("/", "%2F");
+        let endpoint = format!("/projects/{}/members/all?per_page=100", encoded_path);
+        let members: Vec<GitlabMember> = self.fetch_api(&endpoint).await?;
+        Ok(members.into_iter().map(|m| format!("@{}", m.username)).collect())
+    }
+
+    pub async fn fetch_milestones(&self, project_path: &str) -> Result<Vec<String>> {
+        #[derive(serde::Deserialize)]
+        struct GitlabMilestone {
+            title: String,
+        }
+        let encoded_path = project_path.replace("/", "%2F");
+        let endpoint = format!("/projects/{}/milestones?state=active&per_page=100", encoded_path);
+        let milestones: Vec<GitlabMilestone> = self.fetch_api(&endpoint).await?;
+        Ok(milestones.into_iter().map(|m| m.title).collect())
+    }
 }
 
 pub async fn get_project_context() -> Result<String> {

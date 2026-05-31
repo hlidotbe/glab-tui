@@ -17,6 +17,7 @@ pub enum Event {
     PipelinesFetched(Vec<crate::gitlab::pipelines::Pipeline>),
     RunnersFetched(Vec<crate::gitlab::runners::Runner>),
     ReleasesFetched(Vec<crate::gitlab::releases::Release>),
+    SelectorItemsFetched(Vec<String>),
 }
 
 #[derive(Debug)]
