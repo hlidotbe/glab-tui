@@ -103,8 +103,76 @@ async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: 
             }
         }
         KeyCode::Char('a') => {
-            if let Some(assignee) = prompt_user("Enter assignee username: ") {
-                run_glab_update(entity_type, iid, &["--assignee", &assignee]).await;
+            if let Some(assignee) = prompt_user("Enter assignee username (or 'none' to clear): ") {
+                if assignee.to_lowercase() == "none" {
+                    run_glab_update(entity_type, iid, &["--unassign"]).await;
+                } else {
+                    run_glab_update(entity_type, iid, &["--assignee", &assignee]).await;
+                }
+            }
+        }
+        KeyCode::Char('m') => {
+            if let Some(milestone) = prompt_user("Enter milestone title (or 'none' to clear): ") {
+                if milestone.to_lowercase() == "none" {
+                    run_glab_update(entity_type, iid, &["--milestone", "0"]).await;
+                } else {
+                    run_glab_update(entity_type, iid, &["--milestone", &milestone]).await;
+                }
+            }
+        }
+        KeyCode::Char('r') => {
+            if entity_type == "mr" {
+                if let Some(status) = prompt_user("Mark MR as (d)raft or (r)eady? (d/r): ") {
+                    if status.to_lowercase() == "d" {
+                        run_glab_update(entity_type, iid, &["--draft"]).await;
+                    } else if status.to_lowercase() == "r" {
+                        run_glab_update(entity_type, iid, &["--ready"]).await;
+                    }
+                }
+            }
+        }
+        KeyCode::Char('v') => {
+            if entity_type == "mr" {
+                if let Some(reviewer) = prompt_user("Enter reviewer username (prefix with '!' to remove): ") {
+                    run_glab_update(entity_type, iid, &["--reviewer", &reviewer]).await;
+                }
+            }
+        }
+        KeyCode::Char('g') => {
+            if entity_type == "mr" {
+                if let Some(target) = prompt_user("Enter target branch: ") {
+                    run_glab_update(entity_type, iid, &["--target-branch", &target]).await;
+                }
+            }
+        }
+        KeyCode::Char('c') => {
+            if entity_type == "issue" {
+                if let Some(confidential) = prompt_user("Make confidential? (y/n): ") {
+                    if confidential.to_lowercase() == "y" {
+                        run_glab_update(entity_type, iid, &["--confidential"]).await;
+                    } else if confidential.to_lowercase() == "n" {
+                        run_glab_update(entity_type, iid, &["--public"]).await;
+                    }
+                }
+            }
+        }
+        KeyCode::Char('u') => {
+            if entity_type == "issue" {
+                if let Some(due_date) = prompt_user("Enter due date (YYYY-MM-DD, or 'none' to clear): ") {
+                    if due_date.to_lowercase() == "none" {
+                        // glab doesn't have a direct clear flag for due date in update cli docs, but passing empty string or none is standard
+                        run_glab_update(entity_type, iid, &["--due-date", ""]).await;
+                    } else {
+                        run_glab_update(entity_type, iid, &["--due-date", &due_date]).await;
+                    }
+                }
+            }
+        }
+        KeyCode::Char('w') => {
+            if entity_type == "issue" {
+                if let Some(weight) = prompt_user("Enter weight (integer, or '0' to clear): ") {
+                    run_glab_update(entity_type, iid, &["--weight", &weight]).await;
+                }
             }
         }
         KeyCode::Char('d') => {
@@ -261,7 +329,14 @@ async fn main() -> Result<()> {
                 Event::Tick => app.tick(),
                 Event::PipelineJobs(id, jobs) => {
                     app.fetching_pipelines.remove(&id);
-                    app.pipeline_jobs.insert(id, jobs);
+                    app.pipeline_jobs.insert(id, jobs.clone());
+                    if let Some(idx) = app.pipelines.state.selected() {
+                        if let Some(p) = app.pipelines.items.get(idx) {
+                            if p.id == id {
+                                app.selected_pipeline_jobs = Some(jobs);
+                            }
+                        }
+                    }
                 }
                 Event::IssuesFetched(issues) => {
                     app.loading_tabs.remove(&app::Tab::Issues);
@@ -348,11 +423,17 @@ async fn main() -> Result<()> {
                                 if key_event.code == KeyCode::Char('n') {
                                     if let Some(title) = prompt_user("Enter issue title: ") {
                                         run_glab_cmd(&["issue", "create", "-y", "--title", &title]).await;
+                                        if let Some(client) = &app.gitlab_client {
+                                            spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                        }
                                     }
                                 } else if let Some(selected_idx) = app.issues.state.selected() {
                                     let issue_iid = app.issues.items.get(selected_idx).map(|item| item.iid);
                                     if let Some(iid) = issue_iid {
                                         handle_entity_update(&mut app, "issue", iid, key_event.code, &mut terminal).await;
+                                        if let Some(client) = &app.gitlab_client {
+                                            spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                        }
                                     }
                                 }
                             }
@@ -360,6 +441,9 @@ async fn main() -> Result<()> {
                                 if key_event.code == KeyCode::Char('n') {
                                     if let Some(issue_id) = prompt_user("Enter issue ID for new MR: ") {
                                         run_glab_cmd(&["mr", "create", "-i", &issue_id, "--copy-issue-labels", "--create-source-branch", "--squash-before-merge"]).await;
+                                        if let Some(client) = &app.gitlab_client {
+                                            spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                        }
                                     }
                                 } else if let Some(selected_idx) = app.mrs.state.selected() {
                                     let mr_info = app.mrs.items.get(selected_idx).map(|item| (item.iid, item.title.clone()));
@@ -367,6 +451,9 @@ async fn main() -> Result<()> {
                                         match key_event.code {
                                             KeyCode::Char('a') => {
                                                 run_glab_cmd(&["mr", "approve", &mr_iid.to_string()]).await;
+                                                if let Some(client) = &app.gitlab_client {
+                                                    spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                                }
                                             }
                                             KeyCode::Char('m') => {
                                                 run_glab_cmd(&["mr", "merge", &mr_iid.to_string(), "--remove-source-branch", "--squash"]).await;
@@ -376,6 +463,9 @@ async fn main() -> Result<()> {
                                                 } else {
                                                     let new_sel = selected_idx.min(app.mrs.items.len() - 1);
                                                     app.mrs.state.select(Some(new_sel));
+                                                }
+                                                if let Some(client) = &app.gitlab_client {
+                                                    spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
                                                 }
                                             }
                                             KeyCode::Char('f') => {
@@ -388,21 +478,16 @@ async fn main() -> Result<()> {
                                                 let is_draft = mr_title.starts_with("Draft:") || mr_title.starts_with("WIP:");
                                                 let action = if is_draft { "--ready" } else { "--draft" };
                                                 run_glab_update("mr", mr_iid, &[action]).await;
-                                                if let Some(mr) = app.mrs.items.iter_mut().find(|m| m.iid == mr_iid) {
-                                                    if is_draft {
-                                                        if mr.title.starts_with("Draft: ") {
-                                                            mr.title = mr.title.replacen("Draft: ", "", 1);
-                                                        } else if mr.title.starts_with("Draft:") {
-                                                            mr.title = mr.title.replacen("Draft:", "", 1);
-                                                        } else if mr.title.starts_with("WIP:") {
-                                                            mr.title = mr.title.replacen("WIP:", "", 1);
-                                                        }
-                                                    } else {
-                                                        mr.title = format!("Draft: {}", mr.title);
-                                                    }
+                                                if let Some(client) = &app.gitlab_client {
+                                                    spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
                                                 }
                                             }
-                                            _ => handle_entity_update(&mut app, "mr", mr_iid, key_event.code, &mut terminal).await,
+                                            _ => {
+                                                handle_entity_update(&mut app, "mr", mr_iid, key_event.code, &mut terminal).await;
+                                                if let Some(client) = &app.gitlab_client {
+                                                    spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -410,24 +495,40 @@ async fn main() -> Result<()> {
                             app::Tab::Pipelines => {
                                 if key_event.code == KeyCode::Char('p') {
                                     run_glab_cmd(&["ci", "run", "--mr"]).await;
-                                } else if let Some(jobs) = &app.selected_pipeline_jobs {
+                                } else if app.selected_pipeline_jobs.is_some() {
                                     if let Some(idx) = app.selected_job_index {
-                                        if let Some(job) = jobs.get(idx) {
+                                        let job_info = app.selected_pipeline_jobs.as_ref().and_then(|jobs| jobs.get(idx)).map(|j| (j.id, j.name.clone()));
+                                        if let Some((job_id, job_name)) = job_info {
                                             match key_event.code {
                                                 KeyCode::Char('r') => {
-                                                    let endpoint = format!("projects/{}/jobs/{}/retry", app.project_context.replace("/", "%2F"), job.id);
                                                     if let Some(client) = &app.gitlab_client {
-                                                        let _ = client.fetch_raw_api(&endpoint).await;
+                                                        if let Some(jobs_mut) = &mut app.selected_pipeline_jobs {
+                                                            if let Some(j) = jobs_mut.get_mut(idx) {
+                                                                j.status = "running".to_string();
+                                                            }
+                                                        }
+                                                        let client_clone = client.clone();
+                                                        let project_context = app.project_context.clone();
+                                                        let pipe_id = app.pipelines.items.get(app.pipelines.state.selected().unwrap()).unwrap().id;
+                                                        let tx = events.sender();
+                                                        tokio::spawn(async move {
+                                                            let endpoint = format!("projects/{}/jobs/{}/retry", project_context.replace("/", "%2F"), job_id);
+                                                            let _ = client_clone.fetch_raw_api(&endpoint).await;
+                                                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                                            if let Ok(jobs) = gitlab::pipelines::list_pipeline_jobs(&client_clone, &project_context, pipe_id).await {
+                                                                let _ = tx.send(Event::PipelineJobs(pipe_id, jobs));
+                                                            }
+                                                        });
                                                     }
                                                 }
                                                 KeyCode::Char('d') => {
-                                                    run_glab_cmd(&["job", "artifact", "master", &job.name]).await;
+                                                    run_glab_cmd(&["job", "artifact", "master", &job_name]).await;
                                                 }
                                                 KeyCode::Char('o') => {
-                                                    run_glab_cmd(&["job", "view", &job.id.to_string(), "-w"]).await;
+                                                    run_glab_cmd(&["job", "view", &job_id.to_string(), "-w"]).await;
                                                 }
                                                 KeyCode::Char('e') => {
-                                                    let temp_file = std::env::temp_dir().join(format!("job_{}_trace.txt", job.id));
+                                                    let temp_file = std::env::temp_dir().join(format!("job_{}_trace.txt", job_id));
                                                     if let Some(trace) = &app.job_trace {
                                                         let _ = std::fs::write(&temp_file, trace);
                                                     } else if let Some(_) = &app.gitlab_client {
@@ -458,22 +559,38 @@ async fn main() -> Result<()> {
                                         let pipe_id = item.id;
                                         match key_event.code {
                                             KeyCode::Char('r') => {
-                                                let endpoint = format!("projects/{}/pipelines/{}/retry", app.project_context.replace("/", "%2F"), pipe_id);
-                                                if let Some(client) = &app.gitlab_client {
-                                                    let _ = client.fetch_raw_api(&endpoint).await;
-                                                }
-                                                if let Some(p) = app.pipelines.items.iter_mut().find(|pipe| pipe.id == pipe_id) {
-                                                    p.status = "running".to_string();
-                                                }
+                                                 if let Some(p) = app.pipelines.items.iter_mut().find(|pipe| pipe.id == pipe_id) {
+                                                     p.status = "running".to_string();
+                                                 }
+                                                 if let Some(client) = &app.gitlab_client {
+                                                     let client_clone = client.clone();
+                                                     let project_context = app.project_context.clone();
+                                                     let tx = events.sender();
+                                                     let active_tab = app.active_tab;
+                                                     tokio::spawn(async move {
+                                                         let endpoint = format!("projects/{}/pipelines/{}/retry", project_context.replace("/", "%2F"), pipe_id);
+                                                         let _ = client_clone.fetch_raw_api(&endpoint).await;
+                                                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                                         spawn_refresh_active_tab(&client_clone, &project_context, active_tab, tx);
+                                                     });
+                                                 }
                                             }
                                             KeyCode::Char('d') => {
-                                                let endpoint = format!("projects/{}/pipelines/{}/cancel", app.project_context.replace("/", "%2F"), pipe_id);
-                                                if let Some(client) = &app.gitlab_client {
-                                                    let _ = client.fetch_raw_api(&endpoint).await;
-                                                }
-                                                if let Some(p) = app.pipelines.items.iter_mut().find(|pipe| pipe.id == pipe_id) {
-                                                    p.status = "canceled".to_string();
-                                                }
+                                                 if let Some(p) = app.pipelines.items.iter_mut().find(|pipe| pipe.id == pipe_id) {
+                                                     p.status = "canceled".to_string();
+                                                 }
+                                                 if let Some(client) = &app.gitlab_client {
+                                                     let client_clone = client.clone();
+                                                     let project_context = app.project_context.clone();
+                                                     let tx = events.sender();
+                                                     let active_tab = app.active_tab;
+                                                     tokio::spawn(async move {
+                                                         let endpoint = format!("projects/{}/pipelines/{}/cancel", project_context.replace("/", "%2F"), pipe_id);
+                                                         let _ = client_clone.fetch_raw_api(&endpoint).await;
+                                                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                                         spawn_refresh_active_tab(&client_clone, &project_context, active_tab, tx);
+                                                     });
+                                                 }
                                             }
                                             KeyCode::Char('o') => run_glab_cmd(&["ci", "view", &pipe_id.to_string(), "-w"]).await,
                                             _ => {}

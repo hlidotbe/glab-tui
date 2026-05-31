@@ -8,6 +8,16 @@ pub struct Author {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct Milestone {
+    pub title: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Assignee {
+    pub username: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct Issue {
     pub iid: u64,
     pub title: String,
@@ -16,6 +26,9 @@ pub struct Issue {
     pub labels: Vec<String>,
     pub updated_at: String,
     pub author: Author,
+    pub milestone: Option<Milestone>,
+    #[serde(default)]
+    pub assignees: Vec<Assignee>,
 }
 
 pub async fn list_issues(client: &GitlabClient, project_path: &str) -> Result<Vec<Issue>> {
@@ -23,3 +36,4 @@ pub async fn list_issues(client: &GitlabClient, project_path: &str) -> Result<Ve
     let endpoint = format!("/projects/{}/issues?state=opened", encoded_path);
     client.fetch_api(&endpoint).await
 }
+

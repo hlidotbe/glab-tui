@@ -251,31 +251,65 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 if let Some(selected) = app.issues.state.selected() {
                     if let Some(issue) = filtered_issues.get(selected) {
                         let labels = if issue.labels.is_empty() { "None".to_string() } else { issue.labels.join(", ") };
+                        let milestone = issue.milestone.as_ref().map(|m| m.title.as_str()).unwrap_or("None");
+                        let assignees = if issue.assignees.is_empty() {
+                            "None".to_string()
+                        } else {
+                            issue.assignees.iter().map(|a| format!("@{}", a.username)).collect::<Vec<_>>().join(", ")
+                        };
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
-                            Span::styled("Title:  ", Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD)),
+                            Span::styled("Title:     ", Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD)),
                             Span::styled(&issue.title, Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD)),
                         ]));
                         text.push(Line::from(""));
                         text.push(Line::from(vec![
-                            Span::styled("Author: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Author:    ", Style::default().fg(THEME.text_muted)),
                             Span::styled(format!("@{}", issue.author.username), Style::default().fg(THEME.blue)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("State:  ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Assignees: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(assignees, Style::default().fg(THEME.blue)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Milestone: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(milestone, Style::default().fg(THEME.purple)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("State:     ", Style::default().fg(THEME.text_muted)),
                             Span::styled(
                                 if issue.state == "opened" { "OPEN" } else { "CLOSED" },
                                 Style::default().fg(if issue.state == "opened" { THEME.green } else { THEME.red }).add_modifier(Modifier::BOLD)
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Updated:", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Updated:   ", Style::default().fg(THEME.text_muted)),
                             Span::styled(time_ago(&issue.updated_at), Style::default().fg(THEME.yellow)),
                         ]));
                         text.push(Line::from(""));
                         text.push(Line::from(vec![
-                            Span::styled("Labels: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Labels:    ", Style::default().fg(THEME.text_muted)),
                             Span::styled(labels, Style::default().fg(THEME.purple)),
+                        ]));
+                        text.push(Line::from(""));
+                        text.push(Line::from(vec![
+                            Span::styled("Commands:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  ctrl-t ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Title        ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("ctrl-l ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Labels", Style::default().fg(THEME.text_normal)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  ctrl-a ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Assignees    ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("ctrl-m ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Milestone", Style::default().fg(THEME.text_normal)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  ctrl-d ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Description", Style::default().fg(THEME.text_normal)),
                         ]));
                         f.render_widget(Paragraph::new(text).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
                     } else {
@@ -337,31 +371,92 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 if let Some(selected) = app.mrs.state.selected() {
                     if let Some(mr) = filtered_mrs.get(selected) {
                         let labels = if mr.labels.is_empty() { "None".to_string() } else { mr.labels.join(", ") };
+                        let milestone = mr.milestone.as_ref().map(|m| m.title.as_str()).unwrap_or("None");
+                        let assignees = if mr.assignees.is_empty() {
+                            "None".to_string()
+                        } else {
+                            mr.assignees.iter().map(|a| format!("@{}", a.username)).collect::<Vec<_>>().join(", ")
+                        };
+                        let reviewers = if mr.reviewers.is_empty() {
+                            "None".to_string()
+                        } else {
+                            mr.reviewers.iter().map(|r| format!("@{}", r.username)).collect::<Vec<_>>().join(", ")
+                        };
+                        let draft_status = if mr.draft { "DRAFT" } else { "READY" };
+                        let draft_color = if mr.draft { THEME.yellow } else { THEME.green };
+
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
-                            Span::styled("Title:  ", Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD)),
+                            Span::styled("Title:     ", Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD)),
                             Span::styled(&mr.title, Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD)),
                         ]));
                         text.push(Line::from(""));
                         text.push(Line::from(vec![
-                            Span::styled("Author: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Author:    ", Style::default().fg(THEME.text_muted)),
                             Span::styled(format!("@{}", mr.author.username), Style::default().fg(THEME.blue)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("State:  ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Assignees: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(assignees, Style::default().fg(THEME.blue)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Reviewers: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(reviewers, Style::default().fg(THEME.blue)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Milestone: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(milestone, Style::default().fg(THEME.purple)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Target:    ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(&mr.target_branch, Style::default().fg(THEME.purple)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("State:     ", Style::default().fg(THEME.text_muted)),
                             Span::styled(
                                 if mr.state == "opened" { "OPEN" } else if mr.state == "merged" { "MERGED" } else { "CLOSED" },
                                 Style::default().fg(if mr.state == "opened" { THEME.green } else if mr.state == "merged" { THEME.purple } else { THEME.red }).add_modifier(Modifier::BOLD)
                             ),
+                            Span::styled(" (", Style::default().fg(THEME.text_muted)),
+                            Span::styled(draft_status, Style::default().fg(draft_color).add_modifier(Modifier::BOLD)),
+                            Span::styled(")", Style::default().fg(THEME.text_muted)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Updated:", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Updated:   ", Style::default().fg(THEME.text_muted)),
                             Span::styled(time_ago(&mr.updated_at), Style::default().fg(THEME.yellow)),
                         ]));
                         text.push(Line::from(""));
                         text.push(Line::from(vec![
-                            Span::styled("Labels: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Labels:    ", Style::default().fg(THEME.text_muted)),
                             Span::styled(labels, Style::default().fg(THEME.purple)),
+                        ]));
+                        text.push(Line::from(""));
+                        text.push(Line::from(vec![
+                            Span::styled("Commands:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  ctrl-t ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Title        ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("ctrl-l ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Labels", Style::default().fg(THEME.text_normal)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  ctrl-a ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Assignees    ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("ctrl-v ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Reviewers", Style::default().fg(THEME.text_normal)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  ctrl-m ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Milestone    ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("ctrl-g ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Target Branch", Style::default().fg(THEME.text_normal)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  ctrl-r ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Toggle Draft ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("ctrl-d ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Description", Style::default().fg(THEME.text_normal)),
                         ]));
                         f.render_widget(Paragraph::new(text).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
                     } else {
@@ -453,6 +548,28 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         text.push(Line::from(""));
                         text.push(Line::from(vec![
                             Span::styled("Press Enter on a job to fetch trace.", Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC)),
+                        ]));
+                        text.push(Line::from(""));
+                        text.push(Line::from(vec![
+                            Span::styled("Commands:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  Enter ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("View Trace     ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("r ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Retry Job", Style::default().fg(THEME.text_normal)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  d     ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Download Art.  ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("o ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("View in Browser", Style::default().fg(THEME.text_normal)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  e     ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("View in Helix  ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("Esc ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Back to Pipes", Style::default().fg(THEME.text_normal)),
                         ]));
                         f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
                     }
@@ -568,6 +685,26 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             text.push(Line::from(""));
                             text.push(Line::from(vec![
                                 Span::styled("Press Enter to view detailed job logs.", Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC)),
+                            ]));
+                            text.push(Line::from(""));
+                            text.push(Line::from(vec![
+                                Span::styled("Commands:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
+                            ]));
+                            text.push(Line::from(vec![
+                                Span::styled("  Enter ❯ ", Style::default().fg(THEME.text_muted)),
+                                Span::styled("View Jobs     ", Style::default().fg(THEME.text_normal)),
+                                Span::styled("r ❯ ", Style::default().fg(THEME.text_muted)),
+                                Span::styled("Retry Pipeline", Style::default().fg(THEME.text_normal)),
+                            ]));
+                            text.push(Line::from(vec![
+                                Span::styled("  d     ❯ ", Style::default().fg(THEME.text_muted)),
+                                Span::styled("Cancel Pipe   ", Style::default().fg(THEME.text_normal)),
+                                Span::styled("o ❯ ", Style::default().fg(THEME.text_muted)),
+                                Span::styled("View in Browser", Style::default().fg(THEME.text_normal)),
+                            ]));
+                            text.push(Line::from(vec![
+                                Span::styled("  ctrl-p❯ ", Style::default().fg(THEME.text_muted)),
+                                Span::styled("Run MR Pipe", Style::default().fg(THEME.text_normal)),
                             ]));
                             f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
                         } else {

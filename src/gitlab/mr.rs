@@ -8,6 +8,21 @@ pub struct Author {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct Milestone {
+    pub title: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Assignee {
+    pub username: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Reviewer {
+    pub username: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct MergeRequest {
     pub iid: u64,
     pub title: String,
@@ -16,6 +31,13 @@ pub struct MergeRequest {
     pub labels: Vec<String>,
     pub updated_at: String,
     pub author: Author,
+    pub milestone: Option<Milestone>,
+    #[serde(default)]
+    pub assignees: Vec<Assignee>,
+    #[serde(default)]
+    pub reviewers: Vec<Reviewer>,
+    pub target_branch: String,
+    pub draft: bool,
 }
 
 pub async fn list_mrs(client: &GitlabClient, project_path: &str) -> Result<Vec<MergeRequest>> {
@@ -23,3 +45,4 @@ pub async fn list_mrs(client: &GitlabClient, project_path: &str) -> Result<Vec<M
     let endpoint = format!("/projects/{}/merge_requests?state=opened", encoded_path);
     client.fetch_api(&endpoint).await
 }
+
