@@ -44,8 +44,9 @@ impl EventHandler {
                 let timeout = tick_rate
                     .checked_sub(last_tick.elapsed())
                     .unwrap_or_else(|| Duration::from_secs(0));
+                let poll_timeout = std::cmp::min(timeout, Duration::from_millis(20));
 
-                if event::poll(timeout).expect("failed to poll new events") {
+                if event::poll(poll_timeout).expect("failed to poll new events") {
                     let e = match event::read().expect("failed to read event") {
                         CrosstermEvent::Key(e) => {
                             if e.kind == event::KeyEventKind::Press {

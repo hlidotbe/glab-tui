@@ -35,6 +35,7 @@ fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<Strin
 
     // Suspend TUI
     crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
+    std::thread::sleep(std::time::Duration::from_millis(50));
     crossterm::terminal::disable_raw_mode().ok()?;
     crossterm::execute!(
         std::io::stdout(),
@@ -68,6 +69,9 @@ fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<Strin
         crossterm::event::EnableMouseCapture,
     )
     .ok()?;
+    while crossterm::event::poll(std::time::Duration::from_secs(0)).unwrap_or(false) {
+        let _ = crossterm::event::read();
+    }
     let _ = terminal.clear();
     crate::event::PAUSED.store(false, std::sync::atomic::Ordering::Relaxed);
 
@@ -138,6 +142,7 @@ async fn apply_field_text_change(
 
 async fn run_glab_cmd(args: &[&str], terminal: &mut AppTerminal) {
     crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     disable_raw_mode().unwrap();
     execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
     
@@ -155,6 +160,9 @@ async fn run_glab_cmd(args: &[&str], terminal: &mut AppTerminal) {
     
     enable_raw_mode().unwrap();
     execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
+    while crossterm::event::poll(std::time::Duration::from_secs(0)).unwrap_or(false) {
+        let _ = crossterm::event::read();
+    }
     let _ = terminal.clear();
     crate::event::PAUSED.store(false, std::sync::atomic::Ordering::Relaxed);
 }
