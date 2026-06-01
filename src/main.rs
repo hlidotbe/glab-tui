@@ -565,7 +565,7 @@ async fn main() -> Result<()> {
                     } else {
                         false
                     };
-                    if match_id {
+                    if match_id && app.selected_pipeline_jobs.is_some() {
                         app.selected_pipeline_jobs = Some(jobs);
                         app.jobs_list_state.select(app.selected_job_index.or(Some(0)));
                     }
