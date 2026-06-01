@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Tab};
-use crate::utils::format::{truncate, time_ago, format_ref};
+use crate::utils::format::{truncate, time_ago, format_ref, render_markdown};
 
 struct Theme {
     bg: Color,
@@ -163,8 +163,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let sidebar_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7), // Tabs list (5 items + 2 borders)
-            Constraint::Min(0),    // Commands list
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
         ])
         .split(middle_chunks[0]);
 
@@ -505,11 +505,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 text.push(Line::from(vec![
                                     Span::styled("Description:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
                                 ]));
-                                for line in desc.lines() {
-                                    text.push(Line::from(vec![
-                                        Span::styled(line, Style::default().fg(THEME.text_normal)),
-                                    ]));
-                                }
+                                text.extend(render_markdown(desc));
                             }
                         }
                         f.render_widget(Paragraph::new(text).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
@@ -635,11 +631,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 text.push(Line::from(vec![
                                     Span::styled("Description:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
                                 ]));
-                                for line in desc.lines() {
-                                    text.push(Line::from(vec![
-                                        Span::styled(line, Style::default().fg(THEME.text_normal)),
-                                    ]));
-                                }
+                                text.extend(render_markdown(desc));
                             }
                         }
                         f.render_widget(Paragraph::new(text).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
