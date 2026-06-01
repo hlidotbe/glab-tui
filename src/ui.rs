@@ -727,7 +727,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             text.push(Line::from(vec![
                                 Span::styled(format!("{:15} ", s.name), Style::default().fg(THEME.text_normal)),
                                 Span::styled(" ❯ ", Style::default().fg(THEME.text_muted)),
-                                Span::styled(format!("{}% ", s.percent), Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+                                Span::styled(format!("{:>4} ", format!("{}%", s.percent)), Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
                                 Span::styled(format!("({}/{})", s.success, s.total), Style::default().fg(THEME.text_muted)),
                             ]));
                         }
@@ -833,7 +833,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                     text.push(Line::from(vec![
                                         Span::styled(format!("{:15} ", s.name), Style::default().fg(THEME.text_normal)),
                                         Span::styled(" ❯ ", Style::default().fg(THEME.text_muted)),
-                                        Span::styled(format!("{}% ", s.percent), Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+                                        Span::styled(format!("{:>4} ", format!("{}%", s.percent)), Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
                                         Span::styled(format!("({}/{})", s.success, s.total), Style::default().fg(THEME.text_muted)),
                                     ]));
                                 }

@@ -11,6 +11,6 @@ pub struct Release {
 
 pub async fn list_releases(client: &GitlabClient, project_path: &str) -> Result<Vec<Release>> {
     let encoded_path = project_path.replace("/", "%2F");
-    let endpoint = format!("/projects/{}/releases", encoded_path);
+    let endpoint = format!("/projects/{}/releases?per_page=100", encoded_path);
     client.fetch_api(&endpoint).await
 }

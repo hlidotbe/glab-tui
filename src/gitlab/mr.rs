@@ -43,7 +43,7 @@ pub struct MergeRequest {
 
 pub async fn list_mrs(client: &GitlabClient, project_path: &str) -> Result<Vec<MergeRequest>> {
     let encoded_path = project_path.replace("/", "%2F");
-    let endpoint = format!("/projects/{}/merge_requests?state=opened", encoded_path);
+    let endpoint = format!("/projects/{}/merge_requests?state=opened&per_page=100", encoded_path);
     client.fetch_api(&endpoint).await
 }
 

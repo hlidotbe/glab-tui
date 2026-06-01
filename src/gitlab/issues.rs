@@ -34,7 +34,7 @@ pub struct Issue {
 
 pub async fn list_issues(client: &GitlabClient, project_path: &str) -> Result<Vec<Issue>> {
     let encoded_path = project_path.replace("/", "%2F");
-    let endpoint = format!("/projects/{}/issues?state=opened", encoded_path);
+    let endpoint = format!("/projects/{}/issues?state=opened&per_page=100", encoded_path);
     client.fetch_api(&endpoint).await
 }
 

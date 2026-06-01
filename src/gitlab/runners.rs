@@ -12,6 +12,6 @@ pub struct Runner {
 
 pub async fn list_runners(client: &GitlabClient, project_path: &str) -> Result<Vec<Runner>> {
     let encoded_path = project_path.replace("/", "%2F");
-    let endpoint = format!("/projects/{}/runners?per_page=50", encoded_path);
+    let endpoint = format!("/projects/{}/runners?per_page=100", encoded_path);
     client.fetch_api(&endpoint).await
 }

@@ -12,7 +12,7 @@ pub struct Pipeline {
 
 pub async fn list_pipelines(client: &GitlabClient, project_path: &str) -> Result<Vec<Pipeline>> {
     let encoded_path = project_path.replace("/", "%2F");
-    let endpoint = format!("/projects/{}/pipelines?per_page=20", encoded_path);
+    let endpoint = format!("/projects/{}/pipelines?per_page=100", encoded_path);
     client.fetch_api(&endpoint).await
 }
 
