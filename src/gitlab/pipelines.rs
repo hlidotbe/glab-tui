@@ -54,7 +54,24 @@ pub async fn list_pipeline_jobs(client: &GitlabClient, project_path: &str, pipel
             }
         }
     }
-    all_jobs.reverse();
+    let mut stage_min_id = std::collections::HashMap::new();
+    for j in all_jobs.iter() {
+        let entry = stage_min_id.entry(j.stage.clone()).or_insert(j.id);
+        if j.id < *entry {
+            *entry = j.id;
+        }
+    }
+    all_jobs.sort_by(|a, b| {
+        let min_a = stage_min_id.get(&a.stage).cloned().unwrap_or(0);
+        let min_b = stage_min_id.get(&b.stage).cloned().unwrap_or(0);
+        if min_a != min_b {
+            min_a.cmp(&min_b)
+        } else if a.stage != b.stage {
+            a.stage.cmp(&b.stage)
+        } else {
+            a.id.cmp(&b.id)
+        }
+    });
     Ok(all_jobs)
 }
 
