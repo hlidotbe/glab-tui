@@ -54,7 +54,7 @@ pub async fn list_pipeline_jobs(client: &GitlabClient, project_path: &str, pipel
             }
         }
     }
-    
+    all_jobs.reverse();
     Ok(all_jobs)
 }
 

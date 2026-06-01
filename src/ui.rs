@@ -70,8 +70,6 @@ fn get_stages_summary(jobs: &[crate::gitlab::pipelines::Job]) -> Vec<StageSummar
         stage_jobs.entry(j.stage.clone()).or_insert_with(Vec::new).push(j.status.clone());
     }
 
-    stage_names.reverse();
-
     let mut summaries = Vec::new();
     for stage in stage_names {
         if let Some(statuses) = stage_jobs.get(&stage) {
