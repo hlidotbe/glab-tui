@@ -119,6 +119,8 @@ pub struct App {
     pub text_input: Option<TextInput>,
     pub jobs_list_state: TableState,
     pub job_trace_scroll: u16,
+    pub issues_scroll: u16,
+    pub mrs_scroll: u16,
     pub selected_pipelines: std::collections::HashSet<u64>,
     pub selected_jobs: std::collections::HashSet<u64>,
 }
@@ -150,6 +152,8 @@ impl Default for App {
             text_input: None,
             jobs_list_state: TableState::default(),
             job_trace_scroll: 0,
+            issues_scroll: 0,
+            mrs_scroll: 0,
             selected_pipelines: std::collections::HashSet::new(),
             selected_jobs: std::collections::HashSet::new(),
         }

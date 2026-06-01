@@ -235,6 +235,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "e", "Edit params");
             add_cmd(&mut commands_text, "f", "Search");
             add_cmd(&mut commands_text, "n", "New Issue");
+            add_cmd(&mut commands_text, "J/K", "Scroll Desc");
             add_cmd(&mut commands_text, "C-r", "Refresh");
             add_cmd(&mut commands_text, "q", "Quit");
         }
@@ -247,6 +248,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "v", "Diff/Changes");
             add_cmd(&mut commands_text, "o", "View Browser");
             add_cmd(&mut commands_text, "s", "Toggle Draft");
+            add_cmd(&mut commands_text, "J/K", "Scroll Desc");
             add_cmd(&mut commands_text, "C-r", "Refresh");
             add_cmd(&mut commands_text, "q", "Quit");
         }
@@ -406,7 +408,32 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 text.extend(render_markdown(desc));
                             }
                         }
-                        f.render_widget(Paragraph::new(text).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
+
+                        let viewport_height = middle_chunks[2].height.saturating_sub(2) as usize;
+                        let content_length = text.len();
+                        let max_scroll = content_length.saturating_sub(viewport_height) as u16;
+                        app.issues_scroll = app.issues_scroll.min(max_scroll);
+
+                        let title_suffix = if content_length > viewport_height {
+                            let percent = (app.issues_scroll as usize * 100) / max_scroll.max(1) as usize;
+                            format!(" [Shift+J/K | {}%] ", percent.min(100))
+                        } else {
+                            String::new()
+                        };
+
+                        let preview_block = Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(THEME.border))
+                            .title(format!(" Details{} ", title_suffix))
+                            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
+
+                        f.render_widget(
+                            Paragraph::new(text)
+                                .block(preview_block)
+                                .wrap(ratatui::widgets::Wrap { trim: true })
+                                .scroll((app.issues_scroll, 0)),
+                            middle_chunks[2]
+                        );
                     } else {
                         f.render_widget(Paragraph::new("").block(preview_block), middle_chunks[2]);
                     }
@@ -531,7 +558,32 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 text.extend(render_markdown(desc));
                             }
                         }
-                        f.render_widget(Paragraph::new(text).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
+
+                        let viewport_height = middle_chunks[2].height.saturating_sub(2) as usize;
+                        let content_length = text.len();
+                        let max_scroll = content_length.saturating_sub(viewport_height) as u16;
+                        app.mrs_scroll = app.mrs_scroll.min(max_scroll);
+
+                        let title_suffix = if content_length > viewport_height {
+                            let percent = (app.mrs_scroll as usize * 100) / max_scroll.max(1) as usize;
+                            format!(" [Shift+J/K | {}%] ", percent.min(100))
+                        } else {
+                            String::new()
+                        };
+
+                        let preview_block = Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(THEME.border))
+                            .title(format!(" Details{} ", title_suffix))
+                            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
+
+                        f.render_widget(
+                            Paragraph::new(text)
+                                .block(preview_block)
+                                .wrap(ratatui::widgets::Wrap { trim: true })
+                                .scroll((app.mrs_scroll, 0)),
+                            middle_chunks[2]
+                        );
                     } else {
                         f.render_widget(Paragraph::new("").block(preview_block), middle_chunks[2]);
                     }

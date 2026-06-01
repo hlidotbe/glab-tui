@@ -1418,6 +1418,28 @@ async fn main() -> Result<()> {
                     if !handled {
                         match key_event.code {
                             KeyCode::Char('q') => app.quit(),
+                            KeyCode::Char('J') => {
+                                match app.active_tab {
+                                    app::Tab::Issues => {
+                                        app.issues_scroll = app.issues_scroll.saturating_add(1);
+                                    }
+                                    app::Tab::MergeRequests => {
+                                        app.mrs_scroll = app.mrs_scroll.saturating_add(1);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            KeyCode::Char('K') => {
+                                match app.active_tab {
+                                    app::Tab::Issues => {
+                                        app.issues_scroll = app.issues_scroll.saturating_sub(1);
+                                    }
+                                    app::Tab::MergeRequests => {
+                                        app.mrs_scroll = app.mrs_scroll.saturating_sub(1);
+                                    }
+                                    _ => {}
+                                }
+                            }
                             KeyCode::Esc | KeyCode::Backspace => {
                                 if app.active_tab == app::Tab::Pipelines && app.selected_pipeline_jobs.is_some() {
                                     if app.job_trace.is_some() {
@@ -1506,8 +1528,14 @@ async fn main() -> Result<()> {
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 match app.active_tab {
-                                    app::Tab::Issues => app.issues.next(app.filtered_issues().len()),
-                                    app::Tab::MergeRequests => app.mrs.next(app.filtered_mrs().len()),
+                                    app::Tab::Issues => {
+                                        app.issues.next(app.filtered_issues().len());
+                                        app.issues_scroll = 0;
+                                    }
+                                    app::Tab::MergeRequests => {
+                                        app.mrs.next(app.filtered_mrs().len());
+                                        app.mrs_scroll = 0;
+                                    }
                                     app::Tab::Pipelines => {
                                         if app.job_trace.is_some() {
                                             app.job_trace_scroll = app.job_trace_scroll.saturating_add(1);
@@ -1529,8 +1557,14 @@ async fn main() -> Result<()> {
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
                                 match app.active_tab {
-                                    app::Tab::Issues => app.issues.previous(app.filtered_issues().len()),
-                                    app::Tab::MergeRequests => app.mrs.previous(app.filtered_mrs().len()),
+                                    app::Tab::Issues => {
+                                        app.issues.previous(app.filtered_issues().len());
+                                        app.issues_scroll = 0;
+                                    }
+                                    app::Tab::MergeRequests => {
+                                        app.mrs.previous(app.filtered_mrs().len());
+                                        app.mrs_scroll = 0;
+                                    }
                                     app::Tab::Pipelines => {
                                         if app.job_trace.is_some() {
                                             app.job_trace_scroll = app.job_trace_scroll.saturating_sub(1);
