@@ -216,7 +216,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 Span::styled("New Issue", Style::default().fg(THEME.text_normal)),
             ]));
             commands_text.push(Line::from(vec![
-                Span::styled(" F5 ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
+                Span::styled(" C-r", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
                 Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
             ]));
             commands_text.push(Line::from(vec![
@@ -258,7 +258,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 Span::styled("Toggle Draft", Style::default().fg(THEME.text_normal)),
             ]));
             commands_text.push(Line::from(vec![
-                Span::styled(" F5 ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
+                Span::styled(" C-r", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
                 Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
             ]));
             commands_text.push(Line::from(vec![
@@ -331,7 +331,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Span::styled("Search", Style::default().fg(THEME.text_normal)),
                 ]));
                 commands_text.push(Line::from(vec![
-                    Span::styled(" F5  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
+                    Span::styled(" C-r ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
                     Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
                 ]));
                 commands_text.push(Line::from(vec![
@@ -358,7 +358,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 Span::styled("Search", Style::default().fg(THEME.text_normal)),
             ]));
             commands_text.push(Line::from(vec![
-                Span::styled(" F5 ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
+                Span::styled(" C-r", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
                 Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
             ]));
             commands_text.push(Line::from(vec![
@@ -380,7 +380,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 Span::styled("Search", Style::default().fg(THEME.text_normal)),
             ]));
             commands_text.push(Line::from(vec![
-                Span::styled(" F5  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
+                Span::styled(" C-r ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
                 Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
             ]));
             commands_text.push(Line::from(vec![

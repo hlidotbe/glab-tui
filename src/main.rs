@@ -617,6 +617,20 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
+                    let is_refresh = key_event.code == KeyCode::F(5) ||
+                        (key_event.code == KeyCode::Char('r') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)) ||
+                        (key_event.code == KeyCode::Char('R') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL));
+
+                    if is_refresh && app.text_input.is_none() && app.edit_menu.is_none() && app.selector.is_none() {
+                        if let Some(client) = &app.gitlab_client {
+                            if !app.loading_tabs.contains(&app.active_tab) {
+                                app.loading_tabs.insert(app.active_tab);
+                                spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                            }
+                        }
+                        continue;
+                    }
+
                     if let Some(mut text_input) = app.text_input.take() {
                         match key_event.code {
                             KeyCode::Esc => {
@@ -1394,14 +1408,6 @@ async fn main() -> Result<()> {
 
                     if !handled {
                         match key_event.code {
-                            KeyCode::F(5) => {
-                                if let Some(client) = &app.gitlab_client {
-                                    if !app.loading_tabs.contains(&app.active_tab) {
-                                        app.loading_tabs.insert(app.active_tab);
-                                        spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
-                                    }
-                                }
-                            }
                             KeyCode::Char('q') => app.quit(),
                             KeyCode::Esc | KeyCode::Backspace => {
                                 if app.active_tab == app::Tab::Pipelines && app.selected_pipeline_jobs.is_some() {
