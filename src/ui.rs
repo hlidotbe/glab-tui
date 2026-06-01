@@ -133,7 +133,7 @@ fn append_stage_summaries(text: &mut Vec<Line<'static>>, jobs: &[crate::gitlab::
             _ => THEME.text_muted,
         };
         text.push(Line::from(vec![
-            Span::styled(format!("{:15} ", s.name), Style::default().fg(THEME.text_normal)),
+            Span::styled(format!("{:15} ", truncate(&s.name, 15)), Style::default().fg(THEME.text_normal)),
             Span::styled(" ❯ ", Style::default().fg(THEME.text_muted)),
             Span::styled(format!("{:>4} ", format!("{}%", s.percent)), Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
             Span::styled(format!("({}/{})", s.success, s.total), Style::default().fg(THEME.text_muted)),
@@ -331,17 +331,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Row::new(vec![
                         Cell::from(format!("#{}", i.iid)),
                         Cell::from(state_text).style(state_style),
-                        Cell::from(truncate(&i.title, 50)),
+                        Cell::from(truncate(&i.title, 100)),
                         Cell::from(truncate(&i.author.username, 15)).style(Style::default().fg(THEME.blue)),
                         Cell::from(time_ago(&i.updated_at)).style(Style::default().fg(THEME.yellow)),
                     ]).height(1)
                 });
 
                 let widths = [
-                    Constraint::Length(8),
+                    Constraint::Length(10),
                     Constraint::Length(10),
                     Constraint::Percentage(50),
-                    Constraint::Length(15),
+                    Constraint::Length(18),
                     Constraint::Length(15),
                 ];
 
@@ -462,17 +462,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Row::new(vec![
                         Cell::from(format!("!{}", m.iid)),
                         Cell::from(state_text).style(state_style),
-                        Cell::from(truncate(&m.title, 50)),
+                        Cell::from(truncate(&m.title, 100)),
                         Cell::from(truncate(&m.author.username, 15)).style(Style::default().fg(THEME.blue)),
                         Cell::from(time_ago(&m.updated_at)).style(Style::default().fg(THEME.yellow)),
                     ]).height(1)
                 });
 
                 let widths = [
-                    Constraint::Length(8),
+                    Constraint::Length(10),
                     Constraint::Length(10),
                     Constraint::Percentage(50),
-                    Constraint::Length(15),
+                    Constraint::Length(18),
                     Constraint::Length(15),
                 ];
 
@@ -692,7 +692,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Cell::from(format!("{}#{}", id_prefix, p.id)),
                             Cell::from(status_text).style(Style::default().fg(status_color).bg(bg_color).add_modifier(Modifier::BOLD)),
                             Cell::from(stages_dots),
-                            Cell::from(truncate(&format_ref(&p.r#ref), 40)).style(Style::default().fg(THEME.purple)),
+                            Cell::from(truncate(&format_ref(&p.r#ref), 100)).style(Style::default().fg(THEME.purple)),
                             Cell::from(time_ago(&p.updated_at)).style(Style::default().fg(THEME.yellow)),
                         ]).height(1)
                     });
@@ -788,17 +788,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     let desc = r.description.as_deref().unwrap_or("No description");
                     Row::new(vec![
                         Cell::from(r.id.to_string()),
-                        Cell::from(truncate(desc, 45)),
+                        Cell::from(truncate(desc, 100)),
                         Cell::from(status_text).style(Style::default().fg(status_color).bg(bg_color).add_modifier(Modifier::BOLD)),
                         Cell::from(r.active.to_string()).style(Style::default().fg(if r.active { THEME.green } else { THEME.red })),
                     ]).height(1)
                 });
 
                 let widths = [
-                    Constraint::Length(10),
-                    Constraint::Percentage(55),
                     Constraint::Length(12),
-                    Constraint::Length(8),
+                    Constraint::Percentage(55),
+                    Constraint::Length(14),
+                    Constraint::Length(10),
                 ];
 
                 let table = Table::new(rows, widths)
@@ -853,13 +853,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let rows = filtered_releases.iter().map(|r| {
                     Row::new(vec![
                         Cell::from(r.tag_name.clone()).style(Style::default().fg(THEME.green).add_modifier(Modifier::BOLD)),
-                        Cell::from(truncate(&r.name, 45)),
+                        Cell::from(truncate(&r.name, 100)),
                         Cell::from(truncate(&r.released_at, 10)).style(Style::default().fg(THEME.yellow)),
                     ]).height(1)
                 });
 
                 let widths = [
-                    Constraint::Length(16),
+                    Constraint::Length(20),
                     Constraint::Percentage(60),
                     Constraint::Length(12),
                 ];
