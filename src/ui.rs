@@ -15,6 +15,7 @@ struct Theme {
     border_focused: Color,
     header_fg: Color,
     highlight_bg: Color,
+    inactive_bg: Color,
     text_normal: Color,
     text_muted: Color,
     
@@ -32,24 +33,25 @@ struct Theme {
 }
 
 const THEME: Theme = Theme {
-    bg: Color::Rgb(24, 24, 37),            // base: #181825
-    border: Color::Rgb(88, 91, 112),       // surface1: #585b70
-    border_focused: Color::Rgb(250, 179, 135), // peach: #fab387
-    header_fg: Color::Rgb(137, 220, 235),  // sky: #89dceb
-    highlight_bg: Color::Rgb(49, 50, 68),  // surface0: #313244
-    text_normal: Color::Rgb(205, 214, 244),// text: #cdd6f4
-    text_muted: Color::Rgb(147, 153, 178), // subtext0: #9399b2
+    bg: Color::Rgb(18, 18, 20),            // dark slate base
+    border: Color::Rgb(80, 80, 88),        // muted gray border for inactive panes
+    border_focused: Color::Rgb(49, 191, 103), // vibrant green for active panes
+    header_fg: Color::Rgb(49, 191, 103),  // vibrant green for active headers
+    highlight_bg: Color::Rgb(49, 191, 103), // selection highlight background is green
+    inactive_bg: Color::Rgb(49, 50, 68),   // dark gray surface for selection hover or inactive elements
+    text_normal: Color::Rgb(216, 222, 233),// light text
+    text_muted: Color::Rgb(130, 130, 138), // muted gray text
     
-    green: Color::Rgb(166, 227, 161),       // green: #a6e3a1
-    green_bg: Color::Rgb(34, 55, 39),      // dark green
-    red: Color::Rgb(243, 139, 168),        // red: #f38ba8
-    red_bg: Color::Rgb(58, 26, 38),        // dark red
-    blue: Color::Rgb(137, 180, 250),       // blue: #89b4fa
-    blue_bg: Color::Rgb(30, 40, 59),       // dark blue
-    yellow: Color::Rgb(249, 226, 175),     // yellow: #f9e2af
-    yellow_bg: Color::Rgb(55, 45, 33),      // dark yellow
-    purple: Color::Rgb(203, 166, 247),     // lavender: #cba6f7
-    purple_bg: Color::Rgb(48, 30, 62),      // dark purple
+    green: Color::Rgb(49, 191, 103),       // success / open (vibrant green)
+    green_bg: Color::Rgb(20, 45, 28),      // dark green background for pill
+    red: Color::Rgb(224, 73, 83),          // failed / closed
+    red_bg: Color::Rgb(50, 20, 25),        // dark red background for pill
+    blue: Color::Rgb(61, 139, 255),        // running / active
+    blue_bg: Color::Rgb(15, 35, 60),       // dark blue background for pill
+    yellow: Color::Rgb(235, 180, 50),      // pending / warning
+    yellow_bg: Color::Rgb(45, 35, 15),     // dark yellow background for pill
+    purple: Color::Rgb(168, 122, 243),     // merged / releases
+    purple_bg: Color::Rgb(38, 25, 55),     // dark purple background for pill
 };
 
 struct StageSummary {
@@ -142,7 +144,7 @@ fn append_stage_summaries(text: &mut Vec<Line<'static>>, jobs: &[crate::gitlab::
 fn add_cmd(text: &mut Vec<Line<'static>>, key: &str, desc: &str) {
     let padded_key = format!(" {:^3} ", key);
     text.push(Line::from(vec![
-        Span::styled(padded_key, Style::default().bg(THEME.purple).fg(THEME.bg).add_modifier(Modifier::BOLD)),
+        Span::styled(padded_key, Style::default().bg(THEME.border_focused).fg(THEME.bg).add_modifier(Modifier::BOLD)),
         Span::styled(format!(" {}", desc), Style::default().fg(THEME.text_normal)),
     ]));
 }
@@ -160,7 +162,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     // Top: Title & Context (Zellij Vibe Horizontal Bar)
     let mut title_spans = vec![
-        Span::styled(" GLAB-TUI ", Style::default().bg(THEME.purple).fg(THEME.bg).add_modifier(Modifier::BOLD)),
+        Span::styled(" GLAB-TUI ", Style::default().bg(THEME.border_focused).fg(THEME.bg).add_modifier(Modifier::BOLD)),
         Span::styled(format!(" ❯ {} ", app.project_context), Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD)),
     ];
     if app.is_typing_search {
@@ -205,7 +207,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             let title = format!("  {}  ", t.title().to_uppercase());
             if *t == app.active_tab {
                 ListItem::new(title)
-                    .style(Style::default().bg(THEME.purple).fg(THEME.bg).add_modifier(Modifier::BOLD))
+                    .style(Style::default().bg(THEME.border_focused).fg(THEME.bg).add_modifier(Modifier::BOLD))
             } else {
                 ListItem::new(title)
                     .style(Style::default().fg(THEME.text_muted))
@@ -218,7 +220,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(THEME.border))
             .title(" Navigation ")
-            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+            .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
         );
     f.render_widget(sidebar, sidebar_chunks[0]);
 
@@ -227,7 +229,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(THEME.border))
         .title(" Commands ")
-        .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
+        .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD));
 
     let mut commands_text = Vec::new();
     match app.active_tab {
@@ -309,8 +311,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
         .title(tab_title)
         .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
     
-    let highlight_style = Style::default().bg(THEME.highlight_bg).fg(THEME.border_focused).add_modifier(Modifier::BOLD);
-    let header_style = Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD);
+    let highlight_style = Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD);
+    let header_style = Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD);
 
     match app.active_tab {
         Tab::Issues => {
@@ -355,7 +357,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(THEME.border))
                     .title(" Details ")
-                    .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
+                    .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD));
                 if let Some(selected) = app.issues.state.selected() {
                     if let Some(issue) = filtered_issues.get(selected) {
                         let labels = if issue.labels.is_empty() { "None".to_string() } else { issue.labels.join(", ") };
@@ -425,7 +427,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .borders(Borders::ALL)
                             .border_style(Style::default().fg(THEME.border))
                             .title(format!(" Details{} ", title_suffix))
-                            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
+                            .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD));
 
                         f.render_widget(
                             Paragraph::new(text)
@@ -486,7 +488,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(THEME.border))
                     .title(" Details ")
-                    .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
+                    .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD));
                 if let Some(selected) = app.mrs.state.selected() {
                     if let Some(mr) = filtered_mrs.get(selected) {
                         let labels = if mr.labels.is_empty() { "None".to_string() } else { mr.labels.join(", ") };
@@ -575,7 +577,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .borders(Borders::ALL)
                             .border_style(Style::default().fg(THEME.border))
                             .title(format!(" Details{} ", title_suffix))
-                            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
+                            .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD));
 
                         f.render_widget(
                             Paragraph::new(text)
@@ -603,14 +605,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             "success" => (" SUCCESS ", THEME.green, THEME.green_bg),
                             "failed" => ("  FAILED ", THEME.red, THEME.red_bg),
                             "running" => (" RUNNING ", THEME.blue, THEME.blue_bg),
-                            "canceled" => ("CANCELED ", THEME.text_muted, THEME.highlight_bg),
+                            "canceled" => ("CANCELED ", THEME.text_muted, THEME.inactive_bg),
                             "pending" => (" PENDING ", THEME.yellow, THEME.yellow_bg),
-                            "skipped" => (" SKIPPED ", THEME.text_muted, THEME.highlight_bg),
-                            "manual" => ("  MANUAL ", THEME.text_muted, THEME.highlight_bg),
-                            _ => (" UNKNOWN ", THEME.text_muted, THEME.highlight_bg),
+                            "skipped" => (" SKIPPED ", THEME.text_muted, THEME.inactive_bg),
+                            "manual" => ("  MANUAL ", THEME.text_muted, THEME.inactive_bg),
+                            _ => (" UNKNOWN ", THEME.text_muted, THEME.inactive_bg),
                         };
                         let style = if Some(i) == app.selected_job_index {
-                            Style::default().bg(THEME.highlight_bg).fg(THEME.border_focused).add_modifier(Modifier::BOLD)
+                            Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD)
                         } else {
                             Style::default()
                         };
@@ -646,7 +648,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     let preview_block = Block::default()
                         .borders(Borders::ALL)
                         .title(" Details / Trace ")
-                        .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+                        .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
                         .border_style(Style::default().fg(THEME.border));
                     if let Some(trace) = &app.job_trace {
                         f.render_widget(
@@ -673,11 +675,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             "success" => (" SUCCESS ", THEME.green, THEME.green_bg),
                             "failed" => ("  FAILED ", THEME.red, THEME.red_bg),
                             "running" => (" RUNNING ", THEME.blue, THEME.blue_bg),
-                            "canceled" => ("CANCELED ", THEME.text_muted, THEME.highlight_bg),
+                            "canceled" => ("CANCELED ", THEME.text_muted, THEME.inactive_bg),
                             "pending" => (" PENDING ", THEME.yellow, THEME.yellow_bg),
-                            "skipped" => (" SKIPPED ", THEME.text_muted, THEME.highlight_bg),
-                            "manual" => ("  MANUAL ", THEME.text_muted, THEME.highlight_bg),
-                            _ => (" UNKNOWN ", THEME.text_muted, THEME.highlight_bg),
+                            "skipped" => (" SKIPPED ", THEME.text_muted, THEME.inactive_bg),
+                            "manual" => ("  MANUAL ", THEME.text_muted, THEME.inactive_bg),
+                            _ => (" UNKNOWN ", THEME.text_muted, THEME.inactive_bg),
                         };
                         let stages_dots = if let Some(jobs) = app.pipeline_jobs.get(&p.id) {
                             get_stages_dots(jobs)
@@ -714,7 +716,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     let preview_block = Block::default()
                         .borders(Borders::ALL)
                         .title(" Details ")
-                        .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+                        .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
                         .border_style(Style::default().fg(THEME.border));
                     if let Some(selected) = app.pipelines.state.selected() {
                         if let Some(p) = filtered_pipelines.get(selected) {
@@ -781,7 +783,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         "online" => (" ONLINE  ", THEME.green, THEME.green_bg),
                         "paused" => (" PAUSED  ", THEME.yellow, THEME.yellow_bg),
                         "offline" => (" OFFLINE ", THEME.red, THEME.red_bg),
-                        _ => (" UNKNOWN ", THEME.text_muted, THEME.highlight_bg),
+                        _ => (" UNKNOWN ", THEME.text_muted, THEME.inactive_bg),
                     };
                     let desc = r.description.as_deref().unwrap_or("No description");
                     Row::new(vec![
@@ -810,7 +812,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
                     .title(" Details ")
-                    .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+                    .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
                     .border_style(Style::default().fg(THEME.border));
                 if let Some(selected) = app.runners.state.selected() {
                     if let Some(r) = filtered_runners.get(selected) {
@@ -873,7 +875,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
                     .title(" Details ")
-                    .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+                    .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
                     .border_style(Style::default().fg(THEME.border));
                 if let Some(selected) = app.releases.state.selected() {
                     if let Some(r) = filtered_releases.get(selected) {
@@ -932,7 +934,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         
         let items: Vec<ListItem> = menu.fields.iter().enumerate().map(|(i, (label, val))| {
             let style = if i == menu.selected_idx {
-                Style::default().bg(THEME.highlight_bg).fg(THEME.border_focused).add_modifier(Modifier::BOLD)
+                Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(THEME.text_normal)
             };
@@ -1034,7 +1036,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     let marker_color = if is_selected { THEME.border_focused } else { THEME.text_muted };
                     
                     let style = if i == selector.cursor_idx {
-                        Style::default().bg(THEME.highlight_bg).fg(THEME.border_focused).add_modifier(Modifier::BOLD)
+                        Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD)
                     } else {
                         Style::default().fg(THEME.text_normal)
                     };
