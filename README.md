@@ -1,1 +1,293 @@
 # glab-tui
+
+A terminal user interface (TUI) for GitLab, built on top of [`glab`](https://gitlab.com/gitlab-org/cli). Browse issues, merge requests, pipelines, runners, and releases without leaving your terminal.
+
+---
+
+## Features
+
+- **Issues** — list, filter, create, and edit issues (title, labels, assignees, milestone, due date, weight, confidentiality, description)
+- **Merge Requests** — list, filter, create MRs from issues, approve, merge, diff, and edit all MR metadata
+- **Pipelines** — inspect pipelines and their jobs, retry/cancel pipelines and individual jobs, stream job traces
+- **Runners** — list runners, pause/resume, and edit descriptions
+- **Releases** — browse releases and open them in a browser
+- **Live search** — fuzzy-filter any tab by pressing `f`
+- **Inline editing** — full edit menus with searchable multi-select selectors for labels, assignees, reviewers, and milestones
+- **External editor** — descriptions and freeform fields open in your `$EDITOR` / `$VISUAL`
+- **Lazy-load tabs** — data for each tab is only fetched the first time you switch to it; refresh with `F5` / `Ctrl+R`
+
+---
+
+## Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| **Rust** (stable, edition 2024) | Install via [rustup](https://rustup.rs/) |
+| **[`glab`](https://gitlab.com/gitlab-org/cli)** | Must be on `$PATH` and authenticated (`glab auth login`) |
+| **`git`** | Used to auto-detect the current project from `git remote get-url origin` |
+| **A terminal emulator** | Any terminal that supports 256 colours and Unicode |
+
+> **Windows note:** the binary works on Windows. Editor integration uses `cmd /c` automatically when `$OS` is Windows.
+
+---
+
+## Installation
+
+### From source
+
+```sh
+git clone https://github.com/rcieri/glab-tui
+cd glab-tui
+cargo build --release
+# The binary is at ./target/release/glab-tui
+```
+
+Copy the binary somewhere on your `$PATH`, e.g.:
+
+```sh
+cp target/release/glab-tui ~/.local/bin/
+```
+
+### With `cargo install` (from the repo root)
+
+```sh
+cargo install --path .
+```
+
+---
+
+## Configuration
+
+`glab-tui` has no config file of its own. All configuration is inherited from `glab`:
+
+```sh
+# Authenticate once:
+glab auth login
+
+# Verify:
+glab auth status
+```
+
+The active project is detected automatically from the `origin` remote of the Git repository in the current working directory. Run `glab-tui` from inside a GitLab-backed repo.
+
+### Editor
+
+Set `$EDITOR` or `$VISUAL` to control which editor opens for description and freeform fields:
+
+```sh
+export EDITOR=nvim   # or vim, nano, hx, code, etc.
+```
+
+The default fallback is `helix` (`hx`).
+
+---
+
+## Usage
+
+```sh
+# Run from inside a GitLab repository:
+cd /path/to/your/gitlab-repo
+glab-tui
+```
+
+The TUI will launch in the terminal, auto-detecting the project from your `git remote` and fetching the Issues tab immediately.
+
+---
+
+## Key Bindings
+
+### Global
+
+| Key | Action |
+|---|---|
+| `Tab` / `l` / `→` | Next tab |
+| `Shift+Tab` / `h` / `←` | Previous tab |
+| `j` / `↓` | Move selection down |
+| `k` / `↑` | Move selection up |
+| `f` | Open search / filter bar |
+| `Enter` / `Esc` (in search) | Close search bar |
+| `F5` / `Ctrl+R` | Refresh current tab |
+| `q` / `Esc` | Quit (or close current overlay) |
+
+---
+
+### Issues tab
+
+| Key | Action |
+|---|---|
+| `n` | Create new issue (prompts for title) |
+| `e` | Open edit menu for selected issue |
+| `J` | Scroll description panel down |
+| `K` | Scroll description panel up |
+
+**Issue edit menu fields**
+
+| Field | Input method |
+|---|---|
+| Title | Inline text input |
+| Labels | Searchable multi-select (fetched from GitLab) |
+| Assignees | Searchable multi-select (fetched from GitLab members) |
+| Milestone | Searchable single-select (fetched from GitLab) |
+| Confidential | Single-select: Public / Confidential |
+| Due Date | Inline text input (`YYYY-MM-DD`) |
+| Weight | Inline text input (integer) |
+| Description | Opens `$EDITOR` |
+
+---
+
+### Merge Requests tab
+
+| Key | Action |
+|---|---|
+| `n` | Create MR from issue ID (prompts for issue IID) |
+| `e` | Open edit menu for selected MR |
+| `a` | Approve selected MR |
+| `m` | Merge selected MR (squash + remove source branch) |
+| `v` | View diff of selected MR in terminal |
+| `o` | Open selected MR in browser |
+| `s` | Toggle Draft / Ready status |
+| `J` | Scroll description panel down |
+| `K` | Scroll description panel up |
+
+**MR edit menu fields**
+
+| Field | Input method |
+|---|---|
+| Title | Inline text input |
+| Labels | Searchable multi-select |
+| Assignees | Searchable multi-select |
+| Reviewers | Searchable multi-select |
+| Milestone | Searchable single-select |
+| Target Branch | Inline text input |
+| Status (Draft/Ready) | Single-select |
+| Description | Opens `$EDITOR` |
+
+---
+
+### Pipelines tab
+
+| Key | Action |
+|---|---|
+| `Enter` | Drill into selected pipeline (show its jobs) |
+| `Esc` / `Backspace` | Go back (jobs → pipelines, trace → jobs) |
+| `p` | Trigger a new pipeline (`glab ci run --mr`) |
+| `r` | Retry selected pipeline (or all checked pipelines) |
+| `d` | Cancel selected pipeline |
+| `o` | Open pipeline in browser |
+| `Space` | Check/uncheck pipeline for bulk retry |
+| `j` / `↓` | (in job view) move down |
+| `k` / `↑` | (in job view) move up |
+
+**Inside a pipeline (job view)**
+
+| Key | Action |
+|---|---|
+| `Enter` | Fetch and display job trace |
+| `r` | Retry selected job (or all checked jobs) |
+| `d` | Download job artifact |
+| `o` | Open job in browser |
+| `e` | Open job trace in `$EDITOR` |
+| `Space` | Check/uncheck job for bulk retry |
+| `j` / `↓` | (in trace view) scroll down |
+| `k` / `↑` | (in trace view) scroll up |
+
+---
+
+### Runners tab
+
+| Key | Action |
+|---|---|
+| `p` | Pause selected runner |
+| `r` | Resume (un-pause) selected runner |
+| `e` | Edit runner description (inline text input) |
+
+---
+
+### Releases tab
+
+| Key | Action |
+|---|---|
+| `Enter` | View release details in terminal |
+| `o` | Open release in browser |
+
+---
+
+### Selector overlays (labels, assignees, etc.)
+
+| Key | Action |
+|---|---|
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
+| `Space` | Toggle selection |
+| `f` / `/` / `i` | Enter filter/search mode |
+| `Backspace` | Delete last character in filter |
+| `Enter` | Confirm selection and apply |
+| `Esc` | Cancel and return to edit menu |
+
+> If you type a value that doesn't exist in the list, a **`+ Create "…"`** option appears at the top, letting you create a new label inline.
+
+---
+
+## Dependencies
+
+| Crate | Version | Purpose |
+|---|---|---|
+| [`ratatui`](https://crates.io/crates/ratatui) | 0.29 | TUI rendering framework |
+| [`crossterm`](https://crates.io/crates/crossterm) | 0.28 | Cross-platform terminal I/O and event streaming |
+| [`tokio`](https://crates.io/crates/tokio) | 1.38 (full) | Async runtime for concurrent data fetching |
+| [`serde`](https://crates.io/crates/serde) | 1.0 (derive) | Serialization / deserialization |
+| [`serde_json`](https://crates.io/crates/serde_json) | 1.0 | Parsing JSON responses from `glab api` |
+| [`anyhow`](https://crates.io/crates/anyhow) | 1.0 | Ergonomic error handling |
+| [`chrono`](https://crates.io/crates/chrono) | 0.4 | Timestamp formatting ("2 hours ago") |
+| [`tempfile`](https://crates.io/crates/tempfile) | 3.10 | Temporary files for editor integration |
+
+All API calls are made by shelling out to `glab api` — no GitLab personal access token or direct HTTP client is required inside the binary.
+
+---
+
+## Project Structure
+
+```
+src/
+├── main.rs          # Entry point, event loop, all key-binding handlers
+├── app.rs           # App state, Tab enum, filtering logic
+├── event.rs         # Async event handler (keyboard, tick, async data events)
+├── ui.rs            # Ratatui render functions for every tab and overlay
+├── gitlab/
+│   ├── mod.rs       # Module declarations
+│   ├── client.rs    # GitlabClient (wraps `glab api`), project context detection
+│   ├── issues.rs    # Issue type + list/get API calls
+│   ├── mr.rs        # MergeRequest type + list/get API calls
+│   ├── pipelines.rs # Pipeline + Job types, list/fetch/retry logic, unit tests
+│   ├── runners.rs   # Runner type + list API call
+│   └── releases.rs  # Release type + list API call
+└── utils/
+    ├── mod.rs       # Module declarations
+    ├── format.rs    # Time formatting helpers (time_ago, etc.)
+    └── ui.rs        # StatefulTable generic helper
+```
+
+---
+
+## Running Tests
+
+```sh
+cargo test
+```
+
+There is currently a unit test suite for the pipeline job deduplication and stage-ordering logic in [`src/gitlab/pipelines.rs`](src/gitlab/pipelines.rs).
+
+---
+
+## Contributing
+
+1. Fork the repo and create a feature branch.
+2. Keep commits atomic and follow [Conventional Commits](https://www.conventionalcommits.org/).
+3. Run `cargo fmt` and `cargo clippy -- -D warnings` before opening a PR.
+4. Add or update tests where relevant.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE) if present, or treat as unlicensed until one is added.
