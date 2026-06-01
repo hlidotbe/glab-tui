@@ -18,6 +18,7 @@ pub enum Event {
     RunnersFetched(Vec<crate::gitlab::runners::Runner>),
     ReleasesFetched(Vec<crate::gitlab::releases::Release>),
     SelectorItemsFetched(Vec<String>),
+    FetchFailed(crate::app::Tab, String),
 }
 
 #[derive(Debug)]

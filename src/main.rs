@@ -472,28 +472,33 @@ fn spawn_refresh_active_tab(
     tokio::spawn(async move {
         match tab {
             app::Tab::Issues => {
-                if let Ok(issues) = gitlab::issues::list_issues(&client, &project_context).await {
-                    let _ = tx.send(Event::IssuesFetched(issues));
+                match gitlab::issues::list_issues(&client, &project_context).await {
+                    Ok(issues) => { let _ = tx.send(Event::IssuesFetched(issues)); }
+                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch issues: {}", e))); }
                 }
             }
             app::Tab::MergeRequests => {
-                if let Ok(mrs) = gitlab::mr::list_mrs(&client, &project_context).await {
-                    let _ = tx.send(Event::MrsFetched(mrs));
+                match gitlab::mr::list_mrs(&client, &project_context).await {
+                    Ok(mrs) => { let _ = tx.send(Event::MrsFetched(mrs)); }
+                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch MRs: {}", e))); }
                 }
             }
             app::Tab::Pipelines => {
-                if let Ok(pipelines) = gitlab::pipelines::list_pipelines(&client, &project_context).await {
-                    let _ = tx.send(Event::PipelinesFetched(pipelines));
+                match gitlab::pipelines::list_pipelines(&client, &project_context).await {
+                    Ok(pipelines) => { let _ = tx.send(Event::PipelinesFetched(pipelines)); }
+                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch pipelines: {}", e))); }
                 }
             }
             app::Tab::Runners => {
-                if let Ok(runners) = gitlab::runners::list_runners(&client, &project_context).await {
-                    let _ = tx.send(Event::RunnersFetched(runners));
+                match gitlab::runners::list_runners(&client, &project_context).await {
+                    Ok(runners) => { let _ = tx.send(Event::RunnersFetched(runners)); }
+                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch runners: {}", e))); }
                 }
             }
             app::Tab::Releases => {
-                if let Ok(releases) = gitlab::releases::list_releases(&client, &project_context).await {
-                    let _ = tx.send(Event::ReleasesFetched(releases));
+                match gitlab::releases::list_releases(&client, &project_context).await {
+                    Ok(releases) => { let _ = tx.send(Event::ReleasesFetched(releases)); }
+                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch releases: {}", e))); }
                 }
             }
         }
@@ -608,6 +613,10 @@ async fn main() -> Result<()> {
                         selector.is_loading = false;
                         app.selector = Some(selector);
                     }
+                }
+                Event::FetchFailed(tab, err_msg) => {
+                    app.loading_tabs.remove(&tab);
+                    app.error_message = Some(err_msg);
                 }
                 Event::Key(key_event) => {
                     if app.error_message.is_some() {

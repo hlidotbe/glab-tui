@@ -32,24 +32,24 @@ struct Theme {
 }
 
 const THEME: Theme = Theme {
-    bg: Color::Rgb(17, 17, 17),            // base: #111111
-    border: Color::Rgb(119, 119, 119),     // cmnt: #777777
-    border_focused: Color::Rgb(238, 119, 17), // fire: #EE7711
-    header_fg: Color::Rgb(238, 187, 119),  // peach: #EEBB77
-    highlight_bg: Color::Rgb(51, 51, 51),  // sel: #333333
-    text_normal: Color::Rgb(238, 238, 238),// text: #EEEEEE
-    text_muted: Color::Rgb(119, 119, 119), // cmnt: #777777
+    bg: Color::Rgb(24, 24, 37),            // base: #181825
+    border: Color::Rgb(88, 91, 112),       // surface1: #585b70
+    border_focused: Color::Rgb(250, 179, 135), // peach: #fab387
+    header_fg: Color::Rgb(137, 220, 235),  // sky: #89dceb
+    highlight_bg: Color::Rgb(49, 50, 68),  // surface0: #313244
+    text_normal: Color::Rgb(205, 214, 244),// text: #cdd6f4
+    text_muted: Color::Rgb(147, 153, 178), // subtext0: #9399b2
     
-    green: Color::Rgb(102, 204, 51),       // grass: #66CC33
-    green_bg: Color::Rgb(34, 51, 17),      // dark green
-    red: Color::Rgb(238, 119, 119),        // rose: #EE7777
-    red_bg: Color::Rgb(51, 17, 17),        // dark red
-    blue: Color::Rgb(119, 170, 170),       // sky: #77AAAA
-    blue_bg: Color::Rgb(17, 34, 34),       // dark blue
-    yellow: Color::Rgb(238, 238, 17),      // sun: #EEEE11
-    yellow_bg: Color::Rgb(51, 51, 17),      // dark yellow
-    purple: Color::Rgb(119, 85, 153),      // wine: #775599
-    purple_bg: Color::Rgb(34, 17, 34),      // dark purple
+    green: Color::Rgb(166, 227, 161),       // green: #a6e3a1
+    green_bg: Color::Rgb(34, 55, 39),      // dark green
+    red: Color::Rgb(243, 139, 168),        // red: #f38ba8
+    red_bg: Color::Rgb(58, 26, 38),        // dark red
+    blue: Color::Rgb(137, 180, 250),       // blue: #89b4fa
+    blue_bg: Color::Rgb(30, 40, 59),       // dark blue
+    yellow: Color::Rgb(249, 226, 175),     // yellow: #f9e2af
+    yellow_bg: Color::Rgb(55, 45, 33),      // dark yellow
+    purple: Color::Rgb(203, 166, 247),     // lavender: #cba6f7
+    purple_bg: Color::Rgb(48, 30, 62),      // dark purple
 };
 
 struct StageSummary {
@@ -120,32 +120,62 @@ fn get_stages_dots(jobs: &[crate::gitlab::pipelines::Job]) -> String {
     dots
 }
 
+fn append_stage_summaries(text: &mut Vec<Line<'static>>, jobs: &[crate::gitlab::pipelines::Job]) {
+    let summaries = get_stages_summary(jobs);
+    for s in summaries {
+        let status_color = match s.status.as_str() {
+            "success" => THEME.green,
+            "failed" => THEME.red,
+            "running" => THEME.blue,
+            "pending" => THEME.yellow,
+            _ => THEME.text_muted,
+        };
+        text.push(Line::from(vec![
+            Span::styled(format!("{:15} ", s.name), Style::default().fg(THEME.text_normal)),
+            Span::styled(" ❯ ", Style::default().fg(THEME.text_muted)),
+            Span::styled(format!("{:>4} ", format!("{}%", s.percent)), Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("({}/{})", s.success, s.total), Style::default().fg(THEME.text_muted)),
+        ]));
+    }
+}
+
+fn add_cmd(text: &mut Vec<Line<'static>>, key: &str, desc: &str) {
+    let padded_key = format!(" {:^3} ", key);
+    text.push(Line::from(vec![
+        Span::styled(padded_key, Style::default().bg(THEME.purple).fg(THEME.bg).add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" {}", desc), Style::default().fg(THEME.text_normal)),
+    ]));
+}
+
 pub fn render(f: &mut Frame, app: &mut App) {
     let size = f.area();
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(2),
             Constraint::Min(0),
         ])
         .split(size);
 
-    // Top: Title & Context
-    let title_text = if app.is_typing_search {
-        format!(" 🦊 GitLab TUI | {} | Search: {}_ ", app.project_context, app.search_query)
+    // Top: Title & Context (Zellij Vibe Horizontal Bar)
+    let mut title_spans = vec![
+        Span::styled(" GLAB-TUI ", Style::default().bg(THEME.purple).fg(THEME.bg).add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" ❯ {} ", app.project_context), Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD)),
+    ];
+    if app.is_typing_search {
+        title_spans.push(Span::styled(" SEARCHING ", Style::default().bg(THEME.yellow).fg(THEME.bg).add_modifier(Modifier::BOLD)));
+        title_spans.push(Span::styled(format!(" {}_ ", app.search_query), Style::default().fg(THEME.yellow)));
     } else if !app.search_query.is_empty() {
-        format!(" 🦊 GitLab TUI | {} | Search: {} ", app.project_context, app.search_query)
-    } else {
-        format!(" 🦊 GitLab TUI | {} ", app.project_context)
-    };
+        title_spans.push(Span::styled(" FILTERED ", Style::default().bg(THEME.yellow).fg(THEME.bg).add_modifier(Modifier::BOLD)));
+        title_spans.push(Span::styled(format!(" {} ", app.search_query), Style::default().fg(THEME.yellow)));
+    }
 
-    let title = Paragraph::new(title_text)
-        .style(Style::default().fg(THEME.border_focused).bg(THEME.bg).add_modifier(Modifier::BOLD))
+    let title = Paragraph::new(Line::from(title_spans))
+        .style(Style::default().bg(THEME.bg))
         .block(Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(THEME.border_focused))
+            .borders(Borders::BOTTOM)
+            .border_style(Style::default().fg(THEME.border))
         );
     f.render_widget(title, chunks[0]);
 
@@ -172,11 +202,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let sidebar_items: Vec<ListItem> = Tab::ALL
         .iter()
         .map(|t| {
+            let title = format!("  {}  ", t.title().to_uppercase());
             if *t == app.active_tab {
-                ListItem::new(format!(" ❯ {} ", t.title()))
-                    .style(Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD))
+                ListItem::new(title)
+                    .style(Style::default().bg(THEME.purple).fg(THEME.bg).add_modifier(Modifier::BOLD))
             } else {
-                ListItem::new(format!("   {} ", t.title()))
+                ListItem::new(title)
                     .style(Style::default().fg(THEME.text_muted))
             }
         })
@@ -185,7 +216,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let sidebar = List::new(sidebar_items)
         .block(Block::default()
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(THEME.border))
             .title(" Navigation ")
             .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
@@ -195,7 +225,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // Render Commands sidebar block
     let commands_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(THEME.border))
         .title(" Commands ")
         .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
@@ -203,190 +232,61 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let mut commands_text = Vec::new();
     match app.active_tab {
         Tab::Issues => {
-            commands_text.push(Line::from(vec![
-                Span::styled(" e  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Edit params", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" f  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Search", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" n  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("New Issue", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" C-r", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" q  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Quit", Style::default().fg(THEME.text_normal)),
-            ]));
+            add_cmd(&mut commands_text, "e", "Edit params");
+            add_cmd(&mut commands_text, "f", "Search");
+            add_cmd(&mut commands_text, "n", "New Issue");
+            add_cmd(&mut commands_text, "C-r", "Refresh");
+            add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::MergeRequests => {
-            commands_text.push(Line::from(vec![
-                Span::styled(" e  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Edit params", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" f  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Search", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" n  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("New MR", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" m  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Merge MR", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" a  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Approve MR", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" v  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Diff/Changes", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" o  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("View Browser", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" s  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Toggle Draft", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" C-r", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" q  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Quit", Style::default().fg(THEME.text_normal)),
-            ]));
+            add_cmd(&mut commands_text, "e", "Edit params");
+            add_cmd(&mut commands_text, "f", "Search");
+            add_cmd(&mut commands_text, "n", "New MR");
+            add_cmd(&mut commands_text, "m", "Merge MR");
+            add_cmd(&mut commands_text, "a", "Approve MR");
+            add_cmd(&mut commands_text, "v", "Diff/Changes");
+            add_cmd(&mut commands_text, "o", "View Browser");
+            add_cmd(&mut commands_text, "s", "Toggle Draft");
+            add_cmd(&mut commands_text, "C-r", "Refresh");
+            add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::Pipelines => {
             if app.job_trace.is_some() {
-                commands_text.push(Line::from(vec![
-                    Span::styled(" j/k ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Scroll Trace", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" Esc ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Close Trace", Style::default().fg(THEME.text_normal)),
-                ]));
+                add_cmd(&mut commands_text, "j/k", "Scroll Trace");
+                add_cmd(&mut commands_text, "Esc", "Close Trace");
             } else if app.selected_pipeline_jobs.is_some() {
-                commands_text.push(Line::from(vec![
-                    Span::styled(" Ent ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("View Trace", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" Spc ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Toggle Select", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" r   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Retry Job(s)", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" d   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Download Art", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" o   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("View Browser", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" e   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("View Helix", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" Esc ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Back to Pipes", Style::default().fg(THEME.text_normal)),
-                ]));
+                add_cmd(&mut commands_text, "Ent", "View Trace");
+                add_cmd(&mut commands_text, "Spc", "Toggle Select");
+                add_cmd(&mut commands_text, "r", "Retry Job(s)");
+                add_cmd(&mut commands_text, "d", "Download Art");
+                add_cmd(&mut commands_text, "o", "View Browser");
+                add_cmd(&mut commands_text, "e", "View Helix");
+                add_cmd(&mut commands_text, "Esc", "Back to Pipes");
             } else {
-                commands_text.push(Line::from(vec![
-                    Span::styled(" Ent ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("View Jobs", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" r   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Retry Pipe", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" p   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Run MR Pipe", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" c   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Cancel Pipe", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" o   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("View Browser", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" f   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Search", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" C-r ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
-                ]));
-                commands_text.push(Line::from(vec![
-                    Span::styled(" q   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                    Span::styled("Quit", Style::default().fg(THEME.text_normal)),
-                ]));
+                add_cmd(&mut commands_text, "Ent", "View Jobs");
+                add_cmd(&mut commands_text, "r", "Retry Pipe");
+                add_cmd(&mut commands_text, "p", "Run MR Pipe");
+                add_cmd(&mut commands_text, "c", "Cancel Pipe");
+                add_cmd(&mut commands_text, "o", "View Browser");
+                add_cmd(&mut commands_text, "f", "Search");
+                add_cmd(&mut commands_text, "C-r", "Refresh");
+                add_cmd(&mut commands_text, "q", "Quit");
             }
         }
         Tab::Runners => {
-            commands_text.push(Line::from(vec![
-                Span::styled(" p  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Pause", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" r  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Resume", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" e  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Edit Desc", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" f  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Search", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" C-r", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" q  ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Quit", Style::default().fg(THEME.text_normal)),
-            ]));
+            add_cmd(&mut commands_text, "p", "Pause");
+            add_cmd(&mut commands_text, "r", "Resume");
+            add_cmd(&mut commands_text, "e", "Edit Desc");
+            add_cmd(&mut commands_text, "f", "Search");
+            add_cmd(&mut commands_text, "C-r", "Refresh");
+            add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::Releases => {
-            commands_text.push(Line::from(vec![
-                Span::styled(" Ent ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("View Notes", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" o   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("View Browser", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" f   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Search", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" C-r ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
-            ]));
-            commands_text.push(Line::from(vec![
-                Span::styled(" q   ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("Quit", Style::default().fg(THEME.text_normal)),
-            ]));
+            add_cmd(&mut commands_text, "Ent", "View Notes");
+            add_cmd(&mut commands_text, "o", "View Browser");
+            add_cmd(&mut commands_text, "f", "Search");
+            add_cmd(&mut commands_text, "C-r", "Refresh");
+            add_cmd(&mut commands_text, "q", "Quit");
         }
     }
 
@@ -403,7 +303,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
     };
     let main_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(THEME.border_focused))
         .title(tab_title)
         .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
@@ -415,7 +314,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Tab::Issues => {
             if app.issues.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
                 f.render_widget(Paragraph::new("\n\n Loading issues...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
-                f.render_widget(Paragraph::new("Select an item to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
+                f.render_widget(Paragraph::new("Select an item to view details...").block(Block::default().borders(Borders::ALL).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             } else {
                 let filtered_issues = App::filter_issues_list(&app.issues.items, &app.search_query);
                 
@@ -452,7 +351,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(THEME.border))
                     .title(" Details ")
                     .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
@@ -520,7 +418,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Tab::MergeRequests => {
             if app.mrs.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
                 f.render_widget(Paragraph::new("\n\n Loading merge requests...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
-                f.render_widget(Paragraph::new("Select an item to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
+                f.render_widget(Paragraph::new("Select an item to view details...").block(Block::default().borders(Borders::ALL).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             } else {
                 let filtered_mrs = App::filter_mrs_list(&app.mrs.items, &app.search_query);
                 
@@ -559,7 +457,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(THEME.border))
                     .title(" Details ")
                     .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
@@ -646,7 +543,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Tab::Pipelines => {
             if app.pipelines.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
                 f.render_widget(Paragraph::new("\n\n Loading pipelines...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
-                f.render_widget(Paragraph::new("Select a pipeline to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
+                f.render_widget(Paragraph::new("Select a pipeline to view details...").block(Block::default().borders(Borders::ALL).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             } else {
                 if let Some(jobs) = &app.selected_pipeline_jobs {
                     let rows = jobs.iter().enumerate().map(|(i, j)| {
@@ -686,7 +583,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .header(Row::new(vec!["ID", "Stage", "Status", "Name"]).style(header_style).height(1))
                         .block(Block::default()
                             .borders(Borders::ALL)
-                            .border_type(BorderType::Rounded)
                             .title(" Jobs (Esc to go back) ")
                             .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
                             .border_style(Style::default().fg(THEME.border_focused)));
@@ -697,7 +593,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                     let preview_block = Block::default()
                         .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
                         .title(" Details / Trace ")
                         .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
                         .border_style(Style::default().fg(THEME.border));
@@ -710,27 +605,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             middle_chunks[2],
                         );
                     } else {
-                        let summaries = get_stages_summary(jobs);
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
                             Span::styled("Stages Success Rate:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
                         ]));
                         text.push(Line::from(""));
-                        for s in summaries {
-                            let status_color = match s.status.as_str() {
-                                "success" => THEME.green,
-                                "failed" => THEME.red,
-                                "running" => THEME.blue,
-                                "pending" => THEME.yellow,
-                                _ => THEME.text_muted,
-                            };
-                            text.push(Line::from(vec![
-                                Span::styled(format!("{:15} ", s.name), Style::default().fg(THEME.text_normal)),
-                                Span::styled(" ❯ ", Style::default().fg(THEME.text_muted)),
-                                Span::styled(format!("{:>4} ", format!("{}%", s.percent)), Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
-                                Span::styled(format!("({}/{})", s.success, s.total), Style::default().fg(THEME.text_muted)),
-                            ]));
-                        }
+                        append_stage_summaries(&mut text, jobs);
                         f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
                     }
                 } else {
@@ -781,7 +661,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                     let preview_block = Block::default()
                         .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
                         .title(" Details ")
                         .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
                         .border_style(Style::default().fg(THEME.border));
@@ -821,22 +700,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                     Span::styled("Stages Success Rate:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
                                 ]));
                                 text.push(Line::from(""));
-                                let summaries = get_stages_summary(jobs);
-                                for s in summaries {
-                                    let status_color = match s.status.as_str() {
-                                        "success" => THEME.green,
-                                        "failed" => THEME.red,
-                                        "running" => THEME.blue,
-                                        "pending" => THEME.yellow,
-                                        _ => THEME.text_muted,
-                                    };
-                                    text.push(Line::from(vec![
-                                        Span::styled(format!("{:15} ", s.name), Style::default().fg(THEME.text_normal)),
-                                        Span::styled(" ❯ ", Style::default().fg(THEME.text_muted)),
-                                        Span::styled(format!("{:>4} ", format!("{}%", s.percent)), Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
-                                        Span::styled(format!("({}/{})", s.success, s.total), Style::default().fg(THEME.text_muted)),
-                                    ]));
-                                }
+                                append_stage_summaries(&mut text, jobs);
                             } else {
                                 text.push(Line::from(vec![
                                     Span::styled("Loading stages...", Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC)),
@@ -856,7 +720,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Tab::Runners => {
             if app.runners.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
                 f.render_widget(Paragraph::new("\n\n Loading runners...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
-                f.render_widget(Paragraph::new("Select a runner to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
+                f.render_widget(Paragraph::new("Select a runner to view details...").block(Block::default().borders(Borders::ALL).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             } else {
                 let filtered_runners = App::filter_runners_list(&app.runners.items, &app.search_query);
                 
@@ -893,7 +757,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
                     .title(" Details ")
                     .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
                     .border_style(Style::default().fg(THEME.border));
@@ -929,7 +792,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Tab::Releases => {
             if app.releases.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
                 f.render_widget(Paragraph::new("\n\n Loading releases...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
-                f.render_widget(Paragraph::new("Select a release to view details...").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
+                f.render_widget(Paragraph::new("Select a release to view details...").block(Block::default().borders(Borders::ALL).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             } else {
                 let filtered_releases = App::filter_releases_list(&app.releases.items, &app.search_query);
                 
@@ -957,7 +820,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
                     .title(" Details ")
                     .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
                     .border_style(Style::default().fg(THEME.border));
@@ -1011,7 +873,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(format!(" {} ", menu.title))
             .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(THEME.border_focused))
             .style(Style::default().bg(THEME.bg));
             
@@ -1047,7 +908,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(format!(" {} ", selector.title))
             .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(THEME.border_focused))
             .style(Style::default().bg(THEME.bg));
             
@@ -1066,7 +926,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let border_color = if selector.is_filtering { THEME.border_focused } else { THEME.text_muted };
         let search_block = Block::default()
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(border_color))
             .title(" Filter (press 'f' or '/' to focus) ");
             
@@ -1150,7 +1009,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(format!(" {} ", text_input.title))
             .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(THEME.border_focused))
             .style(Style::default().bg(THEME.bg));
             
