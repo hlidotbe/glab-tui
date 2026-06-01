@@ -70,6 +70,8 @@ fn get_stages_summary(jobs: &[crate::gitlab::pipelines::Job]) -> Vec<StageSummar
         stage_jobs.entry(j.stage.clone()).or_insert_with(Vec::new).push(j.status.clone());
     }
 
+    stage_names.reverse();
+
     let mut summaries = Vec::new();
     for stage in stage_names {
         if let Some(statuses) = stage_jobs.get(&stage) {
@@ -293,20 +295,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Span::styled("Commands:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("  ctrl-t ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Title        ", Style::default().fg(THEME.text_normal)),
-                            Span::styled("ctrl-l ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Labels", Style::default().fg(THEME.text_normal)),
+                            Span::styled("  e ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Edit params    ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("f ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Filter/Search", Style::default().fg(THEME.text_normal)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("  ctrl-a ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Assignees    ", Style::default().fg(THEME.text_normal)),
-                            Span::styled("ctrl-m ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Milestone", Style::default().fg(THEME.text_normal)),
-                        ]));
-                        text.push(Line::from(vec![
-                            Span::styled("  ctrl-d ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Description", Style::default().fg(THEME.text_normal)),
+                            Span::styled("  n ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("New Issue      ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("F5❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
                         ]));
                         f.render_widget(Paragraph::new(text).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
                     } else {
@@ -430,28 +428,32 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Span::styled("Commands:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("  ctrl-t ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Title        ", Style::default().fg(THEME.text_normal)),
-                            Span::styled("ctrl-l ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Labels", Style::default().fg(THEME.text_normal)),
+                            Span::styled("  e ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Edit params    ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("f ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Filter/Search", Style::default().fg(THEME.text_normal)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("  ctrl-a ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Assignees    ", Style::default().fg(THEME.text_normal)),
-                            Span::styled("ctrl-v ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Reviewers", Style::default().fg(THEME.text_normal)),
+                            Span::styled("  n ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("New MR         ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("m ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Merge", Style::default().fg(THEME.text_normal)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("  ctrl-m ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Milestone    ", Style::default().fg(THEME.text_normal)),
-                            Span::styled("ctrl-g ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Target Branch", Style::default().fg(THEME.text_normal)),
+                            Span::styled("  a ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Approve        ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("v ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Diff/Changes", Style::default().fg(THEME.text_normal)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("  ctrl-r ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Toggle Draft ", Style::default().fg(THEME.text_normal)),
-                            Span::styled("ctrl-d ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Description", Style::default().fg(THEME.text_normal)),
+                            Span::styled("  o ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("View Browser   ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("s ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Toggle Draft", Style::default().fg(THEME.text_normal)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  F5❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Refresh", Style::default().fg(THEME.text_normal)),
                         ]));
                         f.render_widget(Paragraph::new(text).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
                     } else {
@@ -484,8 +486,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         } else {
                             Style::default()
                         };
+                        let is_selected = app.selected_jobs.contains(&j.id);
+                        let id_prefix = if is_selected { "[x] " } else { "[ ] " };
                         Row::new(vec![
-                            Cell::from(j.id.to_string()),
+                            Cell::from(format!("{}{}", id_prefix, j.id)),
                             Cell::from(j.stage.clone()),
                             Cell::from(status_text).style(Style::default().fg(status_color).bg(bg_color).add_modifier(Modifier::BOLD)),
                             Cell::from(j.name.clone()),
@@ -493,7 +497,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     });
 
                     let widths = [
-                        Constraint::Length(10),
+                        Constraint::Length(14),
                         Constraint::Length(15),
                         Constraint::Length(12),
                         Constraint::Percentage(60),
@@ -508,7 +512,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
                             .border_style(Style::default().fg(THEME.border_focused)));
                     
-                    f.render_widget(table, middle_chunks[1]);
+                    let mut state = app.jobs_list_state.clone();
+                    f.render_stateful_widget(table, middle_chunks[1], &mut state);
+                    app.jobs_list_state = state;
 
                     let preview_block = Block::default()
                         .borders(Borders::ALL)
@@ -517,7 +523,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
                         .border_style(Style::default().fg(THEME.border));
                     if let Some(trace) = &app.job_trace {
-                        f.render_widget(Paragraph::new(trace.as_str()).block(preview_block).wrap(ratatui::widgets::Wrap { trim: false }), middle_chunks[2]);
+                        f.render_widget(
+                            Paragraph::new(trace.as_str())
+                                .block(preview_block)
+                                .wrap(ratatui::widgets::Wrap { trim: false })
+                                .scroll((app.job_trace_scroll, 0)),
+                            middle_chunks[2],
+                        );
                     } else {
                         let summaries = get_stages_summary(jobs);
                         let mut text = Vec::new();
@@ -551,20 +563,24 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         text.push(Line::from(vec![
                             Span::styled("  Enter ❯ ", Style::default().fg(THEME.text_muted)),
                             Span::styled("View Trace     ", Style::default().fg(THEME.text_normal)),
-                            Span::styled("r ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Retry Job", Style::default().fg(THEME.text_normal)),
+                            Span::styled("r     ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Retry (Single/Sel)", Style::default().fg(THEME.text_normal)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("  d     ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Download Art.  ", Style::default().fg(THEME.text_normal)),
-                            Span::styled("o ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("  Space ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Toggle Select  ", Style::default().fg(THEME.text_normal)),
+                            Span::styled("d     ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Download Art.", Style::default().fg(THEME.text_normal)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("  o     ❯ ", Style::default().fg(THEME.text_muted)),
                             Span::styled("View in Browser", Style::default().fg(THEME.text_normal)),
+                            Span::styled("e     ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("View in Helix", Style::default().fg(THEME.text_normal)),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("  e     ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("View in Helix  ", Style::default().fg(THEME.text_normal)),
-                            Span::styled("Esc ❯ ", Style::default().fg(THEME.text_muted)),
-                            Span::styled("Back to Pipes", Style::default().fg(THEME.text_normal)),
+                            Span::styled("  Esc   ❯ ", Style::default().fg(THEME.text_muted)),
+                            Span::styled("Back to Pipes  ", Style::default().fg(THEME.text_normal)),
                         ]));
                         f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
                     }
@@ -587,8 +603,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         } else {
                             "⏳".to_string()
                         };
+                        let is_selected = app.selected_pipelines.contains(&p.id);
+                        let id_prefix = if is_selected { "[x] " } else { "[ ] " };
                         Row::new(vec![
-                            Cell::from(format!("#{}", p.id)),
+                            Cell::from(format!("{}#{}", id_prefix, p.id)),
                             Cell::from(status_text).style(Style::default().fg(status_color).bg(bg_color).add_modifier(Modifier::BOLD)),
                             Cell::from(stages_dots),
                             Cell::from(truncate(&p.r#ref, 40)).style(Style::default().fg(THEME.purple)),
@@ -597,7 +615,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     });
 
                     let widths = [
-                        Constraint::Length(10),
+                        Constraint::Length(14),
                         Constraint::Length(12),
                         Constraint::Length(14),
                         Constraint::Percentage(45),
@@ -686,17 +704,19 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             text.push(Line::from(vec![
                                 Span::styled("  Enter ❯ ", Style::default().fg(THEME.text_muted)),
                                 Span::styled("View Jobs     ", Style::default().fg(THEME.text_normal)),
-                                Span::styled("r ❯ ", Style::default().fg(THEME.text_muted)),
-                                Span::styled("Retry Pipeline", Style::default().fg(THEME.text_normal)),
+                                Span::styled("r     ❯ ", Style::default().fg(THEME.text_muted)),
+                                Span::styled("Retry (Single/Sel)", Style::default().fg(THEME.text_normal)),
                             ]));
                             text.push(Line::from(vec![
-                                Span::styled("  d     ❯ ", Style::default().fg(THEME.text_muted)),
-                                Span::styled("Cancel Pipe   ", Style::default().fg(THEME.text_normal)),
-                                Span::styled("o ❯ ", Style::default().fg(THEME.text_muted)),
-                                Span::styled("View in Browser", Style::default().fg(THEME.text_normal)),
+                                Span::styled("  Space ❯ ", Style::default().fg(THEME.text_muted)),
+                                Span::styled("Toggle Select ", Style::default().fg(THEME.text_normal)),
+                                Span::styled("d     ❯ ", Style::default().fg(THEME.text_muted)),
+                                Span::styled("Cancel Pipe", Style::default().fg(THEME.text_normal)),
                             ]));
                             text.push(Line::from(vec![
-                                Span::styled("  ctrl-p❯ ", Style::default().fg(THEME.text_muted)),
+                                Span::styled("  o     ❯ ", Style::default().fg(THEME.text_muted)),
+                                Span::styled("View Browser  ", Style::default().fg(THEME.text_normal)),
+                                Span::styled("ctrl-p❯ ", Style::default().fg(THEME.text_muted)),
                                 Span::styled("Run MR Pipe", Style::default().fg(THEME.text_normal)),
                             ]));
                             f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
@@ -882,7 +902,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         f.render_widget(paragraph, area);
     }
 
-    if let Some(menu) = &app.edit_menu {
+    if let Some(menu) = &mut app.edit_menu {
         let block = Block::default()
             .title(format!(" {} ", menu.title))
             .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
@@ -913,10 +933,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .style(Style::default().bg(THEME.bg));
             
         f.render_widget(Clear, area);
-        f.render_widget(list, area);
+        let mut state = menu.state.clone();
+        f.render_stateful_widget(list, area, &mut state);
+        menu.state = state;
     }
 
-    if let Some(selector) = &app.selector {
+    if let Some(selector) = &mut app.selector {
         let block = Block::default()
             .title(format!(" {} ", selector.title))
             .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
@@ -1011,7 +1033,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 }).collect();
                 
                 let list = List::new(items).style(Style::default().bg(THEME.bg));
-                f.render_widget(list, chunks[1]);
+                let mut state = selector.state.clone();
+                f.render_stateful_widget(list, chunks[1], &mut state);
+                selector.state = state;
             }
         }
         f.render_widget(footer_p, chunks[2]);

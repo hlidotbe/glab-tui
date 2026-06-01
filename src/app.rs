@@ -1,4 +1,5 @@
 use crate::utils::ui::StatefulTable;
+use ratatui::widgets::{ListState, TableState};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tab {
@@ -37,6 +38,7 @@ pub struct EditMenu {
     pub selected_idx: usize,
     pub entity_iid: u64,
     pub entity_type: String, // "issue", "mr"
+    pub state: ListState,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +54,7 @@ pub struct Selector {
     pub entity_type: String, // "issue", "mr"
     pub field_type: String,  // "labels", "assignees", "reviewers", "milestone"
     pub multi_select: bool,
+    pub state: ListState,
 }
 
 impl Selector {
@@ -114,6 +117,10 @@ pub struct App {
     pub edit_menu: Option<EditMenu>,
     pub selector: Option<Selector>,
     pub text_input: Option<TextInput>,
+    pub jobs_list_state: TableState,
+    pub job_trace_scroll: u16,
+    pub selected_pipelines: std::collections::HashSet<u64>,
+    pub selected_jobs: std::collections::HashSet<u64>,
 }
 
 impl Default for App {
@@ -141,6 +148,10 @@ impl Default for App {
             edit_menu: None,
             selector: None,
             text_input: None,
+            jobs_list_state: TableState::default(),
+            job_trace_scroll: 0,
+            selected_pipelines: std::collections::HashSet::new(),
+            selected_jobs: std::collections::HashSet::new(),
         }
     }
 }
@@ -160,6 +171,8 @@ impl App {
         let current_index = Tab::ALL.iter().position(|t| t == &self.active_tab).unwrap_or(0);
         let next_index = (current_index + 1) % Tab::ALL.len();
         self.active_tab = Tab::ALL[next_index];
+        self.selected_pipelines.clear();
+        self.selected_jobs.clear();
         self.update_filter_selection();
     }
 
@@ -171,6 +184,8 @@ impl App {
             current_index - 1
         };
         self.active_tab = Tab::ALL[prev_index];
+        self.selected_pipelines.clear();
+        self.selected_jobs.clear();
         self.update_filter_selection();
     }
 
