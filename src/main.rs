@@ -923,6 +923,11 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
+                    if app.show_help {
+                        app.show_help = false;
+                        continue;
+                    }
+
                     let is_refresh = key_event.code == KeyCode::F(5) ||
                         (key_event.code == KeyCode::Char('r') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)) ||
                         (key_event.code == KeyCode::Char('R') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL));
@@ -1759,6 +1764,9 @@ async fn main() -> Result<()> {
 
                     if !handled {
                         match key_event.code {
+                            KeyCode::Char('?') | KeyCode::F(1) => {
+                                app.show_help = true;
+                            }
                             KeyCode::Char('q') => {
                                 if app.details_zoomed {
                                     app.details_zoomed = false;
@@ -1817,6 +1825,7 @@ async fn main() -> Result<()> {
                                                     if let Some(client) = &app.gitlab_client {
                                                         if let Ok(trace) = gitlab::pipelines::get_job_trace(client, &app.project_context, job.id).await {
                                                             app.job_trace = Some(trace);
+                                                            app.job_trace_needs_scroll_to_bottom = true;
                                                             app.details_zoomed = true;
                                                         } else {
                                                             app.error_message = Some("Failed to fetch job trace".to_string());

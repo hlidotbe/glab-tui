@@ -123,6 +123,8 @@ pub struct App {
     pub selected_pipelines: std::collections::HashSet<u64>,
     pub selected_jobs: std::collections::HashSet<u64>,
     pub details_zoomed: bool,
+    pub job_trace_needs_scroll_to_bottom: bool,
+    pub show_help: bool,
 }
 
 impl Default for App {
@@ -157,6 +159,8 @@ impl Default for App {
             selected_pipelines: std::collections::HashSet::new(),
             selected_jobs: std::collections::HashSet::new(),
             details_zoomed: false,
+            job_trace_needs_scroll_to_bottom: false,
+            show_help: false,
         }
     }
 }

@@ -254,6 +254,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "c", "Close Issue");
             add_cmd(&mut commands_text, "J/K", "Scroll Desc");
             add_cmd(&mut commands_text, "C-r", "Refresh");
+            add_cmd(&mut commands_text, "?", "Help");
             add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::MergeRequests => {
@@ -267,6 +268,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "s", "Toggle Draft");
             add_cmd(&mut commands_text, "J/K", "Scroll Desc");
             add_cmd(&mut commands_text, "C-r", "Refresh");
+            add_cmd(&mut commands_text, "?", "Help");
             add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::Pipelines => {
@@ -289,6 +291,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 add_cmd(&mut commands_text, "o", "View Browser");
                 add_cmd(&mut commands_text, "f", "Search");
                 add_cmd(&mut commands_text, "C-r", "Refresh");
+                add_cmd(&mut commands_text, "?", "Help");
                 add_cmd(&mut commands_text, "q", "Quit");
             }
         }
@@ -298,6 +301,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "e", "Edit Desc");
             add_cmd(&mut commands_text, "f", "Search");
             add_cmd(&mut commands_text, "C-r", "Refresh");
+            add_cmd(&mut commands_text, "?", "Help");
             add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::Releases => {
@@ -305,6 +309,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "o", "View Browser");
             add_cmd(&mut commands_text, "f", "Search");
             add_cmd(&mut commands_text, "C-r", "Refresh");
+            add_cmd(&mut commands_text, "?", "Help");
             add_cmd(&mut commands_text, "q", "Quit");
         }
     }
@@ -660,12 +665,32 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_stateful_widget(table, middle_chunks[1], &mut state);
                     app.jobs_list_state = state;
 
-                    let preview_block = Block::default()
-                        .borders(Borders::ALL)
-                        .title(" Details / Trace ")
-                        .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
-                        .border_style(Style::default().fg(THEME.border));
                     if let Some(trace) = &app.job_trace {
+                        let width = middle_chunks[2].width.saturating_sub(2) as usize;
+                        let height = middle_chunks[2].height.saturating_sub(2) as usize;
+                        let total_lines = count_wrapped_lines(trace, width);
+                        let max_scroll = total_lines.saturating_sub(height) as u16;
+
+                        if app.job_trace_needs_scroll_to_bottom {
+                            app.job_trace_scroll = max_scroll;
+                            app.job_trace_needs_scroll_to_bottom = false;
+                        } else {
+                            app.job_trace_scroll = app.job_trace_scroll.min(max_scroll);
+                        }
+
+                        let title_suffix = if total_lines > height {
+                            let percent = (app.job_trace_scroll as usize * 100) / max_scroll.max(1) as usize;
+                            format!(" [j/k | {}%] ", percent.min(100))
+                        } else {
+                            String::new()
+                        };
+
+                        let preview_block = Block::default()
+                            .borders(Borders::ALL)
+                            .title(format!(" Details / Trace{} ", title_suffix))
+                            .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
+                            .border_style(Style::default().fg(THEME.border));
+
                         f.render_widget(
                             Paragraph::new(trace.as_str())
                                 .block(preview_block)
@@ -674,6 +699,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             middle_chunks[2],
                         );
                     } else {
+                        let preview_block = Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Details / Trace ")
+                            .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
+                            .border_style(Style::default().fg(THEME.border));
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
                             Span::styled("Stages Success Rate:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
@@ -1110,6 +1140,90 @@ pub fn render(f: &mut Frame, app: &mut App) {
         f.render_widget(value_p, chunks[0]);
         f.render_widget(footer_p, chunks[1]);
     }
+
+    if app.show_help {
+        let block = Block::default()
+            .title(" Keyboard Shortcuts ")
+            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(THEME.border_focused))
+            .border_type(BorderType::Double)
+            .style(Style::default().bg(Color::Reset));
+
+        let area = centered_rect(65, 75, size);
+
+        let rows = vec![
+            Row::new(vec![Cell::from("Global"), Cell::from("Tab / l / →"), Cell::from("Next tab")]),
+            Row::new(vec![Cell::from("Global"), Cell::from("S-Tab / h / ←"), Cell::from("Previous tab")]),
+            Row::new(vec![Cell::from("Global"), Cell::from("j / ↓"), Cell::from("Select next item")]),
+            Row::new(vec![Cell::from("Global"), Cell::from("k / ↑"), Cell::from("Select previous item")]),
+            Row::new(vec![Cell::from("Global"), Cell::from("f / /"), Cell::from("Fuzzy-filter search")]),
+            Row::new(vec![Cell::from("Global"), Cell::from("F5 / C-r"), Cell::from("Refresh active tab")]),
+            Row::new(vec![Cell::from("Global"), Cell::from("? / F1"), Cell::from("Show this help")]),
+            Row::new(vec![Cell::from("Global"), Cell::from("q / Esc"), Cell::from("Quit / close overlay")]),
+            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
+            Row::new(vec![Cell::from("Issues"), Cell::from("n"), Cell::from("Create new issue")]),
+            Row::new(vec![Cell::from("Issues"), Cell::from("e"), Cell::from("Open edit menu")]),
+            Row::new(vec![Cell::from("Issues"), Cell::from("c"), Cell::from("Close selected issue")]),
+            Row::new(vec![Cell::from("Issues"), Cell::from("J / K"), Cell::from("Scroll description down/up")]),
+            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
+            Row::new(vec![Cell::from("Merge Requests"), Cell::from("n"), Cell::from("Create MR from issue")]),
+            Row::new(vec![Cell::from("Merge Requests"), Cell::from("e"), Cell::from("Open edit menu")]),
+            Row::new(vec![Cell::from("Merge Requests"), Cell::from("a"), Cell::from("Approve MR")]),
+            Row::new(vec![Cell::from("Merge Requests"), Cell::from("m"), Cell::from("Merge MR (squash + delete branch)")]),
+            Row::new(vec![Cell::from("Merge Requests"), Cell::from("v"), Cell::from("View diff in terminal")]),
+            Row::new(vec![Cell::from("Merge Requests"), Cell::from("o"), Cell::from("Open MR in browser")]),
+            Row::new(vec![Cell::from("Merge Requests"), Cell::from("s"), Cell::from("Toggle Draft/Ready status")]),
+            Row::new(vec![Cell::from("Merge Requests"), Cell::from("J / K"), Cell::from("Scroll description down/up")]),
+            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
+            Row::new(vec![Cell::from("Pipelines"), Cell::from("Enter"), Cell::from("View jobs / view trace")]),
+            Row::new(vec![Cell::from("Pipelines"), Cell::from("Esc / Backspc"), Cell::from("Go back (jobs->pipes, trace->jobs)")]),
+            Row::new(vec![Cell::from("Pipelines"), Cell::from("p"), Cell::from("Trigger new pipeline")]),
+            Row::new(vec![Cell::from("Pipelines"), Cell::from("r"), Cell::from("Retry pipeline or selected job(s)")]),
+            Row::new(vec![Cell::from("Pipelines"), Cell::from("c / d"), Cell::from("Cancel pipeline")]),
+            Row::new(vec![Cell::from("Pipelines"), Cell::from("d"), Cell::from("Download job artifact")]),
+            Row::new(vec![Cell::from("Pipelines"), Cell::from("o"), Cell::from("Open pipeline/job in browser")]),
+            Row::new(vec![Cell::from("Pipelines"), Cell::from("e"), Cell::from("View job trace in $EDITOR")]),
+            Row::new(vec![Cell::from("Pipelines"), Cell::from("Space"), Cell::from("Check/uncheck item for bulk retry")]),
+            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
+            Row::new(vec![Cell::from("Runners"), Cell::from("p"), Cell::from("Pause selected runner")]),
+            Row::new(vec![Cell::from("Runners"), Cell::from("r"), Cell::from("Resume selected runner")]),
+            Row::new(vec![Cell::from("Runners"), Cell::from("e"), Cell::from("Edit runner description")]),
+            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
+            Row::new(vec![Cell::from("Releases"), Cell::from("Enter"), Cell::from("View release details")]),
+            Row::new(vec![Cell::from("Releases"), Cell::from("o"), Cell::from("Open release in browser")]),
+        ];
+
+        let widths = [
+            Constraint::Length(18),
+            Constraint::Length(18),
+            Constraint::Min(0),
+        ];
+
+        let header_style = Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD);
+        let table = Table::new(rows, widths)
+            .header(Row::new(vec!["Category", "Key", "Action"]).style(header_style).height(1))
+            .block(block)
+            .row_highlight_style(Style::default())
+            .column_spacing(2);
+
+        let footer_area = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(1),
+            ])
+            .split(area);
+
+        let footer_p = Paragraph::new(" Press any key to close ")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC));
+
+        f.render_widget(Clear, area);
+        f.render_widget(table, area);
+        f.render_widget(footer_p, footer_area[1]);
+    }
 }
 
 /// helper function to create a centered rect using up certain percentage of the available rect `r`
@@ -1131,6 +1245,71 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+pub fn count_wrapped_lines(text: &str, width: usize) -> usize {
+    if width == 0 {
+        return 0;
+    }
+    let mut total_lines = 0;
+    for line in text.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.is_empty() {
+            total_lines += 1;
+            continue;
+        }
+        let mut current_line_len = 0;
+        let mut first = true;
+        for word in line.split(' ') {
+            let word_len = word.chars().count();
+            if word_len == 0 {
+                if current_line_len + 1 > width {
+                    total_lines += 1;
+                    current_line_len = 1;
+                } else {
+                    current_line_len += 1;
+                }
+                continue;
+            }
+            
+            let space_needed = if first { 0 } else { 1 };
+            if current_line_len + space_needed + word_len <= width {
+                current_line_len += space_needed + word_len;
+                first = false;
+            } else {
+                if word_len > width {
+                    if current_line_len + space_needed < width {
+                        let remaining_on_current = width - (current_line_len + space_needed);
+                        let mut remaining_word_len = word_len - remaining_on_current;
+                        total_lines += 1;
+                        while remaining_word_len > width {
+                            total_lines += 1;
+                            remaining_word_len -= width;
+                        }
+                        current_line_len = remaining_word_len;
+                    } else {
+                        total_lines += 1;
+                        let mut remaining_word_len = word_len;
+                        while remaining_word_len > width {
+                            total_lines += 1;
+                            remaining_word_len -= width;
+                        }
+                        current_line_len = remaining_word_len;
+                    }
+                } else {
+                    total_lines += 1;
+                    current_line_len = word_len;
+                }
+                first = false;
+            }
+        }
+        total_lines += 1;
+    }
+    
+    if text.is_empty() {
+        return 0;
+    }
+    total_lines
 }
 
 #[cfg(test)]
@@ -1185,5 +1364,18 @@ mod tests {
         assert_eq!(test.success, 1);
         assert_eq!(test.total, 2);
         assert_eq!(test.percent, 50);
+    }
+
+    #[test]
+    fn test_count_wrapped_lines() {
+        assert_eq!(count_wrapped_lines("", 10), 0);
+        assert_eq!(count_wrapped_lines("", 0), 0);
+        assert_eq!(count_wrapped_lines("hello", 10), 1);
+        assert_eq!(count_wrapped_lines("hello", 5), 1);
+        assert_eq!(count_wrapped_lines("hello", 3), 2);
+        assert_eq!(count_wrapped_lines("hello world", 5), 2);
+        assert_eq!(count_wrapped_lines("a b c", 3), 2);
+        assert_eq!(count_wrapped_lines("hello\nworld", 10), 2);
+        assert_eq!(count_wrapped_lines("hello\r\nworld", 10), 2);
     }
 }
