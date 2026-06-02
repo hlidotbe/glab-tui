@@ -1150,59 +1150,174 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .border_type(BorderType::Double)
             .style(Style::default().bg(Color::Reset));
 
-        let area = centered_rect(65, 75, size);
+        let area = centered_rect_fixed(72, 37, size);
 
         let rows = vec![
-            Row::new(vec![Cell::from("Global"), Cell::from("Tab / l / →"), Cell::from("Next tab")]),
-            Row::new(vec![Cell::from("Global"), Cell::from("S-Tab / h / ←"), Cell::from("Previous tab")]),
-            Row::new(vec![Cell::from("Global"), Cell::from("j / ↓"), Cell::from("Select next item")]),
-            Row::new(vec![Cell::from("Global"), Cell::from("k / ↑"), Cell::from("Select previous item")]),
-            Row::new(vec![Cell::from("Global"), Cell::from("f / /"), Cell::from("Fuzzy-filter search")]),
-            Row::new(vec![Cell::from("Global"), Cell::from("F5 / C-r"), Cell::from("Refresh active tab")]),
-            Row::new(vec![Cell::from("Global"), Cell::from("? / F1"), Cell::from("Show this help")]),
-            Row::new(vec![Cell::from("Global"), Cell::from("q / Esc"), Cell::from("Quit / close overlay")]),
             Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
-            Row::new(vec![Cell::from("Issues"), Cell::from("n"), Cell::from("Create new issue")]),
-            Row::new(vec![Cell::from("Issues"), Cell::from("e"), Cell::from("Open edit menu")]),
-            Row::new(vec![Cell::from("Issues"), Cell::from("c"), Cell::from("Close selected issue")]),
-            Row::new(vec![Cell::from("Issues"), Cell::from("J / K"), Cell::from("Scroll description down/up")]),
-            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
-            Row::new(vec![Cell::from("Merge Requests"), Cell::from("n"), Cell::from("Create MR from issue")]),
-            Row::new(vec![Cell::from("Merge Requests"), Cell::from("e"), Cell::from("Open edit menu")]),
-            Row::new(vec![Cell::from("Merge Requests"), Cell::from("a"), Cell::from("Approve MR")]),
-            Row::new(vec![Cell::from("Merge Requests"), Cell::from("m"), Cell::from("Merge MR (squash + delete branch)")]),
-            Row::new(vec![Cell::from("Merge Requests"), Cell::from("v"), Cell::from("View diff in terminal")]),
-            Row::new(vec![Cell::from("Merge Requests"), Cell::from("o"), Cell::from("Open MR in browser")]),
-            Row::new(vec![Cell::from("Merge Requests"), Cell::from("s"), Cell::from("Toggle Draft/Ready status")]),
-            Row::new(vec![Cell::from("Merge Requests"), Cell::from("J / K"), Cell::from("Scroll description down/up")]),
-            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
-            Row::new(vec![Cell::from("Pipelines"), Cell::from("Enter"), Cell::from("View jobs / view trace")]),
-            Row::new(vec![Cell::from("Pipelines"), Cell::from("Esc / Backspc"), Cell::from("Go back (jobs->pipes, trace->jobs)")]),
-            Row::new(vec![Cell::from("Pipelines"), Cell::from("p"), Cell::from("Trigger new pipeline")]),
-            Row::new(vec![Cell::from("Pipelines"), Cell::from("r"), Cell::from("Retry pipeline or selected job(s)")]),
-            Row::new(vec![Cell::from("Pipelines"), Cell::from("c / d"), Cell::from("Cancel pipeline")]),
-            Row::new(vec![Cell::from("Pipelines"), Cell::from("d"), Cell::from("Download job artifact")]),
-            Row::new(vec![Cell::from("Pipelines"), Cell::from("o"), Cell::from("Open pipeline/job in browser")]),
-            Row::new(vec![Cell::from("Pipelines"), Cell::from("e"), Cell::from("View job trace in $EDITOR")]),
-            Row::new(vec![Cell::from("Pipelines"), Cell::from("Space"), Cell::from("Check/uncheck item for bulk retry")]),
-            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
-            Row::new(vec![Cell::from("Runners"), Cell::from("p"), Cell::from("Pause selected runner")]),
-            Row::new(vec![Cell::from("Runners"), Cell::from("r"), Cell::from("Resume selected runner")]),
-            Row::new(vec![Cell::from("Runners"), Cell::from("e"), Cell::from("Edit runner description")]),
-            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
-            Row::new(vec![Cell::from("Releases"), Cell::from("Enter"), Cell::from("View release details")]),
-            Row::new(vec![Cell::from("Releases"), Cell::from("o"), Cell::from("Open release in browser")]),
+            
+            // Section 1: Global & Navigation
+            Row::new(vec![
+                Cell::from(Span::styled("Global & Nav", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Tab / l / →", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Next tab", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("S-Tab / h / ←", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Previous tab", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("j / k / ↓ / ↑", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Select item / Scroll jobs", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("J / K", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Scroll description / trace", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("f / /", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Open fuzzy search / filter bar", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("F5 / Ctrl+R", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Refresh active tab data", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("? / F1", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Show this help modal", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("q / Esc", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Quit / Close overlay", Style::default().fg(THEME.text_normal))),
+            ]),
+            
+            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]), // spacer
+
+            // Section 2: Issues & MRs
+            Row::new(vec![
+                Cell::from(Span::styled("Issues & MRs", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("n", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Create new Issue / MR", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("e", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Open parameter edit menu", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("c", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Close selected Issue", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("a", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Approve selected MR", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("m", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Merge selected MR (squash + delete)", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("s", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Toggle Draft / Ready status", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("v", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("View Merge Request diff changes", Style::default().fg(THEME.text_normal))),
+            ]),
+
+            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]), // spacer
+
+            // Section 3: Pipelines & Jobs
+            Row::new(vec![
+                Cell::from(Span::styled("Pipelines", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Enter", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("View jobs list / View job trace", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("Esc / Backspc", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Go back (jobs -> pipes, trace -> jobs)", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("p", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Trigger new pipeline from MR", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("r", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Retry pipeline or selected job(s)", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("c / d", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Cancel pipeline execution", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("d", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Download pipeline job artifact", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("e", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Open job trace in external $EDITOR", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("Space", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Check / uncheck item for bulk retry", Style::default().fg(THEME.text_normal))),
+            ]),
+
+            Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]), // spacer
+
+            // Section 4: Runners, Releases & Extras
+            Row::new(vec![
+                Cell::from(Span::styled("Other Tabs", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("p / r", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Pause / Resume runner", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("e", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Edit runner description text", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("Enter", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("View release notes in terminal", Style::default().fg(THEME.text_normal))),
+            ]),
+            Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled("o", Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD))),
+                Cell::from(Span::styled("Open MR/Pipeline/Release in browser", Style::default().fg(THEME.text_normal))),
+            ]),
         ];
 
         let widths = [
-            Constraint::Length(18),
+            Constraint::Length(16),
             Constraint::Length(18),
             Constraint::Min(0),
         ];
 
         let header_style = Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD);
         let table = Table::new(rows, widths)
-            .header(Row::new(vec!["Category", "Key", "Action"]).style(header_style).height(1))
+            .header(Row::new(vec![
+                Cell::from(Span::styled("Category", header_style)),
+                Cell::from(Span::styled("Key", header_style)),
+                Cell::from(Span::styled("Action", header_style)),
+            ]).height(1))
             .block(block)
             .row_highlight_style(Style::default())
             .column_spacing(2);
@@ -1245,6 +1360,14 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn centered_rect_fixed(width: u16, height: u16, r: Rect) -> Rect {
+    let w = width.min(r.width);
+    let h = height.min(r.height);
+    let x = r.x + (r.width - w) / 2;
+    let y = r.y + (r.height - h) / 2;
+    Rect::new(x, y, w, h)
 }
 
 pub fn count_wrapped_lines(text: &str, width: usize) -> usize {
