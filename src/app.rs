@@ -154,12 +154,41 @@ impl DiffView {
         let mut files = Vec::new();
 
         for line in cleaned_diff.lines() {
+            let mut detected_file = None;
             if line.starts_with("diff --git") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 4 {
-                    current_file = parts[3].strip_prefix("b/").unwrap_or(parts[3]).to_string();
+                    detected_file = Some(parts[3].strip_prefix("b/").unwrap_or(parts[3]).to_string());
                 }
-                files.push((current_file.clone(), lines.len()));
+            } else if line.starts_with("--- ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let path = parts[1];
+                    if path != "/dev/null" && !path.is_empty() {
+                        let cleaned_path = path.strip_prefix("a/").unwrap_or(path).to_string();
+                        detected_file = Some(cleaned_path);
+                    }
+                }
+            } else if line.starts_with("+++ ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let path = parts[1];
+                    if path != "/dev/null" && !path.is_empty() {
+                        let cleaned_path = path.strip_prefix("b/").unwrap_or(path).to_string();
+                        detected_file = Some(cleaned_path);
+                    }
+                }
+            }
+
+            if let Some(file_path) = detected_file {
+                current_file = file_path;
+                let already_exists = files.iter().any(|(f, _)| f == &current_file);
+                if !already_exists {
+                    files.push((current_file.clone(), lines.len()));
+                }
+            }
+
+            if line.starts_with("diff --git") {
                 lines.push(DiffLine {
                     content: line.to_string(),
                     line_type: DiffLineType::Meta,
@@ -853,5 +882,25 @@ index abcdef..ffffff 100644
         assert_eq!(color_view.files[0].0, "src/app.rs");
         assert_eq!(color_view.lines[6].line_type, DiffLineType::Addition);
         assert_eq!(color_view.lines[7].line_type, DiffLineType::Deletion);
+    }
+
+    #[test]
+    fn test_diff_view_glab_parsing() {
+        let glab_diff = "\
+--- README.md
++++ README.md
+@@ -1,7 +1,30 @@
+ organizational principles
+--- vn-protocol
++++ vn-protocol
+@@ -20,6 +20,7 @@
+ some content
+";
+        let diff_view = DiffView::new(42, glab_diff.to_string());
+        assert_eq!(diff_view.files.len(), 2);
+        assert_eq!(diff_view.files[0].0, "README.md");
+        assert_eq!(diff_view.files[1].0, "vn-protocol");
+        assert_eq!(diff_view.files[0].1, 0);
+        assert_eq!(diff_view.files[1].1, 4);
     }
 }
