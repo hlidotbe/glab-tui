@@ -120,8 +120,32 @@ pub struct DiffView {
     pub focus_on_files: bool,
 }
 
+fn strip_ansi_escapes(input: &str) -> String {
+    let mut result = String::new();
+    let mut in_escape = false;
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            in_escape = true;
+            if let Some(&'[') = chars.peek() {
+                chars.next();
+            }
+            continue;
+        }
+        if in_escape {
+            if c.is_ascii_alphabetic() {
+                in_escape = false;
+            }
+            continue;
+        }
+        result.push(c);
+    }
+    result
+}
+
 impl DiffView {
     pub fn new(mr_iid: u64, raw_diff: String) -> Self {
+        let cleaned_diff = strip_ansi_escapes(&raw_diff);
         let mut lines = Vec::new();
         let mut current_file = String::new();
         let mut old_line_num = None;
@@ -129,7 +153,7 @@ impl DiffView {
         let mut hunks = Vec::new();
         let mut files = Vec::new();
 
-        for line in raw_diff.lines() {
+        for line in cleaned_diff.lines() {
             if line.starts_with("diff --git") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 4 {
@@ -812,5 +836,22 @@ index abcdef..ffffff 100644
         diff_view.cursor_idx = 10;
         diff_view.update_selected_file_from_cursor();
         assert_eq!(diff_view.selected_file_idx, 1);
+
+        // Verify ANSI escape code stripping
+        let color_diff = "\
+\u{1b}[33mdiff --git a/src/app.rs b/src/app.rs\u{1b}[0m
+\u{1b}[34mindex 123456..789012 100644\u{1b}[0m
+\u{1b}[31m--- a/src/app.rs\u{1b}[0m
+\u{1b}[32m+++ b/src/app.rs\u{1b}[0m
+@@ -10,6 +10,7 @@
+ some content
+\u{1b}[32m+new line 1\u{1b}[0m
+\u{1b}[31m-deleted line 1\u{1b}[0m
+";
+        let color_view = DiffView::new(42, color_diff.to_string());
+        assert_eq!(color_view.files.len(), 1);
+        assert_eq!(color_view.files[0].0, "src/app.rs");
+        assert_eq!(color_view.lines[6].line_type, DiffLineType::Addition);
+        assert_eq!(color_view.lines[7].line_type, DiffLineType::Deletion);
     }
 }
