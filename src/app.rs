@@ -125,6 +125,7 @@ pub struct App {
     pub details_zoomed: bool,
     pub job_trace_needs_scroll_to_bottom: bool,
     pub show_help: bool,
+    pub help_search_query: String,
 }
 
 impl Default for App {
@@ -161,6 +162,7 @@ impl Default for App {
             details_zoomed: false,
             job_trace_needs_scroll_to_bottom: false,
             show_help: false,
+            help_search_query: String::new(),
         }
     }
 }

@@ -924,7 +924,19 @@ async fn main() -> Result<()> {
                     }
 
                     if app.show_help {
-                        app.show_help = false;
+                        match key_event.code {
+                            KeyCode::Esc | KeyCode::Enter => {
+                                app.show_help = false;
+                                app.help_search_query.clear();
+                            }
+                            KeyCode::Backspace => {
+                                app.help_search_query.pop();
+                            }
+                            KeyCode::Char(c) => {
+                                app.help_search_query.push(c);
+                            }
+                            _ => {}
+                        }
                         continue;
                     }
 
