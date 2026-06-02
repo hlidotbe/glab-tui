@@ -60,28 +60,32 @@ pub struct Selector {
 }
 
 impl Selector {
-    pub fn get_filtered_items(&self) -> Vec<String> {
+    pub fn get_filtered_items_with_indices(&self) -> Vec<(String, Option<Vec<usize>>)> {
         let query = self.search_query.trim();
-        let mut items = if query.is_empty() {
-            self.all_items.clone()
+        let mut items: Vec<(String, Option<Vec<usize>>)> = if query.is_empty() {
+            self.all_items.iter().map(|item| (item.clone(), None)).collect()
         } else {
             let matcher = SkimMatcherV2::default();
-            let mut scored: Vec<(String, i64)> = self.all_items.iter()
+            let mut scored: Vec<(String, Vec<usize>, i64)> = self.all_items.iter()
                 .filter_map(|item| {
-                    matcher.fuzzy_match(item, query).map(|score| (item.clone(), score))
+                    matcher.fuzzy_indices(item, query).map(|(score, indices)| (item.clone(), indices, score))
                 })
                 .collect();
-            scored.sort_by(|a, b| b.1.cmp(&a.1));
-            scored.into_iter().map(|(item, _)| item).collect()
+            scored.sort_by(|a, b| b.2.cmp(&a.2));
+            scored.into_iter().map(|(item, indices, _)| (item, Some(indices))).collect()
         };
             
         if !query.is_empty() {
             let exact_match = self.all_items.iter().any(|item| item.to_lowercase() == query.to_lowercase());
             if !exact_match {
-                items.insert(0, format!("+ Create \"{}\"", query));
+                items.insert(0, (format!("+ Create \"{}\"", query), None));
             }
         }
         items
+    }
+
+    pub fn get_filtered_items(&self) -> Vec<String> {
+        self.get_filtered_items_with_indices().into_iter().map(|(item, _)| item).collect()
     }
 }
 

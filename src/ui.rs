@@ -8,6 +8,40 @@ use ratatui::{
 
 use crate::app::{App, Tab};
 use crate::utils::format::{truncate, time_ago, format_ref, render_markdown};
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
+
+fn highlight_fuzzy_match(text: &str, indices: &[usize], base_style: Style, highlight_style: Style) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut current_chunk = String::new();
+    let mut is_highlighted = false;
+
+    let index_set: std::collections::HashSet<usize> = indices.iter().cloned().collect();
+
+    for (i, c) in text.chars().enumerate() {
+        let char_is_highlighted = index_set.contains(&i);
+        if char_is_highlighted != is_highlighted {
+            if !current_chunk.is_empty() {
+                spans.push(Span::styled(
+                    current_chunk.clone(),
+                    if is_highlighted { highlight_style } else { base_style }
+                ));
+                current_chunk.clear();
+            }
+            is_highlighted = char_is_highlighted;
+        }
+        current_chunk.push(c);
+    }
+
+    if !current_chunk.is_empty() {
+        spans.push(Span::styled(
+            current_chunk,
+            if is_highlighted { highlight_style } else { base_style }
+        ));
+    }
+
+    spans
+}
 
 struct Theme {
     bg: Color,
@@ -150,6 +184,29 @@ fn add_cmd(text: &mut Vec<Line<'static>>, key: &str, desc: &str) {
 }
 
 pub fn render(f: &mut Frame, app: &mut App) {
+    let render_fuzzy_cell = |text: &str, query: &str, is_selected: bool, base_style: Style| {
+        if query.trim().is_empty() {
+            Cell::from(text.to_string()).style(base_style)
+        } else {
+            let matcher = SkimMatcherV2::default();
+            if let Some((_, indices)) = matcher.fuzzy_indices(text, query) {
+                let highlight_style = if is_selected {
+                    Style::default().bg(THEME.highlight_bg).fg(THEME.yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(THEME.yellow).add_modifier(Modifier::BOLD)
+                };
+                let styled_base = if is_selected {
+                    Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD)
+                } else {
+                    base_style
+                };
+                Cell::from(Line::from(highlight_fuzzy_match(text, &indices, styled_base, highlight_style)))
+            } else {
+                Cell::from(text.to_string()).style(base_style)
+            }
+        }
+    };
+
     let size = f.area();
 
     let chunks = Layout::default()
@@ -342,17 +399,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
             } else {
                 let filtered_issues = App::filter_issues_list(&app.issues.items, &app.search_query);
                 
-                let rows = filtered_issues.iter().map(|i| {
+                let rows = filtered_issues.iter().enumerate().map(|(idx, i)| {
                     let (state_text, state_style) = if i.state == "opened" {
                         ("  OPEN  ", Style::default().fg(THEME.green).bg(THEME.green_bg).add_modifier(Modifier::BOLD))
                     } else {
                         (" CLOSED ", Style::default().fg(THEME.red).bg(THEME.red_bg).add_modifier(Modifier::BOLD))
                     };
+                    let is_selected = app.issues.state.selected() == Some(idx);
                     Row::new(vec![
-                        Cell::from(format!("#{}", i.iid)),
+                        render_fuzzy_cell(&format!("#{}", i.iid), &app.search_query, is_selected, Style::default().fg(THEME.text_normal)),
                         Cell::from(state_text).style(state_style),
-                        Cell::from(truncate(&i.title, 100)),
-                        Cell::from(truncate(&i.author.username, 15)).style(Style::default().fg(THEME.blue)),
+                        render_fuzzy_cell(&truncate(&i.title, 100), &app.search_query, is_selected, Style::default().fg(THEME.text_normal)),
+                        render_fuzzy_cell(&truncate(&i.author.username, 15), &app.search_query, is_selected, Style::default().fg(THEME.blue)),
                         Cell::from(time_ago(&i.updated_at)).style(Style::default().fg(THEME.yellow)),
                     ]).height(1)
                 });
@@ -471,7 +529,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             } else {
                 let filtered_mrs = App::filter_mrs_list(&app.mrs.items, &app.search_query);
                 
-                let rows = filtered_mrs.iter().map(|m| {
+                let rows = filtered_mrs.iter().enumerate().map(|(idx, m)| {
                     let (state_text, state_style) = if m.state == "opened" {
                         ("  OPEN  ", Style::default().fg(THEME.green).bg(THEME.green_bg).add_modifier(Modifier::BOLD))
                     } else if m.state == "merged" {
@@ -479,11 +537,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     } else {
                         (" CLOSED ", Style::default().fg(THEME.red).bg(THEME.red_bg).add_modifier(Modifier::BOLD))
                     };
+                    let is_selected = app.mrs.state.selected() == Some(idx);
                     Row::new(vec![
-                        Cell::from(format!("!{}", m.iid)),
+                        render_fuzzy_cell(&format!("!{}", m.iid), &app.search_query, is_selected, Style::default().fg(THEME.text_normal)),
                         Cell::from(state_text).style(state_style),
-                        Cell::from(truncate(&m.title, 100)),
-                        Cell::from(truncate(&m.author.username, 15)).style(Style::default().fg(THEME.blue)),
+                        render_fuzzy_cell(&truncate(&m.title, 100), &app.search_query, is_selected, Style::default().fg(THEME.text_normal)),
+                        render_fuzzy_cell(&truncate(&m.author.username, 15), &app.search_query, is_selected, Style::default().fg(THEME.blue)),
                         Cell::from(time_ago(&m.updated_at)).style(Style::default().fg(THEME.yellow)),
                     ]).height(1)
                 });
@@ -715,7 +774,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 } else {
                     let filtered_pipelines = App::filter_pipelines_list(&app.pipelines.items, &app.search_query, &app.pipeline_jobs);
                         
-                    let rows = filtered_pipelines.iter().map(|p| {
+                    let rows = filtered_pipelines.iter().enumerate().map(|(idx, p)| {
                         let (status_text, status_color, bg_color) = match p.status.as_str() {
                             "success" => (" SUCCESS ", THEME.green, THEME.green_bg),
                             "failed" => ("  FAILED ", THEME.red, THEME.red_bg),
@@ -731,13 +790,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         } else {
                             "⏳".to_string()
                         };
-                        let is_selected = app.selected_pipelines.contains(&p.id);
-                        let id_prefix = if is_selected { "[x] " } else { "[ ] " };
+                        let is_checked = app.selected_pipelines.contains(&p.id);
+                        let id_prefix = if is_checked { "[x] " } else { "[ ] " };
+                        let is_row_highlighted = app.pipelines.state.selected() == Some(idx);
                         Row::new(vec![
-                            Cell::from(format!("{}#{}", id_prefix, p.id)),
+                            render_fuzzy_cell(&format!("{}#{}", id_prefix, p.id), &app.search_query, is_row_highlighted, Style::default().fg(THEME.text_normal)),
                             Cell::from(status_text).style(Style::default().fg(status_color).bg(bg_color).add_modifier(Modifier::BOLD)),
                             Cell::from(stages_dots),
-                            Cell::from(truncate(&format_ref(&p.r#ref), 100)).style(Style::default().fg(THEME.purple)),
+                            render_fuzzy_cell(&truncate(&format_ref(&p.r#ref), 100), &app.search_query, is_row_highlighted, Style::default().fg(THEME.purple)),
                             Cell::from(time_ago(&p.updated_at)).style(Style::default().fg(THEME.yellow)),
                         ]).height(1)
                     });
@@ -823,7 +883,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             } else {
                 let filtered_runners = App::filter_runners_list(&app.runners.items, &app.search_query);
                 
-                let rows = filtered_runners.iter().map(|r| {
+                let rows = filtered_runners.iter().enumerate().map(|(idx, r)| {
                     let (status_text, status_color, bg_color) = match r.status.as_str() {
                         "online" => (" ONLINE  ", THEME.green, THEME.green_bg),
                         "paused" => (" PAUSED  ", THEME.yellow, THEME.yellow_bg),
@@ -831,9 +891,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         _ => (" UNKNOWN ", THEME.text_muted, THEME.inactive_bg),
                     };
                     let desc = r.description.as_deref().unwrap_or("No description");
+                    let is_row_highlighted = app.runners.state.selected() == Some(idx);
                     Row::new(vec![
-                        Cell::from(r.id.to_string()),
-                        Cell::from(truncate(desc, 100)),
+                        render_fuzzy_cell(&r.id.to_string(), &app.search_query, is_row_highlighted, Style::default().fg(THEME.text_normal)),
+                        render_fuzzy_cell(&truncate(desc, 100), &app.search_query, is_row_highlighted, Style::default().fg(THEME.text_normal)),
                         Cell::from(status_text).style(Style::default().fg(status_color).bg(bg_color).add_modifier(Modifier::BOLD)),
                         Cell::from(r.active.to_string()).style(Style::default().fg(if r.active { THEME.green } else { THEME.red })),
                     ]).height(1)
@@ -895,11 +956,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
             } else {
                 let filtered_releases = App::filter_releases_list(&app.releases.items, &app.search_query);
                 
-                let rows = filtered_releases.iter().map(|r| {
+                let rows = filtered_releases.iter().enumerate().map(|(idx, r)| {
+                    let is_row_highlighted = app.releases.state.selected() == Some(idx);
                     Row::new(vec![
-                        Cell::from(r.tag_name.clone()).style(Style::default().fg(THEME.green).add_modifier(Modifier::BOLD)),
-                        Cell::from(truncate(&r.name, 100)),
-                        Cell::from(truncate(&r.released_at, 10)).style(Style::default().fg(THEME.yellow)),
+                        render_fuzzy_cell(&r.tag_name, &app.search_query, is_row_highlighted, Style::default().fg(THEME.green).add_modifier(Modifier::BOLD)),
+                        render_fuzzy_cell(&truncate(&r.name, 100), &app.search_query, is_row_highlighted, Style::default().fg(THEME.text_normal)),
+                        render_fuzzy_cell(&truncate(&r.released_at, 10), &app.search_query, is_row_highlighted, Style::default().fg(THEME.yellow)),
                     ]).height(1)
                 });
 
@@ -1063,13 +1125,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC));
             f.render_widget(p, chunks[1]);
         } else {
-            let filtered_items = selector.get_filtered_items();
+            let filtered_items = selector.get_filtered_items_with_indices();
             if filtered_items.is_empty() {
                 let p = Paragraph::new("\n  No matching options found.")
                     .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC));
                 f.render_widget(p, chunks[1]);
             } else {
-                let items: Vec<ListItem> = filtered_items.iter().enumerate().map(|(i, item)| {
+                let items: Vec<ListItem> = filtered_items.iter().enumerate().map(|(i, (item, indices))| {
                     let is_selected = if item.starts_with("+ Create \"") {
                         let clean_val = selector.search_query.trim().to_string();
                         selector.selected_items.contains(&clean_val)
@@ -1086,12 +1148,23 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         Style::default().fg(THEME.text_normal)
                     };
                     
-                    ListItem::new(vec![
-                        Line::from(vec![
-                            Span::styled(marker, Style::default().fg(marker_color).add_modifier(Modifier::BOLD)),
-                            Span::styled(item.clone(), style),
-                        ])
-                    ])
+                    let highlight_style = if i == selector.cursor_idx {
+                        Style::default().bg(THEME.highlight_bg).fg(THEME.yellow).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(THEME.yellow).add_modifier(Modifier::BOLD)
+                    };
+                    
+                    let mut line_spans = vec![
+                        Span::styled(marker, Style::default().fg(marker_color).add_modifier(Modifier::BOLD))
+                    ];
+                    
+                    if let Some(indices) = indices {
+                        line_spans.extend(highlight_fuzzy_match(item, indices, style, highlight_style));
+                    } else {
+                        line_spans.push(Span::styled(item.clone(), style));
+                    }
+                    
+                    ListItem::new(vec![Line::from(line_spans)])
                 }).collect();
                 
                 let list = List::new(items).style(Style::default().bg(Color::Reset));
