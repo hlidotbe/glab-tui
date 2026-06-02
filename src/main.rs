@@ -1007,6 +1007,29 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                     }
+                                    crate::app::TextInputAction::AddReviewComment { mr_iid, file_path, line_num, old_line_num } => {
+                                        if !value.trim().is_empty() {
+                                            let mut args = vec![
+                                                "mr".to_string(),
+                                                "note".to_string(),
+                                                "create".to_string(),
+                                                mr_iid.to_string(),
+                                                "--file".to_string(),
+                                                file_path,
+                                                "-m".to_string(),
+                                                value,
+                                            ];
+                                            if let Some(line) = line_num {
+                                                args.push("--line".to_string());
+                                                args.push(line.to_string());
+                                            } else if let Some(old_line) = old_line_num {
+                                                args.push("--old-line".to_string());
+                                                args.push(old_line.to_string());
+                                            }
+                                            let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                                            run_glab_cmd(&args_ref, &mut terminal).await;
+                                        }
+                                    }
                                 }
                             }
                             _ => {
@@ -1356,6 +1379,98 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
+                    if let Some(mut diff_view) = app.diff_view.take() {
+                        match key_event.code {
+                            KeyCode::Esc | KeyCode::Char('q') => {
+                                app.diff_view = None;
+                            }
+                            KeyCode::Tab => {
+                                diff_view.focus_on_files = !diff_view.focus_on_files;
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('h') | KeyCode::Left => {
+                                diff_view.focus_on_files = true;
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
+                                diff_view.focus_on_files = false;
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                if diff_view.focus_on_files {
+                                    if !diff_view.files.is_empty() {
+                                        diff_view.selected_file_idx = (diff_view.selected_file_idx + 1).min(diff_view.files.len() - 1);
+                                        diff_view.cursor_idx = diff_view.files[diff_view.selected_file_idx].1;
+                                    }
+                                } else {
+                                    if !diff_view.lines.is_empty() {
+                                        diff_view.cursor_idx = (diff_view.cursor_idx + 1).min(diff_view.lines.len() - 1);
+                                        diff_view.update_selected_file_from_cursor();
+                                    }
+                                }
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                if diff_view.focus_on_files {
+                                    if diff_view.selected_file_idx > 0 {
+                                        diff_view.selected_file_idx -= 1;
+                                        diff_view.cursor_idx = diff_view.files[diff_view.selected_file_idx].1;
+                                    }
+                                } else {
+                                    if diff_view.cursor_idx > 0 {
+                                        diff_view.cursor_idx -= 1;
+                                        diff_view.update_selected_file_from_cursor();
+                                    }
+                                }
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('J') => {
+                                if !diff_view.focus_on_files {
+                                    if let Some(&next_hunk) = diff_view.hunks.iter().find(|&&idx| idx > diff_view.cursor_idx) {
+                                        diff_view.cursor_idx = next_hunk;
+                                        diff_view.update_selected_file_from_cursor();
+                                    }
+                                }
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('K') => {
+                                if !diff_view.focus_on_files {
+                                    if let Some(&prev_hunk) = diff_view.hunks.iter().rev().find(|&&idx| idx < diff_view.cursor_idx) {
+                                        diff_view.cursor_idx = prev_hunk;
+                                        diff_view.update_selected_file_from_cursor();
+                                    }
+                                }
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('c') => {
+                                if let Some(line) = diff_view.lines.get(diff_view.cursor_idx) {
+                                    let can_comment = match line.line_type {
+                                        crate::app::DiffLineType::Addition | crate::app::DiffLineType::Deletion | crate::app::DiffLineType::Normal => true,
+                                        _ => false,
+                                    };
+                                    if can_comment {
+                                        app.text_input = Some(crate::app::TextInput {
+                                            title: format!(" Add Comment to {} ", line.file_path),
+                                            value: String::new(),
+                                            cursor_idx: 0,
+                                            action: crate::app::TextInputAction::AddReviewComment {
+                                                mr_iid: diff_view.mr_iid,
+                                                file_path: line.file_path.clone(),
+                                                line_num: line.new_line_num,
+                                                old_line_num: line.old_line_num,
+                                            },
+                                        });
+                                    }
+                                }
+                                app.diff_view = Some(diff_view);
+                            }
+                            _ => {
+                                app.diff_view = Some(diff_view);
+                            }
+                        }
+                        continue;
+                    }
+
                     if app.is_typing_search {
                         match key_event.code {
                             KeyCode::Enter | KeyCode::Esc => app.is_typing_search = false,
@@ -1512,7 +1627,39 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                         KeyCode::Char('v') => {
-                                            run_glab_cmd(&["mr", "diff", &mr_iid.to_string()], &mut terminal).await;
+                                            let mr_iid_str = mr_iid.to_string();
+                                            let cmd_args = vec!["mr", "diff", &mr_iid_str];
+                                            let is_github = match std::process::Command::new("git")
+                                                .args(["remote", "get-url", "origin"])
+                                                .output()
+                                                .map(|o| String::from_utf8_lossy(&o.stdout).contains("github.com"))
+                                            {
+                                                Ok(true) => true,
+                                                _ => false,
+                                            };
+                                            
+                                            let mut cmd = if is_github {
+                                                let gh_args = translate_glab_to_gh(&cmd_args);
+                                                let mut c = std::process::Command::new("gh");
+                                                c.args(gh_args);
+                                                c
+                                            } else {
+                                                let mut c = std::process::Command::new("glab");
+                                                c.args(&cmd_args);
+                                                c
+                                            };
+                                            
+                                            if let Ok(output) = cmd.output() {
+                                                if output.status.success() {
+                                                    let raw_diff = String::from_utf8_lossy(&output.stdout).into_owned();
+                                                    app.diff_view = Some(crate::app::DiffView::new(mr_iid, raw_diff));
+                                                } else {
+                                                    let err_msg = String::from_utf8_lossy(&output.stderr);
+                                                    app.error_message = Some(format!("Failed to fetch diff: {}", err_msg));
+                                                }
+                                            } else {
+                                                app.error_message = Some("Failed to execute CLI tool to fetch diff".to_string());
+                                            }
                                         }
                                         KeyCode::Char('o') => {
                                             run_glab_cmd(&["mr", "view", &mr_iid.to_string(), "-w"], &mut terminal).await;

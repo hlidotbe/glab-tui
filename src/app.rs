@@ -89,6 +89,168 @@ impl Selector {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiffLineType {
+    Normal,
+    Addition,
+    Deletion,
+    Meta,
+    HunkHeader,
+}
+
+#[derive(Clone, Debug)]
+pub struct DiffLine {
+    pub content: String,
+    pub line_type: DiffLineType,
+    pub file_path: String,
+    pub old_line_num: Option<u32>,
+    pub new_line_num: Option<u32>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DiffView {
+    pub mr_iid: u64,
+    pub raw_diff: String,
+    pub lines: Vec<DiffLine>,
+    pub cursor_idx: usize,
+    pub hunks: Vec<usize>,
+    pub scroll_offset: usize,
+    pub files: Vec<(String, usize)>,
+    pub selected_file_idx: usize,
+    pub focus_on_files: bool,
+}
+
+impl DiffView {
+    pub fn new(mr_iid: u64, raw_diff: String) -> Self {
+        let mut lines = Vec::new();
+        let mut current_file = String::new();
+        let mut old_line_num = None;
+        let mut new_line_num = None;
+        let mut hunks = Vec::new();
+        let mut files = Vec::new();
+
+        for line in raw_diff.lines() {
+            if line.starts_with("diff --git") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4 {
+                    current_file = parts[3].strip_prefix("b/").unwrap_or(parts[3]).to_string();
+                }
+                files.push((current_file.clone(), lines.len()));
+                lines.push(DiffLine {
+                    content: line.to_string(),
+                    line_type: DiffLineType::Meta,
+                    file_path: current_file.clone(),
+                    old_line_num: None,
+                    new_line_num: None,
+                });
+                old_line_num = None;
+                new_line_num = None;
+            } else if line.starts_with("--- ") || line.starts_with("+++ ") || line.starts_with("index ") {
+                lines.push(DiffLine {
+                    content: line.to_string(),
+                    line_type: DiffLineType::Meta,
+                    file_path: current_file.clone(),
+                    old_line_num: None,
+                    new_line_num: None,
+                });
+            } else if line.starts_with("@@ ") {
+                if let Some(caps) = parse_hunk_header(line) {
+                    old_line_num = Some(caps.0);
+                    new_line_num = Some(caps.1);
+                } else {
+                    old_line_num = None;
+                    new_line_num = None;
+                }
+                hunks.push(lines.len());
+                lines.push(DiffLine {
+                    content: line.to_string(),
+                    line_type: DiffLineType::HunkHeader,
+                    file_path: current_file.clone(),
+                    old_line_num: None,
+                    new_line_num: None,
+                });
+            } else if line.starts_with('+') {
+                lines.push(DiffLine {
+                    content: line.to_string(),
+                    line_type: DiffLineType::Addition,
+                    file_path: current_file.clone(),
+                    old_line_num: None,
+                    new_line_num: new_line_num,
+                });
+                if let Some(ref mut n) = new_line_num {
+                    *n += 1;
+                }
+            } else if line.starts_with('-') {
+                lines.push(DiffLine {
+                    content: line.to_string(),
+                    line_type: DiffLineType::Deletion,
+                    file_path: current_file.clone(),
+                    old_line_num: old_line_num,
+                    new_line_num: None,
+                });
+                if let Some(ref mut n) = old_line_num {
+                    *n += 1;
+                }
+            } else {
+                lines.push(DiffLine {
+                    content: line.to_string(),
+                    line_type: DiffLineType::Normal,
+                    file_path: current_file.clone(),
+                    old_line_num: old_line_num,
+                    new_line_num: new_line_num,
+                });
+                if let Some(ref mut o) = old_line_num {
+                    *o += 1;
+                }
+                if let Some(ref mut n) = new_line_num {
+                    *n += 1;
+                }
+            }
+        }
+
+        Self {
+            mr_iid,
+            raw_diff,
+            lines,
+            cursor_idx: 0,
+            hunks,
+            scroll_offset: 0,
+            files,
+            selected_file_idx: 0,
+            focus_on_files: true,
+        }
+    }
+
+    pub fn update_selected_file_from_cursor(&mut self) {
+        if self.files.is_empty() {
+            return;
+        }
+        let mut active_idx = 0;
+        for (i, &(_, start_idx)) in self.files.iter().enumerate() {
+            if start_idx <= self.cursor_idx {
+                active_idx = i;
+            } else {
+                break;
+            }
+        }
+        self.selected_file_idx = active_idx;
+    }
+}
+
+fn parse_hunk_header(header: &str) -> Option<(u32, u32)> {
+    let parts: Vec<&str> = header.split_whitespace().collect();
+    if parts.len() >= 3 {
+        let old_part = parts[1].strip_prefix('-')?;
+        let new_part = parts[2].strip_prefix('+')?;
+        
+        let old_start = old_part.split(',').next()?.parse::<u32>().ok()?;
+        let new_start = new_part.split(',').next()?.parse::<u32>().ok()?;
+        Some((old_start, new_start))
+    } else {
+        None
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum TextInputAction {
     EditField {
@@ -97,6 +259,12 @@ pub enum TextInputAction {
         field_type: String,
     },
     CreateIssue,
+    AddReviewComment {
+        mr_iid: u64,
+        file_path: String,
+        line_num: Option<u32>,
+        old_line_num: Option<u32>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -140,6 +308,7 @@ pub struct App {
     pub job_trace_needs_scroll_to_bottom: bool,
     pub show_help: bool,
     pub help_search_query: String,
+    pub diff_view: Option<DiffView>,
 }
 
 impl Default for App {
@@ -177,6 +346,7 @@ impl Default for App {
             job_trace_needs_scroll_to_bottom: false,
             show_help: false,
             help_search_query: String::new(),
+            diff_view: None,
         }
     }
 }
@@ -596,5 +766,51 @@ mod tests {
         assert!(filtered.contains(&"critical bug".to_string()));
         assert_eq!(filtered[0], "bug".to_string());
         assert_eq!(filtered[1], "critical bug".to_string());
+    }
+
+    #[test]
+    fn test_diff_view_file_navigation() {
+        let diff_content = "\
+diff --git a/src/app.rs b/src/app.rs
+index 123456..789012 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -10,6 +10,7 @@
+ some content
++new line 1
+-deleted line 1
+ normal line
+diff --git a/src/main.rs b/src/main.rs
+index abcdef..ffffff 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -20,6 +20,7 @@
+ main content
++main new line 1
+";
+        let mut diff_view = DiffView::new(42, diff_content.to_string());
+        
+        // Check parsed files
+        assert_eq!(diff_view.files.len(), 2);
+        assert_eq!(diff_view.files[0].0, "src/app.rs");
+        assert_eq!(diff_view.files[1].0, "src/main.rs");
+        
+        // Focus defaults to files panel
+        assert!(diff_view.focus_on_files);
+        assert_eq!(diff_view.selected_file_idx, 0);
+        
+        // Start of first file is index 0
+        assert_eq!(diff_view.files[0].1, 0);
+        // Start of second file is line index 9
+        assert_eq!(diff_view.files[1].1, 9);
+        
+        // Verify update_selected_file_from_cursor
+        diff_view.cursor_idx = 4;
+        diff_view.update_selected_file_from_cursor();
+        assert_eq!(diff_view.selected_file_idx, 0);
+        
+        diff_view.cursor_idx = 10;
+        diff_view.update_selected_file_from_cursor();
+        assert_eq!(diff_view.selected_file_idx, 1);
     }
 }

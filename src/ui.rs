@@ -1494,6 +1494,130 @@ pub fn render(f: &mut Frame, app: &mut App) {
         f.render_widget(table, help_chunks[1]);
         f.render_widget(footer_p, help_chunks[2]);
     }
+
+    if let Some(diff_view) = app.diff_view.take() {
+        let area = centered_rect(95, 95, size);
+        
+        let outer_block = Block::default()
+            .title(format!(" Pull Request / Merge Request Diff #{} ", diff_view.mr_iid))
+            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(THEME.border))
+            .style(Style::default().bg(Color::Reset));
+            
+        let inner_area = outer_block.inner(area);
+        
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),    // Main content split
+                Constraint::Length(1), // Help / controls footer
+            ].as_ref())
+            .split(inner_area);
+            
+        let main_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(25), // Files list
+                Constraint::Percentage(75), // Diff content
+            ].as_ref())
+            .split(chunks[0]);
+            
+        // 1. Render Files list on the left
+        let files_block = Block::default()
+            .title(" Files ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(if diff_view.focus_on_files {
+                THEME.border_focused
+            } else {
+                THEME.border
+            }));
+            
+        let mut file_items = Vec::new();
+        for (i, &(ref file_path, _)) in diff_view.files.iter().enumerate() {
+            let is_selected = i == diff_view.selected_file_idx;
+            let item_style = if is_selected {
+                if diff_view.focus_on_files {
+                    Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().bg(THEME.border).fg(THEME.text_normal)
+                }
+            } else {
+                Style::default().fg(THEME.text_normal)
+            };
+            file_items.push(ListItem::new(format!("  {}", file_path)).style(item_style));
+        }
+        let files_list = List::new(file_items).block(files_block);
+        
+        // 2. Render Diff content on the right
+        let diff_block = Block::default()
+            .title(" Diff ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(if !diff_view.focus_on_files {
+                THEME.border_focused
+            } else {
+                THEME.border
+            }));
+            
+        let list_height = (main_chunks[1].height as usize).saturating_sub(2);
+        
+        let mut updated_diff_view = diff_view;
+        if updated_diff_view.cursor_idx < updated_diff_view.scroll_offset {
+            updated_diff_view.scroll_offset = updated_diff_view.cursor_idx;
+        } else if updated_diff_view.cursor_idx >= updated_diff_view.scroll_offset + list_height {
+            updated_diff_view.scroll_offset = updated_diff_view.cursor_idx - list_height + 1;
+        }
+        
+        let start = updated_diff_view.scroll_offset;
+        let end = (start + list_height).min(updated_diff_view.lines.len());
+        
+        let mut list_lines = Vec::new();
+        for idx in start..end {
+            let line = &updated_diff_view.lines[idx];
+            let is_cursor = idx == updated_diff_view.cursor_idx;
+            
+            let old_str = line.old_line_num.map(|n| n.to_string()).unwrap_or_else(|| " ".to_string());
+            let new_str = line.new_line_num.map(|n| n.to_string()).unwrap_or_else(|| " ".to_string());
+            
+            let num_style = Style::default().fg(THEME.text_muted);
+            let mut line_spans = vec![
+                Span::styled(if is_cursor { " ❯ " } else { "   " }, Style::default().fg(THEME.yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{:>4} ", old_str), num_style),
+                Span::styled(format!("{:>4} │ ", new_str), num_style),
+            ];
+            
+            let content_style = match line.line_type {
+                crate::app::DiffLineType::Addition => Style::default().fg(Color::Rgb(140, 220, 140)).bg(Color::Rgb(20, 45, 25)),
+                crate::app::DiffLineType::Deletion => Style::default().fg(Color::Rgb(220, 140, 140)).bg(Color::Rgb(50, 20, 25)),
+                crate::app::DiffLineType::Meta => Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+                crate::app::DiffLineType::HunkHeader => Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD),
+                crate::app::DiffLineType::Normal => Style::default().fg(THEME.text_normal),
+            };
+            
+            let final_content_style = if is_cursor {
+                content_style.add_modifier(Modifier::UNDERLINED).add_modifier(Modifier::BOLD)
+            } else {
+                content_style
+            };
+            
+            line_spans.push(Span::styled(&line.content, final_content_style));
+            list_lines.push(Line::from(line_spans));
+        }
+        
+        let diff_para = Paragraph::new(list_lines).block(diff_block);
+        
+        let footer_p = Paragraph::new(" Esc/q: Exit • Tab: Toggle Focus • h/l/Left/Right: Switch Panels • j/k/↑/↓: Navigate • J/K: Next/Prev Hunk • c: Comment on Line ")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC));
+            
+        f.render_widget(Clear, area);
+        f.render_widget(outer_block, area);
+        f.render_widget(files_list, main_chunks[0]);
+        f.render_widget(diff_para, main_chunks[1]);
+        f.render_widget(footer_p, chunks[1]);
+        
+        app.diff_view = Some(updated_diff_view);
+    }
 }
 
 /// helper function to create a centered rect using up certain percentage of the available rect `r`
