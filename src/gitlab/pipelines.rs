@@ -1,8 +1,8 @@
 use super::client::GitlabClient;
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Pipeline {
     pub id: u64,
     pub status: String,
@@ -16,7 +16,7 @@ pub async fn list_pipelines(client: &GitlabClient, project_path: &str) -> Result
     client.fetch_api(&endpoint).await
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Job {
     pub id: u64,
     pub status: String,

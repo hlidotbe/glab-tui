@@ -1,28 +1,28 @@
 use super::client::GitlabClient;
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Author {
     pub username: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Milestone {
     pub title: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Assignee {
     pub username: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Reviewer {
     pub username: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MergeRequest {
     pub iid: u64,
     pub title: String,
@@ -37,6 +37,8 @@ pub struct MergeRequest {
     #[serde(default)]
     pub reviewers: Vec<Reviewer>,
     pub target_branch: String,
+    #[serde(default)]
+    pub source_branch: String,
     pub draft: bool,
     pub description: Option<String>,
 }

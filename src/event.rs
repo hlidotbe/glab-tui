@@ -21,6 +21,8 @@ pub enum Event {
     FetchFailed(crate::app::Tab, String),
     DiffFetched(u64, String),
     DiffFetchFailed(String),
+    NotificationsFetched(Vec<crate::gitlab::notifications::Notification>),
+    JobsTabFetched(u64, Vec<crate::gitlab::pipelines::Job>),
 }
 
 #[derive(Debug)]

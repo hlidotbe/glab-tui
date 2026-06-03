@@ -62,6 +62,52 @@ pub fn format_ref(r#ref: &str) -> String {
     }
 }
 
+fn extract_quotes(s: &str) -> String {
+    if let Some(first_idx) = s.find('"') {
+        if let Some(last_idx) = s.rfind('"') {
+            if first_idx < last_idx {
+                return s[first_idx + 1..last_idx].trim().to_string();
+            }
+        }
+    }
+    if let Some(first_idx) = s.find('\'') {
+        if let Some(last_idx) = s.rfind('\'') {
+            if first_idx < last_idx {
+                return s[first_idx + 1..last_idx].trim().to_string();
+            }
+        }
+    }
+    s.trim().to_string()
+}
+
+/// Extracts a status prefix (like Draft:, Resolve:, WIP:) from a Merge Request title.
+/// Returns a tuple of (ExtractedPrefix, CleanedTitle).
+pub fn parse_mr_title_prefix(title: &str) -> (String, String) {
+    let title_trimmed = title.trim();
+    let prefixes = [
+        "draft:", "wip:", "resolve:", "resolves:",
+        "[draft]", "[wip]", "[resolve]",
+        "draft ", "wip ", "resolve ", "resolves "
+    ];
+    
+    let title_lower = title_trimmed.to_lowercase();
+    for p in prefixes {
+        if title_lower.starts_with(p) {
+            let prefix_len = p.len();
+            let mut prefix = title_trimmed[..prefix_len].trim().to_string();
+            prefix = prefix.trim_end_matches(':')
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .trim()
+                .to_string();
+            let remaining = title_trimmed[prefix_len..].trim();
+            return (prefix, extract_quotes(remaining));
+        }
+    }
+    
+    (String::new(), extract_quotes(title_trimmed))
+}
+
 
 pub fn render_markdown(markdown: &str) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
@@ -185,5 +231,45 @@ mod tests {
         let md = "# Header1\n## Header2\n- Bullet `code` item\nNormal line with **bold** text";
         let lines = render_markdown(md);
         assert_eq!(lines.len(), 4);
+    }
+
+    #[test]
+    fn test_parse_mr_title_prefix() {
+        assert_eq!(
+            parse_mr_title_prefix("Draft: Implement user login"),
+            ("Draft".to_string(), "Implement user login".to_string())
+        );
+        assert_eq!(
+            parse_mr_title_prefix("resolve: fix connection leak"),
+            ("resolve".to_string(), "fix connection leak".to_string())
+        );
+        assert_eq!(
+            parse_mr_title_prefix("Resolve \"Fix connection leak\""),
+            ("Resolve".to_string(), "Fix connection leak".to_string())
+        );
+        assert_eq!(
+            parse_mr_title_prefix("Resolve: \"Fix connection leak\""),
+            ("Resolve".to_string(), "Fix connection leak".to_string())
+        );
+        assert_eq!(
+            parse_mr_title_prefix("Resolve: \"Fix connection leak\" in db"),
+            ("Resolve".to_string(), "Fix connection leak".to_string())
+        );
+        assert_eq!(
+            parse_mr_title_prefix("[WIP] add new routes"),
+            ("WIP".to_string(), "add new routes".to_string())
+        );
+        assert_eq!(
+            parse_mr_title_prefix("Regular MR title without prefix"),
+            ("".to_string(), "Regular MR title without prefix".to_string())
+        );
+        assert_eq!(
+            parse_mr_title_prefix("\"Title wrapped in quotes\""),
+            ("".to_string(), "Title wrapped in quotes".to_string())
+        );
+        assert_eq!(
+            parse_mr_title_prefix("Title with 'single quotes' in it"),
+            ("".to_string(), "single quotes".to_string())
+        );
     }
 }

@@ -52,6 +52,7 @@ struct Theme {
     inactive_bg: Color,
     text_normal: Color,
     text_muted: Color,
+    checked_bg: Color,
     
     // Status colors (Sunset themed)
     green: Color,      // success, open
@@ -71,10 +72,11 @@ const THEME: Theme = Theme {
     border: Color::Rgb(80, 80, 88),        // muted gray border for inactive panes
     border_focused: Color::Rgb(49, 191, 103), // vibrant green for active panes
     header_fg: Color::Rgb(49, 191, 103),  // vibrant green for active headers
-    highlight_bg: Color::Rgb(49, 191, 103), // selection highlight background is green
+    highlight_bg: Color::Rgb(43, 43, 57), // dark slate selection highlight background
     inactive_bg: Color::Rgb(49, 50, 68),   // dark gray surface for selection hover or inactive elements
     text_normal: Color::Rgb(216, 222, 233),// light text
     text_muted: Color::Rgb(130, 130, 138), // muted gray text
+    checked_bg: Color::Rgb(28, 38, 55),    // subtle dark steel blue for checked rows
     
     green: Color::Rgb(49, 191, 103),       // success / open (vibrant green)
     green_bg: Color::Rgb(20, 45, 28),      // dark green background for pill
@@ -184,27 +186,28 @@ fn add_cmd(text: &mut Vec<Line<'static>>, key: &str, desc: &str) {
 }
 
 pub fn render(f: &mut Frame, app: &mut App) {
-    let render_fuzzy_cell = |text: &str, query: &str, is_selected: bool, base_style: Style| {
-        if query.trim().is_empty() {
-            Cell::from(text.to_string()).style(base_style)
+    let render_fuzzy_cell = |text: &str, query: &str, is_selected: bool, is_checked: bool, base_style: Style, alignment: Alignment| {
+        let mut styled_base = base_style;
+        if is_selected {
+            styled_base = styled_base.bg(THEME.highlight_bg).add_modifier(Modifier::BOLD);
+        } else if is_checked {
+            styled_base = styled_base.bg(THEME.checked_bg);
+        }
+        let line = if query.trim().is_empty() {
+            Line::from(text.to_string()).alignment(alignment)
         } else {
             let matcher = SkimMatcherV2::default();
             if let Some((_, indices)) = matcher.fuzzy_indices(text, query) {
-                let highlight_style = if is_selected {
-                    Style::default().bg(THEME.highlight_bg).fg(THEME.yellow).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(THEME.yellow).add_modifier(Modifier::BOLD)
-                };
-                let styled_base = if is_selected {
-                    Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD)
-                } else {
-                    base_style
-                };
-                Cell::from(Line::from(highlight_fuzzy_match(text, &indices, styled_base, highlight_style)))
+                let mut highlight_style = Style::default().fg(THEME.yellow).add_modifier(Modifier::BOLD);
+                if let Some(bg) = styled_base.bg {
+                    highlight_style = highlight_style.bg(bg);
+                }
+                Line::from(highlight_fuzzy_match(text, &indices, styled_base, highlight_style)).alignment(alignment)
             } else {
-                Cell::from(text.to_string()).style(base_style)
+                Line::from(text.to_string()).alignment(alignment)
             }
-        }
+        };
+        Cell::from(line).style(styled_base)
     };
 
     let size = f.area();
@@ -329,24 +332,29 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::Pipelines => {
+            add_cmd(&mut commands_text, "Ent", "View Jobs");
+            add_cmd(&mut commands_text, "r", "Retry Pipe");
+            add_cmd(&mut commands_text, "p", &format!("Run {} Pipe", pr_suffix));
+            add_cmd(&mut commands_text, "c", "Cancel Pipe");
+            add_cmd(&mut commands_text, "o", "View Browser");
+            add_cmd(&mut commands_text, "f", "Search");
+            add_cmd(&mut commands_text, "C-r", "Refresh");
+            add_cmd(&mut commands_text, "?", "Help");
+            add_cmd(&mut commands_text, "q", "Quit");
+        }
+        Tab::Jobs => {
             if app.job_trace.is_some() {
                 add_cmd(&mut commands_text, "j/k", "Scroll Trace");
                 add_cmd(&mut commands_text, "Esc", "Close Trace");
-            } else if app.selected_pipeline_jobs.is_some() {
+            } else {
                 add_cmd(&mut commands_text, "Ent", "View Trace");
+                add_cmd(&mut commands_text, "p", "Enter Pipe ID");
                 add_cmd(&mut commands_text, "Spc", "Toggle Select");
                 add_cmd(&mut commands_text, "r", "Retry Job(s)");
                 add_cmd(&mut commands_text, "d", "Download Art");
                 add_cmd(&mut commands_text, "o", "View Browser");
                 add_cmd(&mut commands_text, "e", "View Helix");
                 add_cmd(&mut commands_text, "Esc", "Back to Pipes");
-            } else {
-                add_cmd(&mut commands_text, "Ent", "View Jobs");
-                add_cmd(&mut commands_text, "r", "Retry Pipe");
-                add_cmd(&mut commands_text, "p", &format!("Run {} Pipe", pr_suffix));
-                add_cmd(&mut commands_text, "c", "Cancel Pipe");
-                add_cmd(&mut commands_text, "o", "View Browser");
-                add_cmd(&mut commands_text, "f", "Search");
                 add_cmd(&mut commands_text, "C-r", "Refresh");
                 add_cmd(&mut commands_text, "?", "Help");
                 add_cmd(&mut commands_text, "q", "Quit");
@@ -365,6 +373,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "Ent", "View Notes");
             add_cmd(&mut commands_text, "o", "View Browser");
             add_cmd(&mut commands_text, "f", "Search");
+            add_cmd(&mut commands_text, "C-r", "Refresh");
+            add_cmd(&mut commands_text, "?", "Help");
+            add_cmd(&mut commands_text, "q", "Quit");
+        }
+        Tab::Notifications => {
+            add_cmd(&mut commands_text, "Ent", "Mark Read & Go");
+            add_cmd(&mut commands_text, "f", "Search");
+            add_cmd(&mut commands_text, "u", "Self-update");
             add_cmd(&mut commands_text, "C-r", "Refresh");
             add_cmd(&mut commands_text, "?", "Help");
             add_cmd(&mut commands_text, "q", "Quit");
@@ -388,7 +404,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         .title(tab_title)
         .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD));
     
-    let highlight_style = Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD);
+    let highlight_style = Style::default().bg(THEME.highlight_bg);
     let header_style = Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD);
 
     match app.active_tab {
@@ -400,18 +416,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let filtered_issues = App::filter_issues_list(&app.issues.items, &app.search_query);
                 
                 let rows = filtered_issues.iter().enumerate().map(|(idx, i)| {
-                    let (state_text, state_style) = if i.state == "opened" {
-                        ("  OPEN  ", Style::default().fg(THEME.green).bg(THEME.green_bg).add_modifier(Modifier::BOLD))
-                    } else {
-                        (" CLOSED ", Style::default().fg(THEME.red).bg(THEME.red_bg).add_modifier(Modifier::BOLD))
-                    };
                     let is_selected = app.issues.state.selected() == Some(idx);
+                    let (state_text, state_style) = if i.state == "opened" {
+                        ("OPEN", Style::default().fg(THEME.green).bg(if is_selected { THEME.highlight_bg } else { THEME.green_bg }).add_modifier(Modifier::BOLD))
+                    } else {
+                        ("CLOSED", Style::default().fg(THEME.red).bg(if is_selected { THEME.highlight_bg } else { THEME.red_bg }).add_modifier(Modifier::BOLD))
+                    };
                     Row::new(vec![
-                        render_fuzzy_cell(&format!("#{}", i.iid), &app.search_query, is_selected, Style::default().fg(THEME.text_normal)),
-                        Cell::from(state_text).style(state_style),
-                        render_fuzzy_cell(&truncate(&i.title, 100), &app.search_query, is_selected, Style::default().fg(THEME.text_normal)),
-                        render_fuzzy_cell(&truncate(&i.author.username, 15), &app.search_query, is_selected, Style::default().fg(THEME.blue)),
-                        Cell::from(time_ago(&i.updated_at)).style(Style::default().fg(THEME.yellow)),
+                        render_fuzzy_cell(&format!("#{}", i.iid), &app.search_query, is_selected, false, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(state_text, &app.search_query, is_selected, false, state_style, Alignment::Center),
+                        render_fuzzy_cell(&truncate(&i.title, 100), &app.search_query, is_selected, false, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(&truncate(&i.author.username, 15), &app.search_query, is_selected, false, Style::default().fg(THEME.blue), Alignment::Left),
+                        render_fuzzy_cell(&time_ago(&i.updated_at), &app.search_query, is_selected, false, Style::default().fg(THEME.yellow), Alignment::Left),
                     ]).height(1)
                 });
 
@@ -424,7 +440,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 ];
 
                 let table = Table::new(rows, widths)
-                    .header(Row::new(vec!["ID", "State", "Title", "Author", "Updated"]).style(header_style).height(1))
+                    .header(Row::new(vec![
+                        Cell::from("ID"),
+                        Cell::from(Line::from("State").alignment(Alignment::Center)),
+                        Cell::from("Title"),
+                        Cell::from("Author"),
+                        Cell::from("Updated"),
+                    ]).style(header_style).height(1))
                     .block(main_block)
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
@@ -530,33 +552,56 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let filtered_mrs = App::filter_mrs_list(&app.mrs.items, &app.search_query);
                 
                 let rows = filtered_mrs.iter().enumerate().map(|(idx, m)| {
-                    let (state_text, state_style) = if m.state == "opened" {
-                        ("  OPEN  ", Style::default().fg(THEME.green).bg(THEME.green_bg).add_modifier(Modifier::BOLD))
-                    } else if m.state == "merged" {
-                        (" MERGED ", Style::default().fg(THEME.purple).bg(THEME.purple_bg).add_modifier(Modifier::BOLD))
-                    } else {
-                        (" CLOSED ", Style::default().fg(THEME.red).bg(THEME.red_bg).add_modifier(Modifier::BOLD))
-                    };
                     let is_selected = app.mrs.state.selected() == Some(idx);
+                    let (prefix, clean_title) = crate::utils::format::parse_mr_title_prefix(&m.title);
+
+                    let (state_text, state_style) = if m.state == "opened" {
+                        ("OPEN", Style::default().fg(THEME.green).bg(if is_selected { THEME.highlight_bg } else { THEME.green_bg }).add_modifier(Modifier::BOLD))
+                    } else if m.state == "merged" {
+                        ("MERGED", Style::default().fg(THEME.purple).bg(if is_selected { THEME.highlight_bg } else { THEME.purple_bg }).add_modifier(Modifier::BOLD))
+                    } else {
+                        ("CLOSED", Style::default().fg(THEME.red).bg(if is_selected { THEME.highlight_bg } else { THEME.red_bg }).add_modifier(Modifier::BOLD))
+                    };
+
+                    let (status_styled, status_style) = if m.draft {
+                        ("DRAFT".to_string(), Style::default().fg(THEME.yellow).bg(if is_selected { THEME.highlight_bg } else { THEME.yellow_bg }).add_modifier(Modifier::BOLD))
+                    } else {
+                        let upper = prefix.to_uppercase();
+                        if upper == "WIP" || upper == "DRAFT" {
+                            ("DRAFT".to_string(), Style::default().fg(THEME.yellow).bg(if is_selected { THEME.highlight_bg } else { THEME.yellow_bg }).add_modifier(Modifier::BOLD))
+                        } else {
+                            ("READY".to_string(), Style::default().fg(THEME.green).bg(if is_selected { THEME.highlight_bg } else { THEME.green_bg }).add_modifier(Modifier::BOLD))
+                        }
+                    };
+
                     Row::new(vec![
-                        render_fuzzy_cell(&format!("!{}", m.iid), &app.search_query, is_selected, Style::default().fg(THEME.text_normal)),
-                        Cell::from(state_text).style(state_style),
-                        render_fuzzy_cell(&truncate(&m.title, 100), &app.search_query, is_selected, Style::default().fg(THEME.text_normal)),
-                        render_fuzzy_cell(&truncate(&m.author.username, 15), &app.search_query, is_selected, Style::default().fg(THEME.blue)),
-                        Cell::from(time_ago(&m.updated_at)).style(Style::default().fg(THEME.yellow)),
+                        render_fuzzy_cell(&format!("!{}", m.iid), &app.search_query, is_selected, false, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(state_text, &app.search_query, is_selected, false, state_style, Alignment::Center),
+                        render_fuzzy_cell(&status_styled, &app.search_query, is_selected, false, status_style, Alignment::Center),
+                        render_fuzzy_cell(&truncate(&clean_title, 100), &app.search_query, is_selected, false, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(&truncate(&m.author.username, 15), &app.search_query, is_selected, false, Style::default().fg(THEME.blue), Alignment::Left),
+                        render_fuzzy_cell(&time_ago(&m.updated_at), &app.search_query, is_selected, false, Style::default().fg(THEME.yellow), Alignment::Left),
                     ]).height(1)
                 });
 
                 let widths = [
                     Constraint::Length(10),
                     Constraint::Length(10),
-                    Constraint::Percentage(50),
+                    Constraint::Length(11),
+                    Constraint::Percentage(42),
                     Constraint::Length(18),
                     Constraint::Length(15),
                 ];
 
                 let table = Table::new(rows, widths)
-                    .header(Row::new(vec!["ID", "State", "Title", "Author", "Updated"]).style(header_style).height(1))
+                    .header(Row::new(vec![
+                        Cell::from("ID"),
+                        Cell::from(Line::from("State").alignment(Alignment::Center)),
+                        Cell::from(Line::from("Status").alignment(Alignment::Center)),
+                        Cell::from("Title"),
+                        Cell::from("Author"),
+                        Cell::from("Updated"),
+                    ]).style(header_style).height(1))
                     .block(main_block)
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
@@ -678,202 +723,233 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 f.render_widget(Paragraph::new("\n\n Loading pipelines...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
                 f.render_widget(Paragraph::new("Select a pipeline to view details...").block(Block::default().borders(Borders::ALL).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             } else {
-                if let Some(jobs) = &app.selected_pipeline_jobs {
-                    let rows = jobs.iter().enumerate().map(|(i, j)| {
-                        let (status_text, status_color, bg_color) = match j.status.as_str() {
-                            "success" => (" SUCCESS ", THEME.green, THEME.green_bg),
-                            "failed" => ("  FAILED ", THEME.red, THEME.red_bg),
-                            "running" => (" RUNNING ", THEME.blue, THEME.blue_bg),
-                            "canceled" => ("CANCELED ", THEME.text_muted, THEME.inactive_bg),
-                            "pending" => (" PENDING ", THEME.yellow, THEME.yellow_bg),
-                            "skipped" => (" SKIPPED ", THEME.text_muted, THEME.inactive_bg),
-                            "manual" => ("  MANUAL ", THEME.text_muted, THEME.inactive_bg),
-                            _ => (" UNKNOWN ", THEME.text_muted, THEME.inactive_bg),
-                        };
-                        let style = if Some(i) == app.selected_job_index {
-                            Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default()
-                        };
-                        let is_selected = app.selected_jobs.contains(&j.id);
-                        let id_prefix = if is_selected { "[x] " } else { "[ ] " };
-                        Row::new(vec![
-                            Cell::from(format!("{}{}", id_prefix, j.id)),
-                            Cell::from(j.stage.clone()),
-                            Cell::from(status_text).style(Style::default().fg(status_color).bg(bg_color).add_modifier(Modifier::BOLD)),
-                            Cell::from(j.name.clone()),
-                        ]).style(style).height(1)
-                    });
-
-                    let widths = [
-                        Constraint::Length(14),
-                        Constraint::Length(15),
-                        Constraint::Length(12),
-                        Constraint::Percentage(60),
-                    ];
-
-                    let table = Table::new(rows, widths)
-                        .header(Row::new(vec!["ID", "Stage", "Status", "Name"]).style(header_style).height(1))
-                        .block(Block::default()
-                            .borders(Borders::ALL)
-                            .title(" Jobs (Esc to go back) ")
-                            .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
-                            .border_style(Style::default().fg(THEME.border_focused)));
+                let filtered_pipelines = App::filter_pipelines_list(&app.pipelines.items, &app.search_query, &app.pipeline_jobs);
                     
-                    let mut state = app.jobs_list_state.clone();
-                    f.render_stateful_widget(table, middle_chunks[1], &mut state);
-                    app.jobs_list_state = state;
-
-                    if let Some(trace) = &app.job_trace {
-                        let width = middle_chunks[2].width.saturating_sub(2) as usize;
-                        let height = middle_chunks[2].height.saturating_sub(2) as usize;
-                        let total_lines = count_wrapped_lines(trace, width);
-                        let max_scroll = total_lines.saturating_sub(height) as u16;
-
-                        if app.job_trace_needs_scroll_to_bottom {
-                            app.job_trace_scroll = max_scroll;
-                            app.job_trace_needs_scroll_to_bottom = false;
-                        } else {
-                            app.job_trace_scroll = app.job_trace_scroll.min(max_scroll);
-                        }
-
-                        let title_suffix = if total_lines > height {
-                            let percent = (app.job_trace_scroll as usize * 100) / max_scroll.max(1) as usize;
-                            format!(" [j/k | {}%] ", percent.min(100))
-                        } else {
-                            String::new()
-                        };
-
-                        let preview_block = Block::default()
-                            .borders(Borders::ALL)
-                            .title(format!(" Details / Trace{} ", title_suffix))
-                            .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
-                            .border_style(Style::default().fg(THEME.border));
-
-                        f.render_widget(
-                            Paragraph::new(trace.as_str())
-                                .block(preview_block)
-                                .wrap(ratatui::widgets::Wrap { trim: false })
-                                .scroll((app.job_trace_scroll, 0)),
-                            middle_chunks[2],
-                        );
+                let rows = filtered_pipelines.iter().enumerate().map(|(idx, p)| {
+                    let is_row_highlighted = app.pipelines.state.selected() == Some(idx);
+                    let (status_text, status_color, bg_color) = match p.status.as_str() {
+                        "success" => ("SUCCESS", THEME.green, THEME.green_bg),
+                        "failed" => ("FAILED", THEME.red, THEME.red_bg),
+                        "running" => ("RUNNING", THEME.blue, THEME.blue_bg),
+                        "canceled" => ("CANCEL", THEME.text_muted, THEME.inactive_bg),
+                        "pending" => ("PENDING", THEME.yellow, THEME.yellow_bg),
+                        "skipped" => ("SKIP", THEME.text_muted, THEME.inactive_bg),
+                        "manual" => ("MANUAL", THEME.text_muted, THEME.inactive_bg),
+                        _ => ("UNKNOWN", THEME.text_muted, THEME.inactive_bg),
+                    };
+                    let stages_dots = if let Some(jobs) = app.pipeline_jobs.get(&p.id) {
+                        get_stages_dots(jobs)
                     } else {
-                        let preview_block = Block::default()
-                            .borders(Borders::ALL)
-                            .title(" Details / Trace ")
-                            .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
-                            .border_style(Style::default().fg(THEME.border));
+                        "⏳".to_string()
+                    };
+                    let is_checked = app.selected_pipelines.contains(&p.id);
+                    let status_bg = if is_row_highlighted {
+                        THEME.highlight_bg
+                    } else if is_checked {
+                        THEME.checked_bg
+                    } else {
+                        bg_color
+                    };
+                    Row::new(vec![
+                        render_fuzzy_cell(&format!("#{}", p.id), &app.search_query, is_row_highlighted, is_checked, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(status_text, &app.search_query, is_row_highlighted, is_checked, Style::default().fg(status_color).bg(status_bg).add_modifier(Modifier::BOLD), Alignment::Center),
+                        render_fuzzy_cell(&stages_dots, &app.search_query, is_row_highlighted, is_checked, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(&truncate(&format_ref(&p.r#ref), 100), &app.search_query, is_row_highlighted, is_checked, Style::default().fg(THEME.purple), Alignment::Left),
+                        render_fuzzy_cell(&time_ago(&p.updated_at), &app.search_query, is_row_highlighted, is_checked, Style::default().fg(THEME.yellow), Alignment::Left),
+                    ]).height(1)
+                });
+
+                let widths = [
+                    Constraint::Length(14),
+                    Constraint::Length(12),
+                    Constraint::Length(24),
+                    Constraint::Percentage(45),
+                    Constraint::Length(15),
+                ];
+
+                let table = Table::new(rows, widths)
+                    .header(Row::new(vec![
+                        Cell::from("ID"),
+                        Cell::from(Line::from("Status").alignment(Alignment::Center)),
+                        Cell::from("Stages"),
+                        Cell::from("Ref"),
+                        Cell::from("Updated"),
+                    ]).style(header_style).height(1))
+                    .block(main_block)
+                    .row_highlight_style(highlight_style)
+                    .highlight_symbol(" ❯ ");
+                
+                f.render_stateful_widget(table, middle_chunks[1], &mut app.pipelines.state);
+
+                let preview_block = Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Details ")
+                    .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
+                    .border_style(Style::default().fg(THEME.border));
+                if let Some(selected) = app.pipelines.state.selected() {
+                    if let Some(p) = filtered_pipelines.get(selected) {
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
-                            Span::styled("Stages Success Rate:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
+                            Span::styled("Pipeline ID: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(format!("#{}", p.id), Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Ref:         ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(format_ref(&p.r#ref), Style::default().fg(THEME.purple)),
+                        ]));
+                        
+                        let (status_text, status_color) = match p.status.as_str() {
+                            "success" => ("success", THEME.green),
+                            "failed" => ("failed", THEME.red),
+                            "running" => ("running", THEME.blue),
+                            "canceled" => ("canceled", THEME.text_muted),
+                            "pending" => ("pending", THEME.yellow),
+                            _ => ("unknown", THEME.text_muted),
+                        };
+                        
+                        text.push(Line::from(vec![
+                            Span::styled("Status:      ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(status_text, Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Updated:     ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(time_ago(&p.updated_at), Style::default().fg(THEME.yellow)),
                         ]));
                         text.push(Line::from(""));
-                        append_stage_summaries(&mut text, jobs);
+
+                        if let Some(jobs) = app.pipeline_jobs.get(&p.id) {
+                            text.push(Line::from(vec![
+                                Span::styled("Stages Success Rate:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
+                            ]));
+                            text.push(Line::from(""));
+                            append_stage_summaries(&mut text, jobs);
+                        } else {
+                            text.push(Line::from(vec![
+                                Span::styled("Loading stages...", Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC)),
+                            ]));
+                        }
+                        text.push(Line::from(""));
                         f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
+                    } else {
+                        f.render_widget(Paragraph::new("").block(preview_block), middle_chunks[2]);
                     }
                 } else {
-                    let filtered_pipelines = App::filter_pipelines_list(&app.pipelines.items, &app.search_query, &app.pipeline_jobs);
-                        
-                    let rows = filtered_pipelines.iter().enumerate().map(|(idx, p)| {
-                        let (status_text, status_color, bg_color) = match p.status.as_str() {
-                            "success" => (" SUCCESS ", THEME.green, THEME.green_bg),
-                            "failed" => ("  FAILED ", THEME.red, THEME.red_bg),
-                            "running" => (" RUNNING ", THEME.blue, THEME.blue_bg),
-                            "canceled" => ("CANCELED ", THEME.text_muted, THEME.inactive_bg),
-                            "pending" => (" PENDING ", THEME.yellow, THEME.yellow_bg),
-                            "skipped" => (" SKIPPED ", THEME.text_muted, THEME.inactive_bg),
-                            "manual" => ("  MANUAL ", THEME.text_muted, THEME.inactive_bg),
-                            _ => (" UNKNOWN ", THEME.text_muted, THEME.inactive_bg),
-                        };
-                        let stages_dots = if let Some(jobs) = app.pipeline_jobs.get(&p.id) {
-                            get_stages_dots(jobs)
-                        } else {
-                            "⏳".to_string()
-                        };
-                        let is_checked = app.selected_pipelines.contains(&p.id);
-                        let id_prefix = if is_checked { "[x] " } else { "[ ] " };
-                        let is_row_highlighted = app.pipelines.state.selected() == Some(idx);
-                        Row::new(vec![
-                            render_fuzzy_cell(&format!("{}#{}", id_prefix, p.id), &app.search_query, is_row_highlighted, Style::default().fg(THEME.text_normal)),
-                            Cell::from(status_text).style(Style::default().fg(status_color).bg(bg_color).add_modifier(Modifier::BOLD)),
-                            Cell::from(stages_dots),
-                            render_fuzzy_cell(&truncate(&format_ref(&p.r#ref), 100), &app.search_query, is_row_highlighted, Style::default().fg(THEME.purple)),
-                            Cell::from(time_ago(&p.updated_at)).style(Style::default().fg(THEME.yellow)),
-                        ]).height(1)
-                    });
-
-                    let widths = [
-                        Constraint::Length(14),
-                        Constraint::Length(12),
-                        Constraint::Length(24),
-                        Constraint::Percentage(45),
-                        Constraint::Length(15),
-                    ];
-
-                    let table = Table::new(rows, widths)
-                        .header(Row::new(vec!["ID", "Status", "Stages", "Ref", "Updated"]).style(header_style).height(1))
-                        .block(main_block)
-                        .row_highlight_style(highlight_style)
-                        .highlight_symbol(" ❯ ");
+                    f.render_widget(Paragraph::new("Select an item to view details...").block(preview_block).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
+                }
+            }
+        }
+        Tab::Jobs => {
+            if app.selected_pipeline_jobs.is_none() && app.loading_tabs.contains(&app.active_tab) {
+                f.render_widget(Paragraph::new("\n\n Loading jobs...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
+                f.render_widget(Paragraph::new("Select a job to view details...").block(Block::default().borders(Borders::ALL).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
+            } else if let Some(jobs) = &app.selected_pipeline_jobs {
+                let filtered_jobs = app.filtered_jobs();
+                
+                let rows = filtered_jobs.iter().enumerate().map(|(i, j)| {
+                    let (status_text, status_color, bg_color) = match j.status.as_str() {
+                        "success" => ("SUCCESS", THEME.green, THEME.green_bg),
+                        "failed" => ("FAILED", THEME.red, THEME.red_bg),
+                        "running" => ("RUNNING", THEME.blue, THEME.blue_bg),
+                        "canceled" => ("CANCEL", THEME.text_muted, THEME.inactive_bg),
+                        "pending" => ("PENDING", THEME.yellow, THEME.yellow_bg),
+                        "skipped" => ("SKIP", THEME.text_muted, THEME.inactive_bg),
+                        "manual" => ("MANUAL", THEME.text_muted, THEME.inactive_bg),
+                        _ => ("UNKNOWN", THEME.text_muted, THEME.inactive_bg),
+                    };
+                    let is_job_selected = Some(i) == app.selected_job_index;
+                    let is_checked = app.selected_jobs.contains(&j.id);
+                    let status_bg = if is_job_selected {
+                        THEME.highlight_bg
+                    } else if is_checked {
+                        THEME.checked_bg
+                    } else {
+                        bg_color
+                    };
                     
-                    f.render_stateful_widget(table, middle_chunks[1], &mut app.pipelines.state);
+                    Row::new(vec![
+                        render_fuzzy_cell(&j.id.to_string(), &app.search_query, is_job_selected, is_checked, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(&j.stage, &app.search_query, is_job_selected, is_checked, Style::default().fg(THEME.purple), Alignment::Left),
+                        render_fuzzy_cell(status_text, &app.search_query, is_job_selected, is_checked, Style::default().fg(status_color).bg(status_bg).add_modifier(Modifier::BOLD), Alignment::Center),
+                        render_fuzzy_cell(&j.name, &app.search_query, is_job_selected, is_checked, Style::default().fg(THEME.text_normal), Alignment::Left),
+                    ]).height(1)
+                });
+
+                let widths = [
+                    Constraint::Length(14),
+                    Constraint::Length(15),
+                    Constraint::Length(12),
+                    Constraint::Percentage(60),
+                ];
+
+                let table = Table::new(rows, widths)
+                    .header(Row::new(vec![
+                        Cell::from("ID"),
+                        Cell::from("Stage"),
+                        Cell::from(Line::from("Status").alignment(Alignment::Center)),
+                        Cell::from("Name"),
+                    ]).style(header_style).height(1))
+                    .block(Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Jobs ")
+                        .title_style(Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD))
+                        .border_style(Style::default().fg(THEME.border_focused)))
+                    .row_highlight_style(highlight_style)
+                    .highlight_symbol(" ❯ ");
+                
+                let mut state = app.jobs_list_state.clone();
+                f.render_stateful_widget(table, middle_chunks[1], &mut state);
+                app.jobs_list_state = state;
+
+                if let Some(trace) = &app.job_trace {
+                    let width = middle_chunks[2].width.saturating_sub(2) as usize;
+                    let height = middle_chunks[2].height.saturating_sub(2) as usize;
+                    let total_lines = count_wrapped_lines(trace, width);
+                    let max_scroll = total_lines.saturating_sub(height) as u16;
+
+                    if app.job_trace_needs_scroll_to_bottom {
+                        app.job_trace_scroll = max_scroll;
+                        app.job_trace_needs_scroll_to_bottom = false;
+                    } else {
+                        app.job_trace_scroll = app.job_trace_scroll.min(max_scroll);
+                    }
+
+                    let title_suffix = if total_lines > height {
+                        let percent = (app.job_trace_scroll as usize * 100) / max_scroll.max(1) as usize;
+                        format!(" [j/k | {}%] ", percent.min(100))
+                    } else {
+                        String::new()
+                    };
 
                     let preview_block = Block::default()
                         .borders(Borders::ALL)
-                        .title(" Details ")
+                        .title(format!(" Details / Trace{} ", title_suffix))
                         .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
                         .border_style(Style::default().fg(THEME.border));
-                    if let Some(selected) = app.pipelines.state.selected() {
-                        if let Some(p) = filtered_pipelines.get(selected) {
-                            let mut text = Vec::new();
-                            text.push(Line::from(vec![
-                                Span::styled("Pipeline ID: ", Style::default().fg(THEME.text_muted)),
-                                Span::styled(format!("#{}", p.id), Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD)),
-                            ]));
-                            text.push(Line::from(vec![
-                                Span::styled("Ref:         ", Style::default().fg(THEME.text_muted)),
-                                Span::styled(format_ref(&p.r#ref), Style::default().fg(THEME.purple)),
-                            ]));
-                            
-                            let (status_text, status_color) = match p.status.as_str() {
-                                "success" => ("success", THEME.green),
-                                "failed" => ("failed", THEME.red),
-                                "running" => ("running", THEME.blue),
-                                "canceled" => ("canceled", THEME.text_muted),
-                                "pending" => ("pending", THEME.yellow),
-                                _ => ("unknown", THEME.text_muted),
-                            };
-                            
-                            text.push(Line::from(vec![
-                                Span::styled("Status:      ", Style::default().fg(THEME.text_muted)),
-                                Span::styled(status_text, Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
-                            ]));
-                            text.push(Line::from(vec![
-                                Span::styled("Updated:     ", Style::default().fg(THEME.text_muted)),
-                                Span::styled(time_ago(&p.updated_at), Style::default().fg(THEME.yellow)),
-                            ]));
-                            text.push(Line::from(""));
 
-                            if let Some(jobs) = app.pipeline_jobs.get(&p.id) {
-                                text.push(Line::from(vec![
-                                    Span::styled("Stages Success Rate:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
-                                ]));
-                                text.push(Line::from(""));
-                                append_stage_summaries(&mut text, jobs);
-                            } else {
-                                text.push(Line::from(vec![
-                                    Span::styled("Loading stages...", Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC)),
-                                ]));
-                            }
-                            text.push(Line::from(""));
-                            f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
-                        } else {
-                            f.render_widget(Paragraph::new("").block(preview_block), middle_chunks[2]);
-                        }
-                    } else {
-                        f.render_widget(Paragraph::new("Select an item to view details...").block(preview_block).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
-                    }
+                    f.render_widget(
+                        Paragraph::new(trace.as_str())
+                            .block(preview_block)
+                            .wrap(ratatui::widgets::Wrap { trim: false })
+                            .scroll((app.job_trace_scroll, 0)),
+                        middle_chunks[2],
+                    );
+                } else {
+                    let preview_block = Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Details / Trace ")
+                        .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
+                        .border_style(Style::default().fg(THEME.border));
+                    let mut text = Vec::new();
+                    text.push(Line::from(vec![
+                        Span::styled("Stages Success Rate:", Style::default().fg(THEME.header_fg).add_modifier(Modifier::BOLD)),
+                    ]));
+                    text.push(Line::from(""));
+                    append_stage_summaries(&mut text, jobs);
+                    f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
                 }
+            } else {
+                f.render_widget(Paragraph::new("\n\n No jobs loaded.\n Press 'p' to manually enter a pipeline ID to fetch jobs for,\n or view a pipeline in Pipelines tab and press Enter.").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
+                f.render_widget(Paragraph::new("Select a job to view details...").block(Block::default().borders(Borders::ALL).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
             }
         },
         Tab::Runners => {
@@ -884,19 +960,19 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let filtered_runners = App::filter_runners_list(&app.runners.items, &app.search_query);
                 
                 let rows = filtered_runners.iter().enumerate().map(|(idx, r)| {
+                    let is_row_highlighted = app.runners.state.selected() == Some(idx);
                     let (status_text, status_color, bg_color) = match r.status.as_str() {
-                        "online" => (" ONLINE  ", THEME.green, THEME.green_bg),
-                        "paused" => (" PAUSED  ", THEME.yellow, THEME.yellow_bg),
-                        "offline" => (" OFFLINE ", THEME.red, THEME.red_bg),
-                        _ => (" UNKNOWN ", THEME.text_muted, THEME.inactive_bg),
+                        "online" => ("ONLINE", THEME.green, THEME.green_bg),
+                        "paused" => ("PAUSED", THEME.yellow, THEME.yellow_bg),
+                        "offline" => ("OFFLINE", THEME.red, THEME.red_bg),
+                        _ => ("UNKNOWN", THEME.text_muted, THEME.inactive_bg),
                     };
                     let desc = r.description.as_deref().unwrap_or("No description");
-                    let is_row_highlighted = app.runners.state.selected() == Some(idx);
                     Row::new(vec![
-                        render_fuzzy_cell(&r.id.to_string(), &app.search_query, is_row_highlighted, Style::default().fg(THEME.text_normal)),
-                        render_fuzzy_cell(&truncate(desc, 100), &app.search_query, is_row_highlighted, Style::default().fg(THEME.text_normal)),
-                        Cell::from(status_text).style(Style::default().fg(status_color).bg(bg_color).add_modifier(Modifier::BOLD)),
-                        Cell::from(r.active.to_string()).style(Style::default().fg(if r.active { THEME.green } else { THEME.red })),
+                        render_fuzzy_cell(&r.id.to_string(), &app.search_query, is_row_highlighted, false, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(&truncate(desc, 100), &app.search_query, is_row_highlighted, false, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(status_text, &app.search_query, is_row_highlighted, false, Style::default().fg(status_color).bg(if is_row_highlighted { THEME.highlight_bg } else { bg_color }).add_modifier(Modifier::BOLD), Alignment::Center),
+                        render_fuzzy_cell(&r.active.to_string(), &app.search_query, is_row_highlighted, false, Style::default().fg(if r.active { THEME.green } else { THEME.red }), Alignment::Left),
                     ]).height(1)
                 });
 
@@ -908,7 +984,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 ];
 
                 let table = Table::new(rows, widths)
-                    .header(Row::new(vec!["ID", "Description", "Status", "Active"]).style(header_style).height(1))
+                    .header(Row::new(vec![
+                        Cell::from("ID"),
+                        Cell::from("Description"),
+                        Cell::from(Line::from("Status").alignment(Alignment::Center)),
+                        Cell::from("Active"),
+                    ]).style(header_style).height(1))
                     .block(main_block)
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
@@ -959,9 +1040,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let rows = filtered_releases.iter().enumerate().map(|(idx, r)| {
                     let is_row_highlighted = app.releases.state.selected() == Some(idx);
                     Row::new(vec![
-                        render_fuzzy_cell(&r.tag_name, &app.search_query, is_row_highlighted, Style::default().fg(THEME.green).add_modifier(Modifier::BOLD)),
-                        render_fuzzy_cell(&truncate(&r.name, 100), &app.search_query, is_row_highlighted, Style::default().fg(THEME.text_normal)),
-                        render_fuzzy_cell(&truncate(&r.released_at, 10), &app.search_query, is_row_highlighted, Style::default().fg(THEME.yellow)),
+                        render_fuzzy_cell(&r.tag_name, &app.search_query, is_row_highlighted, false, Style::default().fg(THEME.green).add_modifier(Modifier::BOLD), Alignment::Left),
+                        render_fuzzy_cell(&truncate(&r.name, 100), &app.search_query, is_row_highlighted, false, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(&truncate(&r.released_at, 10), &app.search_query, is_row_highlighted, false, Style::default().fg(THEME.yellow), Alignment::Left),
                     ]).height(1)
                 });
 
@@ -1008,6 +1089,89 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 }
             }
         }
+        Tab::Notifications => {
+            if app.notifications.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
+                f.render_widget(Paragraph::new("\n\n Loading notifications...").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
+                f.render_widget(Paragraph::new("Select a notification...").block(Block::default().borders(Borders::ALL).title(" Details ").border_style(Style::default().fg(THEME.border))).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
+            } else {
+                let filtered_notifications = App::filter_notifications_list(&app.notifications.items, &app.search_query);
+                
+                let rows = filtered_notifications.iter().enumerate().map(|(idx, n)| {
+                    let is_row_highlighted = app.notifications.state.selected() == Some(idx);
+                    
+                    let state_str = if n.state == "unread" || n.state == "pending" { "•" } else { " " };
+                    let state_style = Style::default().fg(THEME.green).add_modifier(Modifier::BOLD);
+                    
+                    let type_style = if n.target_type == "MergeRequest" {
+                        Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD)
+                    };
+                    
+                    Row::new(vec![
+                        render_fuzzy_cell(state_str, &app.search_query, is_row_highlighted, false, state_style, Alignment::Left),
+                        render_fuzzy_cell(&n.project_path, &app.search_query, is_row_highlighted, false, Style::default().fg(THEME.text_muted), Alignment::Left),
+                        render_fuzzy_cell(n.target_type.as_str(), &app.search_query, is_row_highlighted, false, type_style, Alignment::Left),
+                        render_fuzzy_cell(&format!("#{}", n.target_iid), &app.search_query, is_row_highlighted, false, Style::default().fg(THEME.blue), Alignment::Left),
+                        render_fuzzy_cell(&truncate(&n.title, 80), &app.search_query, is_row_highlighted, false, Style::default().fg(THEME.text_normal), Alignment::Left),
+                    ]).height(1)
+                });
+
+                let widths = [
+                    Constraint::Length(2),   // Unread indicator
+                    Constraint::Length(25),  // Project Path
+                    Constraint::Length(14),  // Target Type
+                    Constraint::Length(8),   // Target IID
+                    Constraint::Percentage(50), // Title
+                ];
+
+                let table = Table::new(rows, widths)
+                    .header(Row::new(vec!["", "Project", "Type", "ID", "Title"]).style(header_style).height(1))
+                    .block(main_block)
+                    .row_highlight_style(highlight_style)
+                    .highlight_symbol(" ❯ ");
+                
+                f.render_stateful_widget(table, middle_chunks[1], &mut app.notifications.state);
+
+                let preview_block = Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Details ")
+                    .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
+                    .border_style(Style::default().fg(THEME.border));
+                if let Some(selected) = app.notifications.state.selected() {
+                    if let Some(n) = filtered_notifications.get(selected) {
+                        let mut text = Vec::new();
+                        text.push(Line::from(vec![
+                            Span::styled("Title:    ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(&n.title, Style::default().fg(THEME.text_normal).add_modifier(Modifier::BOLD)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Project:  ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(&n.project_path, Style::default().fg(THEME.text_normal)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Target:   ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(format!("{} #{}", n.target_type, n.target_iid), Style::default().fg(THEME.blue)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("State:    ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(&n.state, Style::default().fg(if n.state == "unread" || n.state == "pending" { THEME.green } else { THEME.text_muted })),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Updated:  ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(&n.updated_at, Style::default().fg(THEME.yellow)),
+                        ]));
+                        text.push(Line::from(""));
+                        text.push(Line::from(Span::styled(" Press Enter to mark read and switch to item", Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC))));
+                        f.render_widget(Paragraph::new(text).block(preview_block).wrap(ratatui::widgets::Wrap { trim: true }), middle_chunks[2]);
+                    } else {
+                        f.render_widget(Paragraph::new("").block(preview_block), middle_chunks[2]);
+                    }
+                } else {
+                    f.render_widget(Paragraph::new("Select an item to view details...").block(preview_block).style(Style::default().fg(THEME.text_muted)), middle_chunks[2]);
+                }
+            }
+        }
     }
 
 
@@ -1041,7 +1205,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         
         let items: Vec<ListItem> = menu.fields.iter().enumerate().map(|(i, (label, val))| {
             let style = if i == menu.selected_idx {
-                Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD)
+                Style::default().bg(THEME.highlight_bg).fg(THEME.text_normal).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(THEME.text_normal)
             };
@@ -1143,7 +1307,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     let marker_color = if is_selected { THEME.border_focused } else { THEME.text_muted };
                     
                     let style = if i == selector.cursor_idx {
-                        Style::default().bg(THEME.highlight_bg).fg(THEME.bg).add_modifier(Modifier::BOLD)
+                        Style::default().bg(THEME.highlight_bg).fg(THEME.text_normal).add_modifier(Modifier::BOLD)
                     } else {
                         Style::default().fg(THEME.text_normal)
                     };
@@ -1815,6 +1979,6 @@ mod tests {
         assert_eq!(count_wrapped_lines("hello world", 5), 2);
         assert_eq!(count_wrapped_lines("a b c", 3), 2);
         assert_eq!(count_wrapped_lines("hello\nworld", 10), 2);
-        assert_eq!(count_wrapped_lines("hello\r\nworld", 10), 2);
+        assert_eq!(count_wrapped_lines("hello\nworld", 10), 2);
     }
 }

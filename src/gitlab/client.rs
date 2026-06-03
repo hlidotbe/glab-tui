@@ -292,6 +292,11 @@ fn translate_mr(v: &serde_json::Value) -> serde_json::Value {
         .and_then(|b| b.get("ref"))
         .cloned()
         .unwrap_or_else(|| serde_json::Value::String("main".to_string()));
+
+    let source_branch = v.get("head")
+        .and_then(|h| h.get("ref"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::Value::String("".to_string()));
         
     let draft = v.get("draft").and_then(|d| d.as_bool()).unwrap_or(false);
     let description = v.get("body").cloned().unwrap_or(serde_json::Value::Null);
@@ -307,6 +312,7 @@ fn translate_mr(v: &serde_json::Value) -> serde_json::Value {
         "assignees": assignees,
         "reviewers": reviewers,
         "target_branch": target_branch,
+        "source_branch": source_branch,
         "draft": draft,
         "description": description,
     })

@@ -9,17 +9,21 @@ pub enum Tab {
     Issues,
     MergeRequests,
     Pipelines,
+    Jobs,
     Runners,
     Releases,
+    Notifications,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 5] = [
+    pub const ALL: [Tab; 7] = [
         Tab::Issues,
         Tab::MergeRequests,
         Tab::Pipelines,
+        Tab::Jobs,
         Tab::Runners,
         Tab::Releases,
+        Tab::Notifications,
     ];
 
     pub fn title(&self, is_github: bool) -> &'static str {
@@ -27,8 +31,10 @@ impl Tab {
             Tab::Issues => "Issues",
             Tab::MergeRequests => if is_github { "PRs" } else { "MRs" },
             Tab::Pipelines => "Pipelines",
+            Tab::Jobs => "Jobs",
             Tab::Runners => "Runners",
             Tab::Releases => "Releases",
+            Tab::Notifications => "Notifications",
         }
     }
 }
@@ -534,6 +540,7 @@ pub enum TextInputAction {
         line_num: Option<u32>,
         old_line_num: Option<u32>,
     },
+    EnterPipelineId,
 }
 
 #[derive(Clone, Debug)]
@@ -556,6 +563,7 @@ pub struct App {
     pub is_typing_search: bool,
     pub selected_pipeline_jobs: Option<Vec<crate::gitlab::pipelines::Job>>,
     pub selected_job_index: Option<usize>,
+    pub active_pipeline_id: Option<u64>,
     pub job_trace: Option<String>,
     pub error_message: Option<String>,
     pub runners: StatefulTable<crate::gitlab::runners::Runner>,
@@ -579,6 +587,7 @@ pub struct App {
     pub help_search_query: String,
     pub diff_view: Option<DiffView>,
     pub diff_loading: bool,
+    pub notifications: StatefulTable<crate::gitlab::notifications::Notification>,
 }
 
 impl Default for App {
@@ -595,6 +604,7 @@ impl Default for App {
             is_typing_search: false,
             selected_pipeline_jobs: None,
             selected_job_index: None,
+            active_pipeline_id: None,
             job_trace: None,
             error_message: None,
             runners: StatefulTable::with_items(vec![]),
@@ -618,6 +628,7 @@ impl Default for App {
             help_search_query: String::new(),
             diff_view: None,
             diff_loading: false,
+            notifications: StatefulTable::with_items(vec![]),
         }
     }
 }
@@ -677,11 +688,10 @@ impl App {
             
             check_match(&format!("#{}", item.iid));
             check_match(&item.iid.to_string());
-            check_match(&item.state);
             if item.state == "opened" {
-                check_match("open");
+                check_match("OPEN");
             } else if item.state == "closed" {
-                check_match("closed");
+                check_match("CLOSED");
             }
             check_match(&item.title);
             check_match(&item.author.username);
@@ -736,13 +746,18 @@ impl App {
             
             check_match(&format!("!{}", item.iid));
             check_match(&item.iid.to_string());
-            check_match(&item.state);
             if item.state == "opened" {
-                check_match("open");
+                check_match("OPEN");
             } else if item.state == "merged" {
-                check_match("merged");
+                check_match("MERGED");
             } else if item.state == "closed" {
-                check_match("closed");
+                check_match("CLOSED");
+            }
+            let (prefix, _) = crate::utils::format::parse_mr_title_prefix(&item.title);
+            if item.draft || prefix.to_lowercase() == "wip" || prefix.to_lowercase() == "draft" {
+                check_match("DRAFT");
+            } else {
+                check_match("READY");
             }
             check_match(&item.title);
             check_match(&item.author.username);
@@ -832,6 +847,44 @@ impl App {
         Self::filter_pipelines_list(&self.pipelines.items, &self.search_query, &self.pipeline_jobs)
     }
 
+    pub fn filter_jobs_list<'a>(
+        items: &'a [crate::gitlab::pipelines::Job],
+        query: &str,
+    ) -> Vec<&'a crate::gitlab::pipelines::Job> {
+        if query.trim().is_empty() {
+            return items.iter().collect();
+        }
+        let matcher = SkimMatcherV2::default();
+        let mut scored_items = Vec::new();
+        for item in items {
+            let mut best_score = None;
+            let mut check_match = |text: &str| {
+                if let Some(score) = matcher.fuzzy_match(text, query) {
+                    if best_score.is_none() || Some(score) > best_score {
+                        best_score = Some(score);
+                    }
+                }
+            };
+            check_match(&item.id.to_string());
+            check_match(&item.status);
+            check_match(&item.stage);
+            check_match(&item.name);
+            if let Some(score) = best_score {
+                scored_items.push((item, score));
+            }
+        }
+        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
+        scored_items.into_iter().map(|(item, _)| item).collect()
+    }
+
+    pub fn filtered_jobs(&self) -> Vec<&crate::gitlab::pipelines::Job> {
+        if let Some(jobs) = &self.selected_pipeline_jobs {
+            Self::filter_jobs_list(jobs, &self.search_query)
+        } else {
+            vec![]
+        }
+    }
+
     pub fn filter_runners_list<'a>(items: &'a [crate::gitlab::runners::Runner], query: &str) -> Vec<&'a crate::gitlab::runners::Runner> {
         if query.trim().is_empty() {
             return items.iter().collect();
@@ -906,6 +959,43 @@ impl App {
 
     pub fn filtered_releases(&self) -> Vec<&crate::gitlab::releases::Release> {
         Self::filter_releases_list(&self.releases.items, &self.search_query)
+    }
+
+    pub fn filter_notifications_list<'a>(items: &'a [crate::gitlab::notifications::Notification], query: &str) -> Vec<&'a crate::gitlab::notifications::Notification> {
+        if query.trim().is_empty() {
+            return items.iter().collect();
+        }
+        let matcher = SkimMatcherV2::default();
+        let mut scored_items = Vec::new();
+        
+        for item in items {
+            let mut best_score = None;
+            
+            let mut check_match = |text: &str| {
+                if let Some(score) = matcher.fuzzy_match(text, query) {
+                    if best_score.is_none() || Some(score) > best_score {
+                        best_score = Some(score);
+                    }
+                }
+            };
+            
+            check_match(&item.title);
+            check_match(&item.project_path);
+            check_match(&item.target_type);
+            check_match(&item.state);
+            check_match(&item.updated_at);
+            
+            if let Some(score) = best_score {
+                scored_items.push((item, score));
+            }
+        }
+        
+        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
+        scored_items.into_iter().map(|(item, _)| item).collect()
+    }
+
+    pub fn filtered_notifications(&self) -> Vec<&crate::gitlab::notifications::Notification> {
+        Self::filter_notifications_list(&self.notifications.items, &self.search_query)
     }
 
     pub fn update_filter_selection(&mut self) {
@@ -1000,6 +1090,35 @@ impl App {
                     }
                 }
             }
+            Tab::Notifications => {
+                let len = self.filtered_notifications().len();
+                let sel = self.notifications.state.selected();
+                if len == 0 {
+                    self.notifications.state.select(None);
+                } else {
+                    match sel {
+                        Some(idx) => {
+                            if idx >= len {
+                                self.notifications.state.select(Some(len - 1));
+                            }
+                        }
+                        None => {
+                            self.notifications.state.select(Some(0));
+                        }
+                    }
+                }
+            }
+            Tab::Jobs => {
+                let len = self.filtered_jobs().len();
+                if len == 0 {
+                    self.selected_job_index = None;
+                    self.jobs_list_state.select(None);
+                } else {
+                    let idx = self.selected_job_index.unwrap_or(0).min(len - 1);
+                    self.selected_job_index = Some(idx);
+                    self.jobs_list_state.select(Some(idx));
+                }
+            }
         }
     }
 }
@@ -1037,6 +1156,84 @@ mod tests {
         assert!(filtered.contains(&"critical bug".to_string()));
         assert_eq!(filtered[0], "bug".to_string());
         assert_eq!(filtered[1], "critical bug".to_string());
+    }
+
+    #[test]
+    fn test_mr_fuzzy_status_matching() {
+        use crate::gitlab::mr::MergeRequest;
+        use crate::gitlab::mr::Author;
+        
+        let author = Author {
+            username: "johndoe".to_string(),
+        };
+        
+        let mr_draft_meta = MergeRequest {
+            iid: 1,
+            title: "Some MR title".to_string(),
+            state: "opened".to_string(),
+            draft: true,
+            author: author.clone(),
+            updated_at: "2026-06-02T21:00:00Z".to_string(),
+            target_branch: "main".to_string(),
+            source_branch: "feature".to_string(),
+            labels: vec![],
+            assignees: vec![],
+            reviewers: vec![],
+            milestone: None,
+            description: None,
+        };
+
+        let mr_draft_title = MergeRequest {
+            iid: 2,
+            title: "WIP: Another MR title".to_string(),
+            state: "opened".to_string(),
+            draft: false,
+            author: author.clone(),
+            updated_at: "2026-06-02T21:00:00Z".to_string(),
+            target_branch: "main".to_string(),
+            source_branch: "feature2".to_string(),
+            labels: vec![],
+            assignees: vec![],
+            reviewers: vec![],
+            milestone: None,
+            description: None,
+        };
+
+        let mr_ready = MergeRequest {
+            iid: 3,
+            title: "Finished MR title".to_string(),
+            state: "opened".to_string(),
+            draft: false,
+            author: author.clone(),
+            updated_at: "2026-06-02T21:00:00Z".to_string(),
+            target_branch: "main".to_string(),
+            source_branch: "feature3".to_string(),
+            labels: vec![],
+            assignees: vec![],
+            reviewers: vec![],
+            milestone: None,
+            description: None,
+        };
+
+        let items = vec![mr_draft_meta, mr_draft_title, mr_ready];
+        
+        // Filter by "DRAFT"
+        let filtered_draft = App::filter_mrs_list(&items, "DRAFT");
+        assert_eq!(filtered_draft.len(), 2);
+        assert_eq!(filtered_draft[0].iid, 1);
+        assert_eq!(filtered_draft[1].iid, 2);
+
+        // Filter by "READY"
+        let filtered_ready = App::filter_mrs_list(&items, "READY");
+        assert_eq!(filtered_ready.len(), 1);
+        assert_eq!(filtered_ready[0].iid, 3);
+
+        // Filter by state "OPEN"
+        let filtered_open = App::filter_mrs_list(&items, "OPEN");
+        assert_eq!(filtered_open.len(), 3);
+        assert_eq!(filtered_open[0].iid, 1);
+        assert_eq!(filtered_open[1].iid, 2);
+        assert_eq!(filtered_open[2].iid, 3);
     }
 
     #[test]
