@@ -105,6 +105,66 @@ pub fn get_sibling_repos(current_dir: &str) -> Vec<String> {
     sibling_repos
 }
 
+pub fn get_repos_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("GLAB_TUI_REPOS_DIR") {
+        PathBuf::from(dir)
+    } else {
+        std::env::current_dir()
+            .ok()
+            .and_then(|cwd| cwd.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+}
+
+pub fn get_repos_in_dir(repos_dir: &std::path::Path) -> Vec<String> {
+    let mut repos = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(repos_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let mut git_path = path.clone();
+                git_path.push(".git");
+                if git_path.exists() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        repos.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    repos.sort();
+    repos
+}
+
+pub fn get_switchable_repos() -> Vec<String> {
+    let repos_dir = get_repos_dir();
+    let available_repos = get_repos_in_dir(&repos_dir);
+    let recent_paths = get_recent_repos();
+    
+    let mut sorted_repos = Vec::new();
+    for path_str in recent_paths {
+        let path = std::path::PathBuf::from(path_str);
+        if let Some(parent) = path.parent() {
+            if parent == repos_dir {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    let name_str = name.to_string();
+                    if available_repos.contains(&name_str) && !sorted_repos.contains(&name_str) {
+                        sorted_repos.push(name_str);
+                    }
+                }
+            }
+        }
+    }
+    
+    for repo in available_repos {
+        if !sorted_repos.contains(&repo) {
+            sorted_repos.push(repo);
+        }
+    }
+    
+    sorted_repos
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,6 +200,39 @@ mod tests {
 
         assert!(has_repo2, "siblings should find repo2");
         assert!(!has_non_repo, "siblings should not find non_repo");
+    }
+
+    #[test]
+    fn test_get_repos_in_dir() {
+        let parent = tempdir().unwrap();
+        let repo1 = parent.path().join("repo1");
+        let repo2 = parent.path().join("repo2");
+        let non_repo = parent.path().join("non_repo");
+
+        fs::create_dir_all(&repo1.join(".git")).unwrap();
+        fs::create_dir_all(&repo2.join(".git")).unwrap();
+        fs::create_dir_all(&non_repo).unwrap();
+
+        let repos = get_repos_in_dir(parent.path());
+        assert_eq!(repos.len(), 2);
+        assert!(repos.contains(&"repo1".to_string()));
+        assert!(repos.contains(&"repo2".to_string()));
+        assert!(!repos.contains(&"non_repo".to_string()));
+    }
+
+    #[test]
+    fn test_repos_dir_env_var() {
+        let temp_dir = tempdir().unwrap();
+        let path_str = temp_dir.path().to_str().unwrap().to_string();
+        
+        unsafe {
+            std::env::set_var("GLAB_TUI_REPOS_DIR", &path_str);
+        }
+        let repos_dir = get_repos_dir();
+        assert_eq!(repos_dir, temp_dir.path().to_path_buf());
+        unsafe {
+            std::env::remove_var("GLAB_TUI_REPOS_DIR");
+        }
     }
 }
 

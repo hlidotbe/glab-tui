@@ -1114,22 +1114,18 @@ async fn main() -> Result<()> {
                         (key_event.code == KeyCode::Char('S') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL));
 
                     if is_switch_repo && app.text_input.is_none() && app.edit_menu.is_none() && app.selector.is_none() {
-                        let mut recent = crate::utils::cache::get_recent_repos();
-                        let cwd_str = std::env::current_dir().unwrap_or_default().to_string_lossy().into_owned();
-                        let siblings = crate::utils::cache::get_sibling_repos(&cwd_str);
-                        
-                        for sib in siblings {
-                            if !recent.contains(&sib) {
-                                recent.push(sib);
-                            }
-                        }
+                        let items = crate::utils::cache::get_switchable_repos();
                         
                         app.selector = Some(crate::app::Selector {
                             title: " Switch Repository ".to_string(),
-                            all_items: recent,
+                            all_items: items,
                             selected_items: {
                                 let mut s = std::collections::HashSet::new();
-                                s.insert(cwd_str);
+                                if let Ok(cwd) = std::env::current_dir() {
+                                    if let Some(name) = cwd.file_name().and_then(|n| n.to_str()) {
+                                        s.insert(name.to_string());
+                                    }
+                                }
                                 s
                             },
                             cursor_idx: 0,
@@ -1367,9 +1363,17 @@ async fn main() -> Result<()> {
                                                 path = selector.search_query.trim().to_string();
                                             }
                                             
-                                            if crate::utils::cache::is_git_repo(&path) {
-                                                if std::env::set_current_dir(&path).is_ok() {
-                                                    crate::utils::cache::add_recent_repo(&path);
+                                            let repos_dir = crate::utils::cache::get_repos_dir();
+                                            let target_path = if std::path::Path::new(&path).is_absolute() {
+                                                std::path::PathBuf::from(&path)
+                                            } else {
+                                                repos_dir.join(&path)
+                                            };
+                                            
+                                            let target_path_str = target_path.to_string_lossy().into_owned();
+                                            if crate::utils::cache::is_git_repo(&target_path_str) {
+                                                if std::env::set_current_dir(&target_path).is_ok() {
+                                                    crate::utils::cache::add_recent_repo(&target_path_str);
                                                     
                                                     if let Ok(context) = gitlab::client::get_project_context().await {
                                                         app.project_context = context;
