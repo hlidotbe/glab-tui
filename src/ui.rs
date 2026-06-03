@@ -894,11 +894,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         bg_color
                     };
                     
+                    let matrix_str = j.matrix.as_deref().unwrap_or("").to_string();
                     Row::new(vec![
                         render_fuzzy_cell(&j.id.to_string(), &app.search_query, is_job_selected, is_checked, Style::default().fg(THEME.text_normal), Alignment::Left),
                         render_fuzzy_cell(&j.stage, &app.search_query, is_job_selected, is_checked, Style::default().fg(THEME.purple), Alignment::Left),
                         render_fuzzy_cell(status_text, &app.search_query, is_job_selected, is_checked, Style::default().fg(status_color).bg(status_bg).add_modifier(Modifier::BOLD), Alignment::Center),
                         render_fuzzy_cell(&j.name, &app.search_query, is_job_selected, is_checked, Style::default().fg(THEME.text_normal), Alignment::Left),
+                        render_fuzzy_cell(&matrix_str, &app.search_query, is_job_selected, is_checked, Style::default().fg(THEME.text_muted), Alignment::Left),
                     ]).height(1)
                 });
 
@@ -906,7 +908,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Constraint::Length(14),
                     Constraint::Length(15),
                     Constraint::Length(12),
-                    Constraint::Percentage(60),
+                    Constraint::Percentage(40),
+                    Constraint::Percentage(20),
                 ];
 
                 let table = Table::new(rows, widths)
@@ -915,6 +918,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         Cell::from("Stage"),
                         Cell::from(Line::from("Status").alignment(Alignment::Center)),
                         Cell::from("Name"),
+                        Cell::from("Matrix"),
                     ]).style(header_style).height(1))
                     .block(Block::default()
                         .borders(Borders::ALL)
@@ -1958,24 +1962,28 @@ mod tests {
                 stage: "build".to_string(),
                 name: "compile".to_string(),
                 status: "success".to_string(),
+                matrix: None,
             },
             Job {
                 id: 2,
                 stage: "build".to_string(),
                 name: "cache".to_string(),
                 status: "skipped".to_string(),
+                matrix: None,
             },
             Job {
                 id: 3,
                 stage: "test".to_string(),
                 name: "unit".to_string(),
                 status: "failed".to_string(),
+                matrix: None,
             },
             Job {
                 id: 4,
                 stage: "test".to_string(),
                 name: "integration".to_string(),
                 status: "success".to_string(),
+                matrix: None,
             },
         ];
 

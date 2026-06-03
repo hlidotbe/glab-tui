@@ -21,7 +21,11 @@ pub struct Job {
     pub id: u64,
     pub status: String,
     pub stage: String,
+    /// Full name as returned by the API (may include matrix suffix like "[ubuntu, run:test]").
     pub name: String,
+    /// The parsed matrix variant string, e.g. "ubuntu, run:test", if the job is a matrix job.
+    #[serde(skip)]
+    pub matrix: Option<String>,
 }
 
 pub async fn list_pipeline_jobs(client: &GitlabClient, project_path: &str, pipeline_id: u64) -> Result<Vec<Job>> {
@@ -58,6 +62,20 @@ pub async fn list_pipeline_jobs(client: &GitlabClient, project_path: &str, pipel
 }
 
 pub fn process_pipeline_jobs(all_jobs: Vec<Job>) -> Vec<Job> {
+    // Parse matrix suffix from job names before deduplication.
+    // GitLab matrix jobs look like: "build [ubuntu, run:test]"
+    let all_jobs: Vec<Job> = all_jobs.into_iter().map(|mut job| {
+        if let (Some(bracket_start), Some(bracket_end)) = (job.name.rfind('['), job.name.rfind(']')) {
+            if bracket_end == job.name.len() - 1 {
+                let matrix_content = job.name[bracket_start + 1..bracket_end].trim().to_string();
+                let base_name = job.name[..bracket_start].trim().to_string();
+                job.matrix = Some(matrix_content);
+                job.name = base_name;
+            }
+        }
+        job
+    }).collect();
+
     let mut stage_min_id = std::collections::HashMap::new();
     for j in all_jobs.iter() {
         let entry = stage_min_id.entry(j.stage.clone()).or_insert(j.id);
@@ -66,10 +84,11 @@ pub fn process_pipeline_jobs(all_jobs: Vec<Job>) -> Vec<Job> {
         }
     }
 
-    // Deduplicate jobs by name, keeping only the one with the maximum ID (latest retry)
-    let mut deduplicated: std::collections::HashMap<String, Job> = std::collections::HashMap::new();
+    // Deduplicate jobs by (name, matrix) key, keeping only the one with the maximum ID (latest retry)
+    let mut deduplicated: std::collections::HashMap<(String, Option<String>), Job> = std::collections::HashMap::new();
     for job in all_jobs {
-        let entry = deduplicated.entry(job.name.clone()).or_insert_with(|| job.clone());
+        let key = (job.name.clone(), job.matrix.clone());
+        let entry = deduplicated.entry(key).or_insert_with(|| job.clone());
         if job.id > entry.id {
             *entry = job;
         }
@@ -109,12 +128,14 @@ mod tests {
                 status: "success".to_string(),
                 stage: "build".to_string(),
                 name: "compile-code".to_string(),
+                matrix: None,
             },
             Job {
                 id: 102,
                 status: "failed".to_string(),
                 stage: "test".to_string(),
                 name: "run-tests".to_string(),
+                matrix: None,
             },
             // A retry of the failed job in the "test" stage
             Job {
@@ -122,6 +143,7 @@ mod tests {
                 status: "success".to_string(),
                 stage: "test".to_string(),
                 name: "run-tests".to_string(),
+                matrix: None,
             },
             // A retry of the build job (which was already success but let's say retried anyway)
             Job {
@@ -129,6 +151,7 @@ mod tests {
                 status: "running".to_string(),
                 stage: "build".to_string(),
                 name: "compile-code".to_string(),
+                matrix: None,
             },
         ];
 
@@ -156,5 +179,58 @@ mod tests {
         // The processed jobs should be ordered by stage: build then test.
         assert_eq!(processed[0].stage, "build");
         assert_eq!(processed[1].stage, "test");
+    }
+
+    #[test]
+    fn test_process_pipeline_jobs_matrix_parsing() {
+        let input_jobs = vec![
+            Job {
+                id: 201,
+                status: "success".to_string(),
+                stage: "test".to_string(),
+                name: "run-tests [ubuntu, unit]".to_string(),
+                matrix: None,
+            },
+            Job {
+                id: 202,
+                status: "failed".to_string(),
+                stage: "test".to_string(),
+                name: "run-tests [windows, integration]".to_string(),
+                matrix: None,
+            },
+            // A retry of the ubuntu variant — should deduplicate by (name, matrix) not just name.
+            Job {
+                id: 203,
+                status: "running".to_string(),
+                stage: "test".to_string(),
+                name: "run-tests [ubuntu, unit]".to_string(),
+                matrix: None,
+            },
+            // A non-matrix job in the same stage.
+            Job {
+                id: 204,
+                status: "success".to_string(),
+                stage: "test".to_string(),
+                name: "lint".to_string(),
+                matrix: None,
+            },
+        ];
+
+        let processed = process_pipeline_jobs(input_jobs);
+
+        // 3 unique (name, matrix) combinations: (run-tests, ubuntu/unit), (run-tests, windows/integration), (lint, None)
+        assert_eq!(processed.len(), 3);
+
+        // Matrix field should be populated, base name should have brackets stripped
+        let ubuntu = processed.iter().find(|j| j.matrix.as_deref() == Some("ubuntu, unit")).unwrap();
+        assert_eq!(ubuntu.name, "run-tests");
+        assert_eq!(ubuntu.id, 203); // latest retry wins
+
+        let windows = processed.iter().find(|j| j.matrix.as_deref() == Some("windows, integration")).unwrap();
+        assert_eq!(windows.name, "run-tests");
+        assert_eq!(windows.id, 202);
+
+        let lint = processed.iter().find(|j| j.name == "lint").unwrap();
+        assert!(lint.matrix.is_none());
     }
 }
