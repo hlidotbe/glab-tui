@@ -906,6 +906,13 @@ async fn main() -> Result<()> {
         app.project_context = context;
     }
 
+    // Add current directory to recent repositories list
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(cwd_str) = cwd.to_str() {
+            crate::utils::cache::add_recent_repo(cwd_str);
+        }
+    }
+
     // Load offline cache
     let cache = crate::utils::cache::load_cache(&app.project_context);
     app.issues.items = cache.issues;
@@ -919,7 +926,9 @@ async fn main() -> Result<()> {
     if let Ok(client) = gitlab::client::GitlabClient::new().await {
         app.gitlab_client = Some(client.clone());
         let tx = events.sender();
-        app.loading_tabs.insert(app.active_tab);
+        if app.issues.items.is_empty() {
+            app.loading_tabs.insert(app.active_tab);
+        }
         spawn_refresh_active_tab(&client, &app.project_context, app.active_tab, tx.clone());
     } else {
         app.error_message = Some("Failed to initialize GitLab client".to_string());
@@ -988,6 +997,8 @@ async fn main() -> Result<()> {
                 Event::IssuesFetched(issues) => {
                     app.loading_tabs.remove(&app::Tab::Issues);
                     app.loaded_tabs.insert(app::Tab::Issues);
+                    app.refreshed_tabs.insert(app::Tab::Issues);
+                    app.status_message = None;
                     app.issues.items = issues;
                     app.update_filter_selection();
                     let mut cache = crate::utils::cache::load_cache(&app.project_context);
@@ -997,6 +1008,8 @@ async fn main() -> Result<()> {
                 Event::MrsFetched(mrs) => {
                     app.loading_tabs.remove(&app::Tab::MergeRequests);
                     app.loaded_tabs.insert(app::Tab::MergeRequests);
+                    app.refreshed_tabs.insert(app::Tab::MergeRequests);
+                    app.status_message = None;
                     app.mrs.items = mrs;
                     app.update_filter_selection();
                     let mut cache = crate::utils::cache::load_cache(&app.project_context);
@@ -1006,6 +1019,8 @@ async fn main() -> Result<()> {
                 Event::PipelinesFetched(pipelines) => {
                     app.loading_tabs.remove(&app::Tab::Pipelines);
                     app.loaded_tabs.insert(app::Tab::Pipelines);
+                    app.refreshed_tabs.insert(app::Tab::Pipelines);
+                    app.status_message = None;
                     app.pipelines.items = pipelines;
                     app.update_filter_selection();
                     app.pipeline_jobs.clear();
@@ -1017,18 +1032,24 @@ async fn main() -> Result<()> {
                 Event::NotificationsFetched(notifs) => {
                     app.loading_tabs.remove(&app::Tab::Notifications);
                     app.loaded_tabs.insert(app::Tab::Notifications);
+                    app.refreshed_tabs.insert(app::Tab::Notifications);
+                    app.status_message = None;
                     app.notifications.items = notifs;
                     app.update_filter_selection();
                 }
                 Event::RunnersFetched(runners) => {
                     app.loading_tabs.remove(&app::Tab::Runners);
                     app.loaded_tabs.insert(app::Tab::Runners);
+                    app.refreshed_tabs.insert(app::Tab::Runners);
+                    app.status_message = None;
                     app.runners.items = runners;
                     app.update_filter_selection();
                 }
                 Event::ReleasesFetched(releases) => {
                     app.loading_tabs.remove(&app::Tab::Releases);
                     app.loaded_tabs.insert(app::Tab::Releases);
+                    app.refreshed_tabs.insert(app::Tab::Releases);
+                    app.status_message = None;
                     app.releases.items = releases;
                     app.update_filter_selection();
                 }
@@ -1041,7 +1062,20 @@ async fn main() -> Result<()> {
                 }
                 Event::FetchFailed(tab, err_msg) => {
                     app.loading_tabs.remove(&tab);
-                    app.error_message = Some(err_msg);
+                    let has_cached_items = match tab {
+                        app::Tab::Issues => !app.issues.items.is_empty(),
+                        app::Tab::MergeRequests => !app.mrs.items.is_empty(),
+                        app::Tab::Pipelines => !app.pipelines.items.is_empty(),
+                        app::Tab::Runners => !app.runners.items.is_empty(),
+                        app::Tab::Releases => !app.releases.items.is_empty(),
+                        app::Tab::Notifications => !app.notifications.items.is_empty(),
+                        _ => false,
+                    };
+                    if has_cached_items {
+                        app.status_message = Some("Offline / Connection failed".to_string());
+                    } else {
+                        app.error_message = Some(err_msg);
+                    }
                 }
                 Event::DiffFetched(mr_iid, raw_diff) => {
                     app.diff_loading = false;
@@ -1073,6 +1107,41 @@ async fn main() -> Result<()> {
                             }
                             _ => {}
                         }
+                        continue;
+                    }
+
+                    let is_switch_repo = (key_event.code == KeyCode::Char('s') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)) ||
+                        (key_event.code == KeyCode::Char('S') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL));
+
+                    if is_switch_repo && app.text_input.is_none() && app.edit_menu.is_none() && app.selector.is_none() {
+                        let mut recent = crate::utils::cache::get_recent_repos();
+                        let cwd_str = std::env::current_dir().unwrap_or_default().to_string_lossy().into_owned();
+                        let siblings = crate::utils::cache::get_sibling_repos(&cwd_str);
+                        
+                        for sib in siblings {
+                            if !recent.contains(&sib) {
+                                recent.push(sib);
+                            }
+                        }
+                        
+                        app.selector = Some(crate::app::Selector {
+                            title: " Switch Repository ".to_string(),
+                            all_items: recent,
+                            selected_items: {
+                                let mut s = std::collections::HashSet::new();
+                                s.insert(cwd_str);
+                                s
+                            },
+                            cursor_idx: 0,
+                            search_query: String::new(),
+                            is_filtering: true,
+                            is_loading: false,
+                            entity_iid: 0,
+                            entity_type: "app".to_string(),
+                            field_type: "switch_repo".to_string(),
+                            multi_select: false,
+                            state: { let mut s = ListState::default(); s.select(Some(0)); s },
+                        });
                         continue;
                     }
 
@@ -1286,6 +1355,82 @@ async fn main() -> Result<()> {
                                 }
                                 KeyCode::Enter => {
                                     let field_type = selector.field_type.clone();
+                                    if field_type == "switch_repo" {
+                                        let filtered_items = selector.get_filtered_items();
+                                        let mut selected_val = selector.selected_items.iter().next().cloned();
+                                        if selected_val.is_none() && !filtered_items.is_empty() {
+                                            selected_val = Some(filtered_items[selector.cursor_idx].clone());
+                                        }
+                                        
+                                        if let Some(mut path) = selected_val {
+                                            if path.starts_with("+ Create \"") {
+                                                path = selector.search_query.trim().to_string();
+                                            }
+                                            
+                                            if crate::utils::cache::is_git_repo(&path) {
+                                                if std::env::set_current_dir(&path).is_ok() {
+                                                    crate::utils::cache::add_recent_repo(&path);
+                                                    
+                                                    if let Ok(context) = gitlab::client::get_project_context().await {
+                                                        app.project_context = context;
+                                                    }
+                                                    
+                                                    if let Ok(client) = gitlab::client::GitlabClient::new().await {
+                                                        app.gitlab_client = Some(client.clone());
+                                                    } else {
+                                                        app.gitlab_client = None;
+                                                    }
+                                                    
+                                                    app.loaded_tabs.clear();
+                                                    app.loading_tabs.clear();
+                                                    app.refreshed_tabs.clear();
+                                                    app.status_message = None;
+                                                    
+                                                    app.issues.items.clear();
+                                                    app.mrs.items.clear();
+                                                    app.pipelines.items.clear();
+                                                    app.runners.items.clear();
+                                                    app.releases.items.clear();
+                                                    app.notifications.items.clear();
+                                                    app.pipeline_jobs.clear();
+                                                    app.fetching_pipelines.clear();
+                                                    
+                                                    let cache = crate::utils::cache::load_cache(&app.project_context);
+                                                    app.issues.items = cache.issues;
+                                                    app.mrs.items = cache.mrs;
+                                                    app.pipelines.items = cache.pipelines;
+                                                    
+                                                    if !app.issues.items.is_empty() { app.loaded_tabs.insert(app::Tab::Issues); }
+                                                    if !app.mrs.items.is_empty() { app.loaded_tabs.insert(app::Tab::MergeRequests); }
+                                                    if !app.pipelines.items.is_empty() { app.loaded_tabs.insert(app::Tab::Pipelines); }
+                                                    
+                                                    app.issues.state.select(if app.issues.items.is_empty() { None } else { Some(0) });
+                                                    app.mrs.state.select(if app.mrs.items.is_empty() { None } else { Some(0) });
+                                                    app.pipelines.state.select(if app.pipelines.items.is_empty() { None } else { Some(0) });
+                                                    app.update_filter_selection();
+                                                    
+                                                    if let Some(client) = &app.gitlab_client {
+                                                        let has_cached = match app.active_tab {
+                                                            app::Tab::Issues => !app.issues.items.is_empty(),
+                                                            app::Tab::MergeRequests => !app.mrs.items.is_empty(),
+                                                            app::Tab::Pipelines => !app.pipelines.items.is_empty(),
+                                                            _ => false,
+                                                        };
+                                                        if !has_cached {
+                                                            app.loading_tabs.insert(app.active_tab);
+                                                        }
+                                                        spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                                    }
+                                                } else {
+                                                    app.error_message = Some(format!("Could not change directory to: {}", path));
+                                                }
+                                            } else {
+                                                app.error_message = Some(format!("Not a valid git repository: {}", path));
+                                            }
+                                        }
+                                        continue;
+                                    }
+
                                     if field_type == "create_mr" {
                                         let filtered_items = selector.get_filtered_items();
                                         let mut selected_val = selector.selected_items.iter().next().cloned();
@@ -2372,18 +2517,22 @@ async fn main() -> Result<()> {
                             }
                             KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
                                 app.next_tab();
-                                if !app.loaded_tabs.contains(&app.active_tab) && !app.loading_tabs.contains(&app.active_tab) {
-                                    if let Some(client) = &app.gitlab_client {
-                                        app.loading_tabs.insert(app.active_tab);
+                                if let Some(client) = &app.gitlab_client {
+                                    if !app.loading_tabs.contains(&app.active_tab) && !app.refreshed_tabs.contains(&app.active_tab) {
+                                        if !app.loaded_tabs.contains(&app.active_tab) {
+                                            app.loading_tabs.insert(app.active_tab);
+                                        }
                                         spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
                                     }
                                 }
                             }
                             KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
                                 app.previous_tab();
-                                if !app.loaded_tabs.contains(&app.active_tab) && !app.loading_tabs.contains(&app.active_tab) {
-                                    if let Some(client) = &app.gitlab_client {
-                                        app.loading_tabs.insert(app.active_tab);
+                                if let Some(client) = &app.gitlab_client {
+                                    if !app.loading_tabs.contains(&app.active_tab) && !app.refreshed_tabs.contains(&app.active_tab) {
+                                        if !app.loaded_tabs.contains(&app.active_tab) {
+                                            app.loading_tabs.insert(app.active_tab);
+                                        }
                                         spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
                                     }
                                 }

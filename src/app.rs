@@ -588,6 +588,8 @@ pub struct App {
     pub diff_view: Option<DiffView>,
     pub diff_loading: bool,
     pub notifications: StatefulTable<crate::gitlab::notifications::Notification>,
+    pub status_message: Option<String>,
+    pub refreshed_tabs: std::collections::HashSet<Tab>,
 }
 
 impl Default for App {
@@ -629,6 +631,8 @@ impl Default for App {
             diff_view: None,
             diff_loading: false,
             notifications: StatefulTable::with_items(vec![]),
+            status_message: None,
+            refreshed_tabs: std::collections::HashSet::new(),
         }
     }
 }

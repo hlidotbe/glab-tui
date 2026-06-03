@@ -232,6 +232,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
         title_spans.push(Span::styled(" FILTERED ", Style::default().bg(THEME.yellow).fg(THEME.bg).add_modifier(Modifier::BOLD)));
         title_spans.push(Span::styled(format!(" {} ", app.search_query), Style::default().fg(THEME.yellow)));
     }
+    if let Some(ref status) = app.status_message {
+        title_spans.push(Span::styled(" | ", Style::default().fg(THEME.text_muted)));
+        title_spans.push(Span::styled(format!(" {} ", status), Style::default().fg(THEME.yellow).add_modifier(Modifier::BOLD)));
+    }
 
     let title = Paragraph::new(Line::from(title_spans))
         .style(Style::default().bg(THEME.bg))
@@ -308,6 +312,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let pr_suffix = if is_github { "PR" } else { "MR" };
     match app.active_tab {
         Tab::Issues => {
+            add_cmd(&mut commands_text, "C-s", "Switch Repo");
             add_cmd(&mut commands_text, "e", "Edit params");
             add_cmd(&mut commands_text, "f", "Search");
             add_cmd(&mut commands_text, "n", "New Issue");
@@ -318,6 +323,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::MergeRequests => {
+            add_cmd(&mut commands_text, "C-s", "Switch Repo");
             add_cmd(&mut commands_text, "e", "Edit params");
             add_cmd(&mut commands_text, "f", "Search");
             add_cmd(&mut commands_text, "n", &format!("New {}", pr_suffix));
@@ -332,6 +338,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::Pipelines => {
+            add_cmd(&mut commands_text, "C-s", "Switch Repo");
             add_cmd(&mut commands_text, "Ent", "View Jobs");
             add_cmd(&mut commands_text, "r", "Retry Pipe");
             add_cmd(&mut commands_text, "p", &format!("Run {} Pipe", pr_suffix));
@@ -343,6 +350,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::Jobs => {
+            add_cmd(&mut commands_text, "C-s", "Switch Repo");
             if app.job_trace.is_some() {
                 add_cmd(&mut commands_text, "j/k", "Scroll Trace");
                 add_cmd(&mut commands_text, "Esc", "Close Trace");
@@ -361,6 +369,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             }
         }
         Tab::Runners => {
+            add_cmd(&mut commands_text, "C-s", "Switch Repo");
             add_cmd(&mut commands_text, "p", "Pause");
             add_cmd(&mut commands_text, "r", "Resume");
             add_cmd(&mut commands_text, "e", "Edit Desc");
@@ -370,6 +379,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::Releases => {
+            add_cmd(&mut commands_text, "C-s", "Switch Repo");
             add_cmd(&mut commands_text, "Ent", "View Notes");
             add_cmd(&mut commands_text, "o", "View Browser");
             add_cmd(&mut commands_text, "f", "Search");
@@ -378,6 +388,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             add_cmd(&mut commands_text, "q", "Quit");
         }
         Tab::Notifications => {
+            add_cmd(&mut commands_text, "C-s", "Switch Repo");
             add_cmd(&mut commands_text, "Ent", "Mark Read & Go");
             add_cmd(&mut commands_text, "f", "Search");
             add_cmd(&mut commands_text, "u", "Self-update");
