@@ -1145,6 +1145,9 @@ async fn main() -> Result<()> {
                 }
                 Event::CommandStarted(msg) => {
                     app.status_message = Some(msg);
+                    // Force an immediate render so the "Running..." banner is visible
+                    // even if CommandCompleted arrives in the very next event.
+                    terminal.draw(|f| ui::render(f, &mut app))?;
                 }
                 Event::CommandCompleted(tab, res) => {
                     app.status_message = None;
