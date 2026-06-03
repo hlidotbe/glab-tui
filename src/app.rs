@@ -590,6 +590,7 @@ pub struct App {
     pub notifications: StatefulTable<crate::gitlab::notifications::Notification>,
     pub status_message: Option<String>,
     pub refreshed_tabs: std::collections::HashSet<Tab>,
+    pub tx: Option<tokio::sync::mpsc::UnboundedSender<crate::event::Event>>,
 }
 
 impl Default for App {
@@ -633,6 +634,7 @@ impl Default for App {
             notifications: StatefulTable::with_items(vec![]),
             status_message: None,
             refreshed_tabs: std::collections::HashSet::new(),
+            tx: None,
         }
     }
 }

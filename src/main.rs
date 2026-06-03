@@ -94,10 +94,12 @@ async fn apply_field_text_change(
     field_type: &str,
     value: String,
     terminal: &mut AppTerminal,
+    tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    tab: crate::app::Tab,
 ) {
     match field_type {
         "title" => {
-            run_glab_update(entity_type, iid, &["--title", &value], terminal).await;
+            run_glab_update(entity_type, iid, &["--title", &value], terminal, tx.clone(), tab).await;
             if entity_type == "issue" {
                 if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
                     item.title = value;
@@ -110,7 +112,7 @@ async fn apply_field_text_change(
         }
         "target_branch" => {
             if entity_type == "mr" {
-                run_glab_update(entity_type, iid, &["--target-branch", &value], terminal).await;
+                run_glab_update(entity_type, iid, &["--target-branch", &value], terminal, tx.clone(), tab).await;
                 if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                     item.target_branch = value;
                 }
@@ -119,19 +121,19 @@ async fn apply_field_text_change(
         "due_date" => {
             if entity_type == "issue" {
                 if value == "YYYY-MM-DD" || value.trim().is_empty() {
-                    run_glab_update(entity_type, iid, &["--due-date", ""], terminal).await;
+                    run_glab_update(entity_type, iid, &["--due-date", ""], terminal, tx.clone(), tab).await;
                 } else {
-                    run_glab_update(entity_type, iid, &["--due-date", &value], terminal).await;
+                    run_glab_update(entity_type, iid, &["--due-date", &value], terminal, tx.clone(), tab).await;
                 }
             }
         }
         "weight" => {
             if entity_type == "issue" {
-                run_glab_update(entity_type, iid, &["--weight", &value], terminal).await;
+                run_glab_update(entity_type, iid, &["--weight", &value], terminal, tx.clone(), tab).await;
             }
         }
         "runner_description" => {
-            run_glab_cmd(&["api", "-X", "PUT", &format!("runners/{}", iid), "-f", &format!("description={}", value)], terminal).await;
+            run_glab_cmd(&["api", "-X", "PUT", &format!("runners/{}", iid), "-f", &format!("description={}", value)], terminal, tx.clone(), tab).await;
             if let Some(runner) = app.runners.items.iter_mut().find(|r| r.id == iid) {
                 runner.description = Some(value);
             }
@@ -419,55 +421,100 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
     gh_args
 }
 
-async fn run_glab_cmd(args: &[&str], terminal: &mut AppTerminal) {
-    crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    disable_raw_mode().unwrap();
-    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
-    
+fn is_command_interactive(args: &[&str]) -> bool {
+    args.iter().any(|&arg| arg == "-d" || arg == "--desc") && args.iter().any(|&arg| arg == "-")
+}
+
+async fn run_glab_cmd(
+    args: &[&str],
+    terminal: &mut AppTerminal,
+    tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    tab: crate::app::Tab,
+) {
     let is_github = std::process::Command::new("git")
         .args(["remote", "get-url", "origin"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).contains("github.com"))
         .unwrap_or(false);
 
-    let mut cmd = if is_github {
-        let gh_args = translate_glab_to_gh(args);
-        let mut c = std::process::Command::new("gh");
-        for arg in gh_args {
-            c.arg(arg);
-        }
-        c
+    let program = if is_github { "gh" } else { "glab" };
+    let actual_args = if is_github {
+        translate_glab_to_gh(args)
     } else {
-        let mut c = std::process::Command::new("glab");
-        for arg in args {
-            c.arg(arg);
-        }
-        c
+        args.iter().map(|s| s.to_string()).collect::<Vec<_>>()
     };
 
-    cmd.stdin(std::process::Stdio::inherit());
-    cmd.stdout(std::process::Stdio::inherit());
-    cmd.stderr(std::process::Stdio::inherit());
-    
-    if let Ok(mut child) = cmd.spawn() {
-        let _ = child.wait();
+    if is_command_interactive(args) {
+        crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
+        let _ = tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        disable_raw_mode().unwrap();
+        execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
+        
+        let mut cmd = std::process::Command::new(program);
+        cmd.args(&actual_args);
+        cmd.stdin(std::process::Stdio::inherit());
+        cmd.stdout(std::process::Stdio::inherit());
+        cmd.stderr(std::process::Stdio::inherit());
+        
+        if let Ok(mut child) = cmd.spawn() {
+            let _ = child.wait();
+        }
+        
+        enable_raw_mode().unwrap();
+        execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
+        while crossterm::event::poll(std::time::Duration::from_secs(0)).unwrap_or(false) {
+            let _ = crossterm::event::read();
+        }
+        let _ = terminal.clear();
+        crate::event::PAUSED.store(false, std::sync::atomic::Ordering::Relaxed);
+        
+        let _ = tx.send(Event::CommandCompleted(tab, Ok(())));
+    } else {
+        let status_msg = format!("Running {} {}...", program, args.join(" "));
+        let _ = tx.send(Event::CommandStarted(status_msg));
+        
+        let tx_clone = tx.clone();
+        let program = program.to_string();
+        
+        tokio::spawn(async move {
+            let mut cmd = tokio::process::Command::new(&program);
+            cmd.args(&actual_args);
+            
+            match cmd.output().await {
+                Ok(output) => {
+                    if output.status.success() {
+                        let _ = tx_clone.send(Event::CommandCompleted(tab, Ok(())));
+                    } else {
+                        let err_msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                        let _ = tx_clone.send(Event::CommandCompleted(
+                            tab,
+                            Err(format!("Command failed: {}", err_msg)),
+                        ));
+                    }
+                }
+                Err(e) => {
+                    let _ = tx_clone.send(Event::CommandCompleted(
+                        tab,
+                        Err(format!("Failed to execute command: {}", e)),
+                    ));
+                }
+            }
+        });
     }
-    
-    enable_raw_mode().unwrap();
-    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
-    while crossterm::event::poll(std::time::Duration::from_secs(0)).unwrap_or(false) {
-        let _ = crossterm::event::read();
-    }
-    let _ = terminal.clear();
-    crate::event::PAUSED.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
-async fn run_glab_update(entity_type: &str, id: u64, args: &[&str], terminal: &mut AppTerminal) {
+async fn run_glab_update(
+    entity_type: &str,
+    id: u64,
+    args: &[&str],
+    terminal: &mut AppTerminal,
+    tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    tab: crate::app::Tab,
+) {
     let id_str = id.to_string();
     let mut cmd_args = vec![entity_type, "update", &id_str];
     cmd_args.extend_from_slice(args);
-    run_glab_cmd(&cmd_args, terminal).await;
+    run_glab_cmd(&cmd_args, terminal, tx, tab).await;
 }
 
 async fn apply_selector_changes(
@@ -478,13 +525,15 @@ async fn apply_selector_changes(
     values: Vec<String>,
     terminal: &mut AppTerminal,
 ) {
+    let tx = app.tx.clone().unwrap();
+    let tab = app.active_tab;
     match field_type {
         "labels" => {
             let labels_comma = values.join(",");
             if labels_comma.is_empty() {
-                run_glab_update(entity_type, iid, &["--unlabel", "all"], terminal).await;
+                run_glab_update(entity_type, iid, &["--unlabel", "all"], terminal, tx.clone(), tab).await;
             } else {
-                run_glab_update(entity_type, iid, &["--unlabel", "all", "--label", &labels_comma], terminal).await;
+                run_glab_update(entity_type, iid, &["--unlabel", "all", "--label", &labels_comma], terminal, tx.clone(), tab).await;
             }
             
             if entity_type == "issue" {
@@ -502,9 +551,9 @@ async fn apply_selector_changes(
             let assignees_comma = clean_values.join(",");
             
             if assignees_comma.is_empty() {
-                run_glab_update(entity_type, iid, &["--unassign"], terminal).await;
+                run_glab_update(entity_type, iid, &["--unassign"], terminal, tx.clone(), tab).await;
             } else {
-                run_glab_update(entity_type, iid, &["--assignee", &assignees_comma], terminal).await;
+                run_glab_update(entity_type, iid, &["--assignee", &assignees_comma], terminal, tx.clone(), tab).await;
             }
             
             let new_assignees: Vec<crate::gitlab::issues::Assignee> = clean_values.iter().map(|u| {
@@ -529,7 +578,7 @@ async fn apply_selector_changes(
                 let clean_values: Vec<String> = values.iter().map(|v| v.trim_start_matches('@').to_string()).collect();
                 let reviewers_comma = clean_values.join(",");
                 
-                run_glab_update(entity_type, iid, &["--reviewer", &reviewers_comma], terminal).await;
+                run_glab_update(entity_type, iid, &["--reviewer", &reviewers_comma], terminal, tx.clone(), tab).await;
                 
                 let new_reviewers: Vec<crate::gitlab::mr::Reviewer> = clean_values.into_iter().map(|u| {
                     crate::gitlab::mr::Reviewer { username: u }
@@ -542,7 +591,7 @@ async fn apply_selector_changes(
         }
         "milestone" => {
             if let Some(milestone_title) = values.first() {
-                run_glab_update(entity_type, iid, &["--milestone", milestone_title], terminal).await;
+                run_glab_update(entity_type, iid, &["--milestone", milestone_title], terminal, tx.clone(), tab).await;
                 
                 let new_milestone = Some(crate::gitlab::issues::Milestone { title: milestone_title.clone() });
                 if entity_type == "issue" {
@@ -556,7 +605,7 @@ async fn apply_selector_changes(
                     }
                 }
             } else {
-                run_glab_update(entity_type, iid, &["--milestone", "0"], terminal).await;
+                run_glab_update(entity_type, iid, &["--milestone", "0"], terminal, tx.clone(), tab).await;
                 
                 if entity_type == "issue" {
                     if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
@@ -572,16 +621,16 @@ async fn apply_selector_changes(
         "confidential" => {
             if let Some(val) = values.first() {
                 if val.to_lowercase() == "confidential" {
-                    run_glab_update(entity_type, iid, &["--confidential"], terminal).await;
+                    run_glab_update(entity_type, iid, &["--confidential"], terminal, tx.clone(), tab).await;
                 } else {
-                    run_glab_update(entity_type, iid, &["--public"], terminal).await;
+                    run_glab_update(entity_type, iid, &["--public"], terminal, tx.clone(), tab).await;
                 }
             }
         }
         "draft_status" => {
             if let Some(val) = values.first() {
                 let action = if val.to_lowercase() == "draft" { "--draft" } else { "--ready" };
-                run_glab_update(entity_type, iid, &[action], terminal).await;
+                run_glab_update(entity_type, iid, &[action], terminal, tx.clone(), tab).await;
                 if entity_type == "mr" {
                     if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                         item.draft = val.to_lowercase() == "draft";
@@ -664,7 +713,15 @@ fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
     }
 }
 
-async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: KeyCode, terminal: &mut AppTerminal) {
+async fn handle_entity_update(
+    app: &mut App,
+    entity_type: &str,
+    iid: u64,
+    code: KeyCode,
+    terminal: &mut AppTerminal,
+    tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    tab: crate::app::Tab,
+) {
     match code {
         KeyCode::Char('t') => {
             let current_title = if entity_type == "issue" {
@@ -674,7 +731,7 @@ async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: 
             };
 
             if let Some(new_title) = edit_in_editor(&current_title, terminal) {
-                run_glab_update(entity_type, iid, &["--title", &new_title], terminal).await;
+                run_glab_update(entity_type, iid, &["--title", &new_title], terminal, tx.clone(), tab).await;
                 if entity_type == "issue" {
                     if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
                         item.title = new_title;
@@ -690,7 +747,7 @@ async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: 
             if entity_type == "mr" {
                 let is_draft = app.mrs.items.iter().find(|m| m.iid == iid).map(|m| m.draft).unwrap_or(false);
                 let action = if is_draft { "--ready" } else { "--draft" };
-                run_glab_update(entity_type, iid, &[action], terminal).await;
+                run_glab_update(entity_type, iid, &[action], terminal, tx.clone(), tab).await;
                 if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                     item.draft = !is_draft;
                 }
@@ -700,7 +757,7 @@ async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: 
             if entity_type == "mr" {
                 let current_branch = app.mrs.items.iter().find(|m| m.iid == iid).map(|m| m.target_branch.clone()).unwrap_or_default();
                 if let Some(target) = edit_in_editor(&current_branch, terminal) {
-                    run_glab_update(entity_type, iid, &["--target-branch", &target], terminal).await;
+                    run_glab_update(entity_type, iid, &["--target-branch", &target], terminal, tx.clone(), tab).await;
                     if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                         item.target_branch = target;
                     }
@@ -711,9 +768,9 @@ async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: 
             if entity_type == "issue" {
                 if let Some(res) = edit_in_editor("public", terminal) {
                     if res.to_lowercase().contains("confidential") {
-                        run_glab_update(entity_type, iid, &["--confidential"], terminal).await;
+                        run_glab_update(entity_type, iid, &["--confidential"], terminal, tx.clone(), tab).await;
                     } else {
-                        run_glab_update(entity_type, iid, &["--public"], terminal).await;
+                        run_glab_update(entity_type, iid, &["--public"], terminal, tx.clone(), tab).await;
                     }
                 }
             }
@@ -722,9 +779,9 @@ async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: 
             if entity_type == "issue" {
                 if let Some(due_date) = edit_in_editor("YYYY-MM-DD", terminal) {
                     if due_date == "YYYY-MM-DD" || due_date.is_empty() {
-                        run_glab_update(entity_type, iid, &["--due-date", ""], terminal).await;
+                        run_glab_update(entity_type, iid, &["--due-date", ""], terminal, tx.clone(), tab).await;
                     } else {
-                        run_glab_update(entity_type, iid, &["--due-date", &due_date], terminal).await;
+                        run_glab_update(entity_type, iid, &["--due-date", &due_date], terminal, tx.clone(), tab).await;
                     }
                 }
             }
@@ -732,12 +789,12 @@ async fn handle_entity_update(app: &mut App, entity_type: &str, iid: u64, code: 
         KeyCode::Char('w') => {
             if entity_type == "issue" {
                 if let Some(weight) = edit_in_editor("0", terminal) {
-                    run_glab_update(entity_type, iid, &["--weight", &weight], terminal).await;
+                    run_glab_update(entity_type, iid, &["--weight", &weight], terminal, tx.clone(), tab).await;
                 }
             }
         }
         KeyCode::Char('d') => {
-            run_glab_update(entity_type, iid, &["-d", "-"], terminal).await;
+            run_glab_update(entity_type, iid, &["-d", "-"], terminal, tx.clone(), tab).await;
             if let Some(client) = &app.gitlab_client {
                 if entity_type == "issue" {
                     if let Ok(updated) = gitlab::issues::get_issue(client, &app.project_context, iid).await {
@@ -900,6 +957,7 @@ async fn main() -> Result<()> {
     // Create app and event handler
     let mut app = App::new();
     let mut events = EventHandler::new(250);
+    app.tx = Some(events.sender());
 
     // Initialize gitlab context
     if let Ok(context) = gitlab::client::get_project_context().await {
@@ -1085,6 +1143,25 @@ async fn main() -> Result<()> {
                     app.diff_loading = false;
                     app.error_message = Some(err_msg);
                 }
+                Event::CommandStarted(msg) => {
+                    app.status_message = Some(msg);
+                }
+                Event::CommandCompleted(tab, res) => {
+                    app.status_message = None;
+                    match res {
+                        Ok(_) => {
+                            if let Some(client) = &app.gitlab_client {
+                                if !app.loading_tabs.contains(&tab) {
+                                    app.loading_tabs.insert(tab);
+                                }
+                                spawn_refresh_active_tab(client, &app.project_context, tab, events.sender());
+                            }
+                        }
+                        Err(err) => {
+                            app.error_message = Some(err);
+                        }
+                    }
+                }
                 Event::Key(key_event) => {
                     if app.error_message.is_some() {
                         if key_event.code == KeyCode::Enter || key_event.code == KeyCode::Esc {
@@ -1194,18 +1271,13 @@ async fn main() -> Result<()> {
                                 let value = text_input.value.clone();
                                 match text_input.action {
                                     crate::app::TextInputAction::EditField { entity_iid, entity_type, field_type } => {
-                                        apply_field_text_change(&mut app, &entity_type, entity_iid, &field_type, value, &mut terminal).await;
-                                        if let Some(client) = &app.gitlab_client {
-                                            spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
-                                        }
+                                        let active_tab = app.active_tab;
+                                        apply_field_text_change(&mut app, &entity_type, entity_iid, &field_type, value, &mut terminal, events.sender(), active_tab).await;
                                         rebuild_edit_menu(&mut app, &entity_type, entity_iid);
                                     }
                                     crate::app::TextInputAction::CreateIssue => {
                                         if !value.trim().is_empty() {
-                                            run_glab_cmd(&["issue", "create", "-y", "--title", &value], &mut terminal).await;
-                                            if let Some(client) = &app.gitlab_client {
-                                                spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
-                                            }
+                                            run_glab_cmd(&["issue", "create", "-y", "--title", &value], &mut terminal, events.sender(), app.active_tab).await;
                                         }
                                     }
                                     crate::app::TextInputAction::AddReviewComment { mr_iid, file_path, line_num, old_line_num } => {
@@ -1228,7 +1300,7 @@ async fn main() -> Result<()> {
                                                 args.push(old_line.to_string());
                                             }
                                             let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-                                            run_glab_cmd(&args_ref, &mut terminal).await;
+                                            run_glab_cmd(&args_ref, &mut terminal, events.sender(), app.active_tab).await;
                                         }
                                     }
                                     crate::app::TextInputAction::EnterPipelineId => {
@@ -1458,11 +1530,7 @@ async fn main() -> Result<()> {
 
                                             if let Some(issue_iid) = parsed_iid {
                                                 app.selector = None;
-                                                run_glab_cmd(&["mr", "create", "-i", &issue_iid.to_string(), "--copy-issue-labels", "--create-source-branch", "--squash-before-merge"], &mut terminal).await;
-                                                if let Some(client) = &app.gitlab_client {
-                                                    app.loading_tabs.insert(app.active_tab);
-                                                    spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
-                                                }
+                                                run_glab_cmd(&["mr", "create", "-i", &issue_iid.to_string(), "--copy-issue-labels", "--create-source-branch", "--squash-before-merge"], &mut terminal, events.sender(), app.active_tab).await;
                                             }
                                         }
                                         continue;
@@ -1671,10 +1739,8 @@ async fn main() -> Result<()> {
                                 }
 
                                 if field_name == "Description" {
-                                    handle_entity_update(&mut app, &entity_type, entity_iid, KeyCode::Char('d'), &mut terminal).await;
-                                    if let Some(client) = &app.gitlab_client {
-                                        spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
-                                    }
+                                    let active_tab = app.active_tab;
+                                    handle_entity_update(&mut app, &entity_type, entity_iid, KeyCode::Char('d'), &mut terminal, events.sender(), active_tab).await;
                                     rebuild_edit_menu(&mut app, &entity_type, entity_iid);
                                     continue;
                                 }
@@ -1906,14 +1972,11 @@ async fn main() -> Result<()> {
                                         let filtered = app.filtered_issues();
                                         if let Some(issue) = filtered.get(selected_idx) {
                                             let issue_iid = issue.iid;
-                                            run_glab_cmd(&["issue", "close", &issue_iid.to_string()], &mut terminal).await;
+                                            run_glab_cmd(&["issue", "close", &issue_iid.to_string()], &mut terminal, events.sender(), app.active_tab).await;
                                             if let Some(pos) = app.issues.items.iter().position(|i| i.iid == issue_iid) {
                                                 app.issues.items.remove(pos);
                                             }
                                             app.update_filter_selection();
-                                            if let Some(client) = &app.gitlab_client {
-                                                spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
-                                            }
                                         }
                                     }
                                 }
@@ -1982,20 +2045,14 @@ async fn main() -> Result<()> {
                                             });
                                         }
                                         KeyCode::Char('a') => {
-                                            run_glab_cmd(&["mr", "approve", &mr_iid.to_string()], &mut terminal).await;
-                                            if let Some(client) = &app.gitlab_client {
-                                                spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
-                                            }
+                                            run_glab_cmd(&["mr", "approve", &mr_iid.to_string()], &mut terminal, events.sender(), app.active_tab).await;
                                         }
                                         KeyCode::Char('m') => {
-                                            run_glab_cmd(&["mr", "merge", &mr_iid.to_string(), "--remove-source-branch", "--squash"], &mut terminal).await;
+                                            run_glab_cmd(&["mr", "merge", &mr_iid.to_string(), "--remove-source-branch", "--squash"], &mut terminal, events.sender(), app.active_tab).await;
                                             if let Some(pos) = app.mrs.items.iter().position(|m| m.iid == mr_iid) {
                                                 app.mrs.items.remove(pos);
                                             }
                                             app.update_filter_selection();
-                                            if let Some(client) = &app.gitlab_client {
-                                                spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
-                                            }
                                         }
                                         KeyCode::Char('v') => {
                                             app.diff_loading = true;
@@ -2042,15 +2099,12 @@ async fn main() -> Result<()> {
                                             });
                                         }
                                         KeyCode::Char('o') => {
-                                            run_glab_cmd(&["mr", "view", &mr_iid.to_string(), "-w"], &mut terminal).await;
+                                            run_glab_cmd(&["mr", "view", &mr_iid.to_string(), "-w"], &mut terminal, events.sender(), app.active_tab).await;
                                         }
                                         KeyCode::Char('s') => {
                                             let is_draft = mr_title.starts_with("Draft:") || mr_title.starts_with("WIP:");
                                             let action = if is_draft { "--ready" } else { "--draft" };
-                                            run_glab_update("mr", mr_iid, &[action], &mut terminal).await;
-                                            if let Some(client) = &app.gitlab_client {
-                                                spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
-                                            }
+                                            run_glab_update("mr", mr_iid, &[action], &mut terminal, events.sender(), app.active_tab).await;
                                         }
                                         _ => handled = false,
                                     }
@@ -2063,7 +2117,7 @@ async fn main() -> Result<()> {
                         }
                         app::Tab::Pipelines => {
                             if key_event.code == KeyCode::Char('p') {
-                                run_glab_cmd(&["ci", "run", "--mr"], &mut terminal).await;
+                                run_glab_cmd(&["ci", "run", "--mr"], &mut terminal, events.sender(), app.active_tab).await;
                             } else if let Some(selected_idx) = app.pipelines.state.selected() {
                                 if let Some(item) = app.filtered_pipelines().get(selected_idx) {
                                     let pipe_id = item.id;
@@ -2127,7 +2181,7 @@ async fn main() -> Result<()> {
                                                  });
                                              }
                                         }
-                                        KeyCode::Char('o') => run_glab_cmd(&["ci", "view", &pipe_id.to_string(), "-w"], &mut terminal).await,
+                                        KeyCode::Char('o') => run_glab_cmd(&["ci", "view", &pipe_id.to_string(), "-w"], &mut terminal, events.sender(), app.active_tab).await,
                                         _ => handled = false,
                                     }
                                 } else {
@@ -2201,10 +2255,10 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                         KeyCode::Char('d') => {
-                                            run_glab_cmd(&["job", "artifact", "master", &job_name], &mut terminal).await;
+                                            run_glab_cmd(&["job", "artifact", "master", &job_name], &mut terminal, events.sender(), app.active_tab).await;
                                         }
                                         KeyCode::Char('o') => {
-                                            run_glab_cmd(&["job", "view", &job_id.to_string(), "-w"], &mut terminal).await;
+                                            run_glab_cmd(&["job", "view", &job_id.to_string(), "-w"], &mut terminal, events.sender(), app.active_tab).await;
                                         }
                                         KeyCode::Char('e') => {
                                             let temp_file = std::env::temp_dir().join(format!("job_{}_trace.txt", job_id));
@@ -2267,14 +2321,14 @@ async fn main() -> Result<()> {
                                     let runner_id = item.id;
                                     match key_event.code {
                                         KeyCode::Char('p') => {
-                                            run_glab_cmd(&["api", "-X", "PUT", &format!("runners/{}", runner_id), "-f", "paused=true"], &mut terminal).await;
+                                            run_glab_cmd(&["api", "-X", "PUT", &format!("runners/{}", runner_id), "-f", "paused=true"], &mut terminal, events.sender(), app.active_tab).await;
                                             if let Some(runner) = app.runners.items.iter_mut().find(|r| r.id == runner_id) {
                                                 runner.status = "paused".to_string();
                                                 runner.active = false;
                                             }
                                         }
                                         KeyCode::Char('r') => {
-                                            run_glab_cmd(&["api", "-X", "PUT", &format!("runners/{}", runner_id), "-f", "paused=false"], &mut terminal).await;
+                                            run_glab_cmd(&["api", "-X", "PUT", &format!("runners/{}", runner_id), "-f", "paused=false"], &mut terminal, events.sender(), app.active_tab).await;
                                             if let Some(runner) = app.runners.items.iter_mut().find(|r| r.id == runner_id) {
                                                 runner.status = "online".to_string();
                                                 runner.active = true;
@@ -2307,7 +2361,7 @@ async fn main() -> Result<()> {
                                 if let Some(item) = app.filtered_releases().get(selected_idx) {
                                     match key_event.code {
                                         KeyCode::Char('o') => {
-                                            run_glab_cmd(&["release", "view", &item.tag_name, "-w"], &mut terminal).await;
+                                            run_glab_cmd(&["release", "view", &item.tag_name, "-w"], &mut terminal, events.sender(), app.active_tab).await;
                                         }
                                         _ => handled = false,
                                     }
