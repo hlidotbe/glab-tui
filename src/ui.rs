@@ -517,12 +517,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .split(chunks[1])
     };
 
-    // Sidebar Navigation & Commands Layout
-    let sidebar_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(middle_chunks[0]);
-
     // Sidebar: Tabs
     let is_github = app
         .gitlab_client
@@ -557,64 +551,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .add_modifier(Modifier::BOLD),
             ),
     );
-    f.render_widget(sidebar, sidebar_chunks[0]);
-
-    // Render column toggle checklist (for all views)
-    let (checklist_items, active_idx) = {
-        let tab = app.active_tab;
-        let cols = tab.columns();
-        let items: Vec<(String, usize)> = cols
-            .iter()
-            .enumerate()
-            .map(|(idx, col)| {
-                let checked = app.is_column_visible(tab, col);
-                (
-                    format!(" [{}] {}", if checked { "x" } else { " " }, col),
-                    idx,
-                )
-            })
-            .collect();
-        (items, app.column_checklist_idx)
-    };
-
-    let checklist_border_color = if app.focus_column_checklist {
-        THEME.border_focused
-    } else {
-        THEME.border
-    };
-    let checklist_title = if app.focus_column_checklist {
-        " Toggle Columns (Up/Dn: Move, Spc: Toggle, Tab: Exit) "
-    } else {
-        " Toggle Columns (Press Tab to edit) "
-    };
-    let checklist_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(checklist_border_color))
-        .title(checklist_title)
-        .title_style(
-            Style::default()
-                .fg(THEME.text_muted)
-                .add_modifier(Modifier::BOLD),
-        );
-
-    let list_items: Vec<ListItem> = checklist_items
-        .iter()
-        .map(|(label, idx)| {
-            let style = if app.focus_column_checklist && *idx == active_idx {
-                Style::default()
-                    .fg(THEME.bg)
-                    .bg(THEME.border_focused)
-                    .add_modifier(Modifier::BOLD)
-            } else if *idx == active_idx {
-                Style::default().fg(THEME.text_normal).bg(THEME.inactive_bg)
-            } else {
-                Style::default().fg(THEME.text_normal)
-            };
-            ListItem::new(label.clone()).style(style)
-        })
-        .collect();
-    let checklist_list = List::new(list_items).block(checklist_block);
-    f.render_widget(checklist_list, sidebar_chunks[1]);
+    f.render_widget(sidebar, middle_chunks[0]);
 
     // Main Area Title
     let tab_title = if app.loading_tabs.contains(&app.active_tab) {
@@ -3699,6 +3636,71 @@ pub fn render(f: &mut Frame, app: &mut App) {
         f.render_widget(footer_p, chunks[1]);
 
         app.diff_view = Some(updated_diff_view);
+    }
+
+    if app.focus_column_checklist {
+        let tab = app.active_tab;
+        let cols = tab.columns();
+        let active_idx = app.column_checklist_idx;
+        
+        let list_items: Vec<ListItem> = cols
+            .iter()
+            .enumerate()
+            .map(|(idx, col)| {
+                let checked = app.is_column_visible(tab, col);
+                let text = format!(" [{}] {}", if checked { "x" } else { " " }, col);
+                let style = if idx == active_idx {
+                    Style::default()
+                        .fg(THEME.bg)
+                        .bg(THEME.border_focused)
+                        .add_modifier(Modifier::BOLD)
+                } else if checked {
+                    Style::default().fg(THEME.text_normal)
+                } else {
+                    Style::default().fg(THEME.text_muted)
+                };
+                ListItem::new(text).style(style)
+            })
+            .collect();
+
+        // Calculate a nice small size for the popup based on columns count
+        let width = 36;
+        let height = (cols.len() + 4) as u16;
+        let area = centered_rect_fixed(width, height, size);
+
+        let checklist_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(THEME.border_focused))
+            .title(format!(" Toggle Columns: {} ", tab.title(is_github)))
+            .title_style(
+                Style::default()
+                    .fg(THEME.border_focused)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        let checklist_list = List::new(list_items);
+        
+        let popup_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(1),
+            ])
+            .split(area);
+
+        let footer_p = Paragraph::new(" [Spc] Toggle • [Up/Dn] Move • [Tab] Close ")
+            .alignment(Alignment::Center)
+            .style(
+                Style::default()
+                    .fg(THEME.text_muted)
+                    .add_modifier(Modifier::ITALIC),
+            );
+
+        f.render_widget(Clear, area);
+        f.render_widget(checklist_block, area);
+        f.render_widget(checklist_list, popup_chunks[0]);
+        f.render_widget(footer_p, popup_chunks[1]);
     }
 }
 
