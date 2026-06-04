@@ -1,17 +1,20 @@
 # glab-tui
 
-A terminal user interface (TUI) for GitLab, built on top of [`glab`](https://gitlab.com/gitlab-org/cli). Browse issues, merge requests, pipelines, runners, and releases without leaving your terminal.
+A terminal user interface (TUI) for GitLab and GitHub, built on top of [`glab`](https://gitlab.com/gitlab-org/cli) and [`gh`](https://cli.github.com/). Browse issues, pull requests / merge requests, pipelines, runners, and releases without leaving your terminal.
 
 ---
 
 ## Features
 
+- **GitHub & GitLab Dual Support** — Automatic detection of repository host, dynamically translating TUI actions and metadata updates to `gh` or `glab` CLI commands.
 - **Issues** — list, filter, create, and edit issues (title, labels, assignees, milestone, due date, weight, confidentiality, description)
-- **Merge Requests** — list, filter, create MRs from issues, approve, merge, diff, and edit all MR metadata
-- **Pipelines** — inspect pipelines and their jobs, retry/cancel pipelines and individual jobs, stream job traces
-- **Runners** — list runners, pause/resume, and edit descriptions
-- **Releases** — browse releases and open them in a browser
-- **Live search** — fuzzy-filter any tab by pressing `f`
+- **Merge Requests / Pull Requests** — list, filter, create MRs from issues, approve, merge, view diffs in terminal, and edit MR/PR metadata
+- **Pipelines / Actions** — inspect pipelines and their jobs, retry/cancel pipelines/actions and individual jobs, stream build traces
+- **Runners** — list runners, pause/resume, edit descriptions, and monitor live performance/queue metrics
+- **Releases** — browse project releases and view details in the terminal
+- **Multi-colored Labels** — table columns render labels with their individual unique hashed colors, preserving search highlights
+- **Columns Config Modal** — press `Tab` or `t` to open a centered checkbox popup overlay to toggle visibility of any table column
+- **Live Search** — fuzzy-filter across all visible columns by pressing `f`
 - **Inline editing** — full edit menus with searchable multi-select selectors for labels, assignees, reviewers, and milestones
 - **External editor** — descriptions and freeform fields open in your `$EDITOR` / `$VISUAL`
 - **Lazy-load tabs** — data for each tab is only fetched the first time you switch to it; refresh with `F5` / `Ctrl+R`
@@ -87,12 +90,24 @@ The default fallback is `helix` (`hx`).
 ## Usage
 
 ```sh
-# Run from inside a GitLab repository:
-cd /path/to/your/gitlab-repo
+# Run from inside a GitLab or GitHub repository:
+cd /path/to/your/repo
 glab-tui
+
+# Specifying optional flags:
+glab-tui --repo organization/project-name
+glab-tui --dir /path/to/other/repo
 ```
 
-The TUI will launch in the terminal, auto-detecting the project from your `git remote` and fetching the Issues tab immediately.
+### Options
+
+| Flag | Argument | Description |
+|---|---|---|
+| `--repo` | `owner/repo` | Launch glab-tui for a custom remote repository |
+| `--dir` | `/path/to/dir` | Launch glab-tui in a custom repository directory |
+| `-h`, `--help` | | Print usage help details |
+
+The TUI will launch in the terminal, auto-detecting the project context and fetching the Issues tab immediately.
 
 ---
 
@@ -102,8 +117,9 @@ The TUI will launch in the terminal, auto-detecting the project from your `git r
 
 | Key | Action |
 |---|---|
-| `Tab` / `l` / `→` | Next tab |
-| `Shift+Tab` / `h` / `←` | Previous tab |
+| `l` / `→` | Next tab |
+| `h` / `←` | Previous tab |
+| `Tab` / `t` | Open columns toggling popup overlay |
 | `j` / `↓` | Move selection down |
 | `k` / `↑` | Move selection up |
 | `f` | Open search / filter bar |
