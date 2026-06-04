@@ -77,6 +77,145 @@ fn get_label_color(label: &str) -> Color {
     colors[idx]
 }
 
+fn render_labels_cell(
+    labels: &[String],
+    query: &str,
+    is_selected: bool,
+    is_checked: bool,
+    max_len: usize,
+) -> Cell<'static> {
+    if labels.is_empty() {
+        let mut style = Style::default().fg(THEME.text_muted);
+        if is_selected {
+            style = style.bg(THEME.highlight_bg).add_modifier(Modifier::BOLD);
+        } else if is_checked {
+            style = style.bg(THEME.checked_bg);
+        }
+        return Cell::from(Line::from("—").alignment(Alignment::Left)).style(style);
+    }
+
+    let mut char_styles: Vec<(char, Style)> = Vec::new();
+    let mut current_len = 0;
+    
+    let base_bg = if is_selected {
+        Some(THEME.highlight_bg)
+    } else if is_checked {
+        Some(THEME.checked_bg)
+    } else {
+        None
+    };
+
+    for (idx, label) in labels.iter().enumerate() {
+        if current_len >= max_len {
+            break;
+        }
+        if idx > 0 {
+            let comma = ", ";
+            if current_len + comma.len() > max_len {
+                let mut style = Style::default().fg(THEME.text_muted);
+                if let Some(bg) = base_bg {
+                    style = style.bg(bg);
+                }
+                char_styles.push(('…', style));
+                break;
+            }
+            let mut style = Style::default().fg(THEME.text_normal);
+            if let Some(bg) = base_bg {
+                style = style.bg(bg);
+            }
+            for c in comma.chars() {
+                char_styles.push((c, style));
+            }
+            current_len += comma.len();
+        }
+
+        let label_color = get_label_color(label);
+        let mut label_style = Style::default().fg(label_color).add_modifier(Modifier::BOLD);
+        if let Some(bg) = base_bg {
+            label_style = label_style.bg(bg);
+        }
+
+        let mut text_to_add = label.as_str();
+        let mut truncated = false;
+        if current_len + text_to_add.len() > max_len {
+            let allowed = max_len - current_len;
+            if allowed > 1 {
+                text_to_add = &text_to_add[..allowed - 1];
+                truncated = true;
+            } else {
+                let mut style = Style::default().fg(THEME.text_muted);
+                if let Some(bg) = base_bg {
+                    style = style.bg(bg);
+                }
+                char_styles.push(('…', style));
+                break;
+            }
+        }
+
+        for c in text_to_add.chars() {
+            char_styles.push((c, label_style));
+        }
+        current_len += text_to_add.len();
+
+        if truncated {
+            let mut style = Style::default().fg(THEME.text_muted);
+            if let Some(bg) = base_bg {
+                style = style.bg(bg);
+            }
+            char_styles.push(('…', style));
+            break;
+        }
+    }
+
+    let concatenated_text: String = char_styles.iter().map(|(c, _)| *c).collect();
+    let index_set: std::collections::HashSet<usize> = if query.trim().is_empty() {
+        std::collections::HashSet::new()
+    } else {
+        let matcher = SkimMatcherV2::default();
+        if let Some((_, indices)) = matcher.fuzzy_indices(&concatenated_text, query) {
+            indices.into_iter().collect()
+        } else {
+            std::collections::HashSet::new()
+        }
+    };
+
+    let mut spans = Vec::new();
+    let mut current_chunk = String::new();
+    let mut current_style = Style::default();
+    let mut first = true;
+
+    for (i, (c, mut style)) in char_styles.into_iter().enumerate() {
+        if index_set.contains(&i) {
+            style = style.fg(THEME.yellow).add_modifier(Modifier::BOLD);
+        }
+        
+        if first {
+            current_style = style;
+            first = false;
+        }
+
+        if style != current_style {
+            if !current_chunk.is_empty() {
+                spans.push(Span::styled(current_chunk.clone(), current_style));
+                current_chunk.clear();
+            }
+            current_style = style;
+        }
+        current_chunk.push(c);
+    }
+
+    if !current_chunk.is_empty() {
+        spans.push(Span::styled(current_chunk, current_style));
+    }
+
+    let mut cell_style = Style::default();
+    if let Some(bg) = base_bg {
+        cell_style = cell_style.bg(bg);
+    }
+
+    Cell::from(Line::from(spans).alignment(Alignment::Left)).style(cell_style)
+}
+
 struct Theme {
     bg: Color,
     border: Color,
@@ -610,18 +749,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         ));
                     }
                     if app.is_column_visible(Tab::Issues, "Labels") {
-                        let labels_str = if i.labels.is_empty() {
-                            "—".to_string()
-                        } else {
-                            i.labels.join(", ")
-                        };
-                        cells.push(render_fuzzy_cell(
-                            &truncate(&labels_str, 24),
+                        cells.push(render_labels_cell(
+                            &i.labels,
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.purple),
-                            Alignment::Left,
+                            24,
                         ));
                     }
                     if app.is_column_visible(Tab::Issues, "Milestone") {
@@ -1053,18 +1186,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         ));
                     }
                     if app.is_column_visible(Tab::MergeRequests, "Labels") {
-                        let mr_labels_str = if m.labels.is_empty() {
-                            "—".to_string()
-                        } else {
-                            m.labels.join(", ")
-                        };
-                        cells.push(render_fuzzy_cell(
-                            &truncate(&mr_labels_str, 24),
+                        cells.push(render_labels_cell(
+                            &m.labels,
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.purple),
-                            Alignment::Left,
+                            24,
                         ));
                     }
                     if app.is_column_visible(Tab::MergeRequests, "Milestone") {
@@ -3751,5 +3878,18 @@ mod tests {
             Color::Rgb(_, _, _) => {}
             _ => panic!("Expected Rgb color"),
         }
+    }
+
+    #[test]
+    fn test_render_labels_cell() {
+        let labels = vec!["bug".to_string(), "backend".to_string()];
+        let cell_empty = render_labels_cell(&[], "", false, false, 24);
+        let cell_str_empty = format!("{:?}", cell_empty);
+        assert!(cell_str_empty.contains("—"));
+
+        let cell_normal = render_labels_cell(&labels, "", false, false, 24);
+        let cell_str = format!("{:?}", cell_normal);
+        assert!(cell_str.contains("bug"));
+        assert!(cell_str.contains("backend"));
     }
 }
