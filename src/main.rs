@@ -1,7 +1,7 @@
 mod app;
 mod event;
-mod ui;
 mod gitlab;
+mod ui;
 pub mod utils;
 
 use anyhow::Result;
@@ -9,10 +9,10 @@ use app::App;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use event::{Event, EventHandler};
-use ratatui::{backend::CrosstermBackend, Terminal, widgets::ListState};
+use ratatui::{Terminal, backend::CrosstermBackend, widgets::ListState};
 use std::io;
 
 type AppTerminal = Terminal<CrosstermBackend<std::io::Stdout>>;
@@ -47,7 +47,10 @@ fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<Strin
     // Launch external editor
     let mut cmd = if cfg!(target_os = "windows") {
         let mut c = std::process::Command::new("cmd");
-        c.args(&["/c", &format!("{} \"{}\"", editor, tmp.path().to_string_lossy())]);
+        c.args(&[
+            "/c",
+            &format!("{} \"{}\"", editor, tmp.path().to_string_lossy()),
+        ]);
         c
     } else {
         let mut c = std::process::Command::new(&editor);
@@ -81,11 +84,14 @@ fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<Strin
         Err(_) => return None,
     };
     let trimmed = content.trim().to_string();
-    if trimmed.is_empty() { None } else { Some(trimmed) }
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
 }
 
 // old edit_in_editor implementation removed
-
 
 async fn apply_field_text_change(
     app: &mut App,
@@ -99,7 +105,15 @@ async fn apply_field_text_change(
 ) {
     match field_type {
         "title" => {
-            run_glab_update(entity_type, iid, &["--title", &value], terminal, tx.clone(), tab).await;
+            run_glab_update(
+                entity_type,
+                iid,
+                &["--title", &value],
+                terminal,
+                tx.clone(),
+                tab,
+            )
+            .await;
             if entity_type == "issue" {
                 if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
                     item.title = value;
@@ -112,7 +126,15 @@ async fn apply_field_text_change(
         }
         "target_branch" => {
             if entity_type == "mr" {
-                run_glab_update(entity_type, iid, &["--target-branch", &value], terminal, tx.clone(), tab).await;
+                run_glab_update(
+                    entity_type,
+                    iid,
+                    &["--target-branch", &value],
+                    terminal,
+                    tx.clone(),
+                    tab,
+                )
+                .await;
                 if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                     item.target_branch = value;
                 }
@@ -121,19 +143,56 @@ async fn apply_field_text_change(
         "due_date" => {
             if entity_type == "issue" {
                 if value == "YYYY-MM-DD" || value.trim().is_empty() {
-                    run_glab_update(entity_type, iid, &["--due-date", ""], terminal, tx.clone(), tab).await;
+                    run_glab_update(
+                        entity_type,
+                        iid,
+                        &["--due-date", ""],
+                        terminal,
+                        tx.clone(),
+                        tab,
+                    )
+                    .await;
                 } else {
-                    run_glab_update(entity_type, iid, &["--due-date", &value], terminal, tx.clone(), tab).await;
+                    run_glab_update(
+                        entity_type,
+                        iid,
+                        &["--due-date", &value],
+                        terminal,
+                        tx.clone(),
+                        tab,
+                    )
+                    .await;
                 }
             }
         }
         "weight" => {
             if entity_type == "issue" {
-                run_glab_update(entity_type, iid, &["--weight", &value], terminal, tx.clone(), tab).await;
+                run_glab_update(
+                    entity_type,
+                    iid,
+                    &["--weight", &value],
+                    terminal,
+                    tx.clone(),
+                    tab,
+                )
+                .await;
             }
         }
         "runner_description" => {
-            run_glab_cmd(&["api", "-X", "PUT", &format!("runners/{}", iid), "-f", &format!("description={}", value)], terminal, tx.clone(), tab).await;
+            run_glab_cmd(
+                &[
+                    "api",
+                    "-X",
+                    "PUT",
+                    &format!("runners/{}", iid),
+                    "-f",
+                    &format!("description={}", value),
+                ],
+                terminal,
+                tx.clone(),
+                tab,
+            )
+            .await;
             if let Some(runner) = app.runners.items.iter_mut().find(|r| r.id == iid) {
                 runner.description = Some(value);
             }
@@ -156,7 +215,7 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
                 let mut title = None;
                 for i in 2..args.len() {
                     if args[i] == "--title" && i + 1 < args.len() {
-                        title = Some(args[i+1]);
+                        title = Some(args[i + 1]);
                     }
                 }
                 if let Some(t) = title {
@@ -176,34 +235,42 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
                         "--title" => {
                             if i + 1 < args.len() {
                                 gh_args.push("--title".to_string());
-                                gh_args.push(args[i+1].to_string());
+                                gh_args.push(args[i + 1].to_string());
                                 i += 2;
-                            } else { i += 1; }
+                            } else {
+                                i += 1;
+                            }
                         }
                         "--label" => {
                             if i + 1 < args.len() {
                                 gh_args.push("--label".to_string());
-                                gh_args.push(args[i+1].to_string());
+                                gh_args.push(args[i + 1].to_string());
                                 i += 2;
-                            } else { i += 1; }
+                            } else {
+                                i += 1;
+                            }
                         }
                         "--unlabel" => {
-                            if i + 1 < args.len() && args[i+1] == "all" {
-                                if i + 2 < args.len() && args[i+2] == "--label" {
+                            if i + 1 < args.len() && args[i + 1] == "all" {
+                                if i + 2 < args.len() && args[i + 2] == "--label" {
                                     // skip
                                 } else {
                                     gh_args.push("--label".to_string());
                                     gh_args.push("".to_string());
                                 }
                                 i += 2;
-                            } else { i += 1; }
+                            } else {
+                                i += 1;
+                            }
                         }
                         "--assignee" => {
                             if i + 1 < args.len() {
                                 gh_args.push("--assignee".to_string());
-                                gh_args.push(args[i+1].to_string());
+                                gh_args.push(args[i + 1].to_string());
                                 i += 2;
-                            } else { i += 1; }
+                            } else {
+                                i += 1;
+                            }
                         }
                         "--unassign" => {
                             gh_args.push("--assignee".to_string());
@@ -213,19 +280,25 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
                         "--milestone" => {
                             if i + 1 < args.len() {
                                 gh_args.push("--milestone".to_string());
-                                let ms = if args[i+1] == "0" { "" } else { args[i+1] };
+                                let ms = if args[i + 1] == "0" { "" } else { args[i + 1] };
                                 gh_args.push(ms.to_string());
                                 i += 2;
-                            } else { i += 1; }
+                            } else {
+                                i += 1;
+                            }
                         }
                         "-d" => {
-                            if i + 1 < args.len() && args[i+1] == "-" {
+                            if i + 1 < args.len() && args[i + 1] == "-" {
                                 gh_args.push("--body-file".to_string());
                                 gh_args.push("-".to_string());
                                 i += 2;
-                            } else { i += 1; }
+                            } else {
+                                i += 1;
+                            }
                         }
-                        _ => { i += 1; }
+                        _ => {
+                            i += 1;
+                        }
                     }
                 }
             } else {
@@ -243,8 +316,10 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
                         let mut issue_id = None;
                         let mut i = 2;
                         while i < args.len() {
-                            if (args[i] == "-i" || args[i] == "--related-issue") && i + 1 < args.len() {
-                                issue_id = Some(args[i+1]);
+                            if (args[i] == "-i" || args[i] == "--related-issue")
+                                && i + 1 < args.len()
+                            {
+                                issue_id = Some(args[i + 1]);
                                 i += 2;
                             } else {
                                 i += 1;
@@ -267,34 +342,42 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
                                 "--title" => {
                                     if i + 1 < args.len() {
                                         gh_args.push("--title".to_string());
-                                        gh_args.push(args[i+1].to_string());
+                                        gh_args.push(args[i + 1].to_string());
                                         i += 2;
-                                    } else { i += 1; }
+                                    } else {
+                                        i += 1;
+                                    }
                                 }
                                 "--label" => {
                                     if i + 1 < args.len() {
                                         gh_args.push("--label".to_string());
-                                        gh_args.push(args[i+1].to_string());
+                                        gh_args.push(args[i + 1].to_string());
                                         i += 2;
-                                    } else { i += 1; }
+                                    } else {
+                                        i += 1;
+                                    }
                                 }
                                 "--unlabel" => {
-                                    if i + 1 < args.len() && args[i+1] == "all" {
-                                        if i + 2 < args.len() && args[i+2] == "--label" {
+                                    if i + 1 < args.len() && args[i + 1] == "all" {
+                                        if i + 2 < args.len() && args[i + 2] == "--label" {
                                             // skip
                                         } else {
                                             gh_args.push("--label".to_string());
                                             gh_args.push("".to_string());
                                         }
                                         i += 2;
-                                    } else { i += 1; }
+                                    } else {
+                                        i += 1;
+                                    }
                                 }
                                 "--assignee" => {
                                     if i + 1 < args.len() {
                                         gh_args.push("--assignee".to_string());
-                                        gh_args.push(args[i+1].to_string());
+                                        gh_args.push(args[i + 1].to_string());
                                         i += 2;
-                                    } else { i += 1; }
+                                    } else {
+                                        i += 1;
+                                    }
                                 }
                                 "--unassign" => {
                                     gh_args.push("--assignee".to_string());
@@ -304,33 +387,43 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
                                 "--reviewer" => {
                                     if i + 1 < args.len() {
                                         gh_args.push("--reviewer".to_string());
-                                        gh_args.push(args[i+1].to_string());
+                                        gh_args.push(args[i + 1].to_string());
                                         i += 2;
-                                    } else { i += 1; }
+                                    } else {
+                                        i += 1;
+                                    }
                                 }
                                 "--milestone" => {
                                     if i + 1 < args.len() {
                                         gh_args.push("--milestone".to_string());
-                                        let ms = if args[i+1] == "0" { "" } else { args[i+1] };
+                                        let ms = if args[i + 1] == "0" { "" } else { args[i + 1] };
                                         gh_args.push(ms.to_string());
                                         i += 2;
-                                    } else { i += 1; }
+                                    } else {
+                                        i += 1;
+                                    }
                                 }
                                 "--target-branch" => {
                                     if i + 1 < args.len() {
                                         gh_args.push("--base".to_string());
-                                        gh_args.push(args[i+1].to_string());
+                                        gh_args.push(args[i + 1].to_string());
                                         i += 2;
-                                    } else { i += 1; }
+                                    } else {
+                                        i += 1;
+                                    }
                                 }
                                 "-d" => {
-                                    if i + 1 < args.len() && args[i+1] == "-" {
+                                    if i + 1 < args.len() && args[i + 1] == "-" {
                                         gh_args.push("--body-file".to_string());
                                         gh_args.push("-".to_string());
                                         i += 2;
-                                    } else { i += 1; }
+                                    } else {
+                                        i += 1;
+                                    }
                                 }
-                                _ => { i += 1; }
+                                _ => {
+                                    i += 1;
+                                }
                             }
                         }
                     }
@@ -449,17 +542,17 @@ async fn run_glab_cmd(
         let _ = tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         disable_raw_mode().unwrap();
         execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
-        
+
         let mut cmd = std::process::Command::new(program);
         cmd.args(&actual_args);
         cmd.stdin(std::process::Stdio::inherit());
         cmd.stdout(std::process::Stdio::inherit());
         cmd.stderr(std::process::Stdio::inherit());
-        
+
         if let Ok(mut child) = cmd.spawn() {
             let _ = child.wait();
         }
-        
+
         enable_raw_mode().unwrap();
         execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
         while crossterm::event::poll(std::time::Duration::from_secs(0)).unwrap_or(false) {
@@ -467,19 +560,19 @@ async fn run_glab_cmd(
         }
         let _ = terminal.clear();
         crate::event::PAUSED.store(false, std::sync::atomic::Ordering::Relaxed);
-        
+
         let _ = tx.send(Event::CommandCompleted(tab, Ok(())));
     } else {
         let status_msg = format!("Running {} {}...", program, args.join(" "));
         let _ = tx.send(Event::CommandStarted(status_msg));
-        
+
         let tx_clone = tx.clone();
         let program = program.to_string();
-        
+
         tokio::spawn(async move {
             let mut cmd = tokio::process::Command::new(&program);
             cmd.args(&actual_args);
-            
+
             match cmd.output().await {
                 Ok(output) => {
                     if output.status.success() {
@@ -531,11 +624,27 @@ async fn apply_selector_changes(
         "labels" => {
             let labels_comma = values.join(",");
             if labels_comma.is_empty() {
-                run_glab_update(entity_type, iid, &["--unlabel", "all"], terminal, tx.clone(), tab).await;
+                run_glab_update(
+                    entity_type,
+                    iid,
+                    &["--unlabel", "all"],
+                    terminal,
+                    tx.clone(),
+                    tab,
+                )
+                .await;
             } else {
-                run_glab_update(entity_type, iid, &["--unlabel", "all", "--label", &labels_comma], terminal, tx.clone(), tab).await;
+                run_glab_update(
+                    entity_type,
+                    iid,
+                    &["--unlabel", "all", "--label", &labels_comma],
+                    terminal,
+                    tx.clone(),
+                    tab,
+                )
+                .await;
             }
-            
+
             if entity_type == "issue" {
                 if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
                     item.labels = values;
@@ -547,27 +656,44 @@ async fn apply_selector_changes(
             }
         }
         "assignees" => {
-            let clean_values: Vec<String> = values.iter().map(|v| v.trim_start_matches('@').to_string()).collect();
+            let clean_values: Vec<String> = values
+                .iter()
+                .map(|v| v.trim_start_matches('@').to_string())
+                .collect();
             let assignees_comma = clean_values.join(",");
-            
+
             if assignees_comma.is_empty() {
                 run_glab_update(entity_type, iid, &["--unassign"], terminal, tx.clone(), tab).await;
             } else {
-                run_glab_update(entity_type, iid, &["--assignee", &assignees_comma], terminal, tx.clone(), tab).await;
+                run_glab_update(
+                    entity_type,
+                    iid,
+                    &["--assignee", &assignees_comma],
+                    terminal,
+                    tx.clone(),
+                    tab,
+                )
+                .await;
             }
-            
-            let new_assignees: Vec<crate::gitlab::issues::Assignee> = clean_values.iter().map(|u| {
-                crate::gitlab::issues::Assignee { username: u.clone() }
-            }).collect();
-            
+
+            let new_assignees: Vec<crate::gitlab::issues::Assignee> = clean_values
+                .iter()
+                .map(|u| crate::gitlab::issues::Assignee {
+                    username: u.clone(),
+                })
+                .collect();
+
             if entity_type == "issue" {
                 if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
                     item.assignees = new_assignees;
                 }
             } else if entity_type == "mr" {
-                let mr_assignees: Vec<crate::gitlab::mr::Assignee> = new_assignees.iter().map(|a| {
-                    crate::gitlab::mr::Assignee { username: a.username.clone() }
-                }).collect();
+                let mr_assignees: Vec<crate::gitlab::mr::Assignee> = new_assignees
+                    .iter()
+                    .map(|a| crate::gitlab::mr::Assignee {
+                        username: a.username.clone(),
+                    })
+                    .collect();
                 if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                     item.assignees = mr_assignees;
                 }
@@ -575,15 +701,27 @@ async fn apply_selector_changes(
         }
         "reviewers" => {
             if entity_type == "mr" {
-                let clean_values: Vec<String> = values.iter().map(|v| v.trim_start_matches('@').to_string()).collect();
+                let clean_values: Vec<String> = values
+                    .iter()
+                    .map(|v| v.trim_start_matches('@').to_string())
+                    .collect();
                 let reviewers_comma = clean_values.join(",");
-                
-                run_glab_update(entity_type, iid, &["--reviewer", &reviewers_comma], terminal, tx.clone(), tab).await;
-                
-                let new_reviewers: Vec<crate::gitlab::mr::Reviewer> = clean_values.into_iter().map(|u| {
-                    crate::gitlab::mr::Reviewer { username: u }
-                }).collect();
-                
+
+                run_glab_update(
+                    entity_type,
+                    iid,
+                    &["--reviewer", &reviewers_comma],
+                    terminal,
+                    tx.clone(),
+                    tab,
+                )
+                .await;
+
+                let new_reviewers: Vec<crate::gitlab::mr::Reviewer> = clean_values
+                    .into_iter()
+                    .map(|u| crate::gitlab::mr::Reviewer { username: u })
+                    .collect();
+
                 if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                     item.reviewers = new_reviewers;
                 }
@@ -591,22 +729,42 @@ async fn apply_selector_changes(
         }
         "milestone" => {
             if let Some(milestone_title) = values.first() {
-                run_glab_update(entity_type, iid, &["--milestone", milestone_title], terminal, tx.clone(), tab).await;
-                
-                let new_milestone = Some(crate::gitlab::issues::Milestone { title: milestone_title.clone() });
+                run_glab_update(
+                    entity_type,
+                    iid,
+                    &["--milestone", milestone_title],
+                    terminal,
+                    tx.clone(),
+                    tab,
+                )
+                .await;
+
+                let new_milestone = Some(crate::gitlab::issues::Milestone {
+                    title: milestone_title.clone(),
+                });
                 if entity_type == "issue" {
                     if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
                         item.milestone = new_milestone;
                     }
                 } else if entity_type == "mr" {
-                    let mr_milestone = Some(crate::gitlab::mr::Milestone { title: milestone_title.clone() });
+                    let mr_milestone = Some(crate::gitlab::mr::Milestone {
+                        title: milestone_title.clone(),
+                    });
                     if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                         item.milestone = mr_milestone;
                     }
                 }
             } else {
-                run_glab_update(entity_type, iid, &["--milestone", "0"], terminal, tx.clone(), tab).await;
-                
+                run_glab_update(
+                    entity_type,
+                    iid,
+                    &["--milestone", "0"],
+                    terminal,
+                    tx.clone(),
+                    tab,
+                )
+                .await;
+
                 if entity_type == "issue" {
                     if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
                         item.milestone = None;
@@ -621,15 +779,28 @@ async fn apply_selector_changes(
         "confidential" => {
             if let Some(val) = values.first() {
                 if val.to_lowercase() == "confidential" {
-                    run_glab_update(entity_type, iid, &["--confidential"], terminal, tx.clone(), tab).await;
+                    run_glab_update(
+                        entity_type,
+                        iid,
+                        &["--confidential"],
+                        terminal,
+                        tx.clone(),
+                        tab,
+                    )
+                    .await;
                 } else {
-                    run_glab_update(entity_type, iid, &["--public"], terminal, tx.clone(), tab).await;
+                    run_glab_update(entity_type, iid, &["--public"], terminal, tx.clone(), tab)
+                        .await;
                 }
             }
         }
         "draft_status" => {
             if let Some(val) = values.first() {
-                let action = if val.to_lowercase() == "draft" { "--draft" } else { "--ready" };
+                let action = if val.to_lowercase() == "draft" {
+                    "--draft"
+                } else {
+                    "--ready"
+                };
                 run_glab_update(entity_type, iid, &[action], terminal, tx.clone(), tab).await;
                 if entity_type == "mr" {
                     if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
@@ -645,16 +816,29 @@ async fn apply_selector_changes(
 fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
     if entity_type == "issue" {
         if let Some(issue) = app.issues.items.iter().find(|i| i.iid == entity_iid) {
-            let labels = if issue.labels.is_empty() { "None".to_string() } else { issue.labels.join(", ") };
-            let milestone = issue.milestone.as_ref().map(|m| m.title.clone()).unwrap_or_else(|| "None".to_string());
+            let labels = if issue.labels.is_empty() {
+                "None".to_string()
+            } else {
+                issue.labels.join(", ")
+            };
+            let milestone = issue
+                .milestone
+                .as_ref()
+                .map(|m| m.title.clone())
+                .unwrap_or_else(|| "None".to_string());
             let assignees = if issue.assignees.is_empty() {
                 "None".to_string()
             } else {
-                issue.assignees.iter().map(|a| format!("@{}", a.username)).collect::<Vec<_>>().join(", ")
+                issue
+                    .assignees
+                    .iter()
+                    .map(|a| format!("@{}", a.username))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             };
-            
+
             let selected_idx = app.edit_menu.as_ref().map(|m| m.selected_idx).unwrap_or(0);
-            
+
             app.edit_menu = Some(crate::app::EditMenu {
                 title: format!("Edit Issue #{}", issue.iid),
                 fields: vec![
@@ -665,33 +849,65 @@ fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
                     ("Confidential".to_string(), "Toggle/Set".to_string()),
                     ("Due Date".to_string(), "Set".to_string()),
                     ("Weight".to_string(), "Set".to_string()),
-                                    ("Description".to_string(), issue.description.clone().unwrap_or_default()),
+                    (
+                        "Description".to_string(),
+                        issue.description.clone().unwrap_or_default(),
+                    ),
                 ],
                 selected_idx,
                 entity_iid: issue.iid,
                 entity_type: "issue".to_string(),
-                state: { let mut s = ListState::default(); s.select(Some(selected_idx)); s },
+                state: {
+                    let mut s = ListState::default();
+                    s.select(Some(selected_idx));
+                    s
+                },
             });
         }
     } else if entity_type == "mr" {
         if let Some(mr) = app.mrs.items.iter().find(|m| m.iid == entity_iid) {
-            let labels = if mr.labels.is_empty() { "None".to_string() } else { mr.labels.join(", ") };
-            let milestone = mr.milestone.as_ref().map(|m| m.title.clone()).unwrap_or_else(|| "None".to_string());
+            let labels = if mr.labels.is_empty() {
+                "None".to_string()
+            } else {
+                mr.labels.join(", ")
+            };
+            let milestone = mr
+                .milestone
+                .as_ref()
+                .map(|m| m.title.clone())
+                .unwrap_or_else(|| "None".to_string());
             let assignees = if mr.assignees.is_empty() {
                 "None".to_string()
             } else {
-                mr.assignees.iter().map(|a| format!("@{}", a.username)).collect::<Vec<_>>().join(", ")
+                mr.assignees
+                    .iter()
+                    .map(|a| format!("@{}", a.username))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             };
             let reviewers = if mr.reviewers.is_empty() {
                 "None".to_string()
             } else {
-                mr.reviewers.iter().map(|r| format!("@{}", r.username)).collect::<Vec<_>>().join(", ")
+                mr.reviewers
+                    .iter()
+                    .map(|r| format!("@{}", r.username))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             };
             let draft_status = if mr.draft { "Draft" } else { "Ready" };
-            
+
             let selected_idx = app.edit_menu.as_ref().map(|m| m.selected_idx).unwrap_or(0);
 
-            let pr_suffix = if app.gitlab_client.as_ref().map(|c| c.is_github).unwrap_or(false) { "PR" } else { "MR" };
+            let pr_suffix = if app
+                .gitlab_client
+                .as_ref()
+                .map(|c| c.is_github)
+                .unwrap_or(false)
+            {
+                "PR"
+            } else {
+                "MR"
+            };
             app.edit_menu = Some(crate::app::EditMenu {
                 title: format!("Edit {} #{}", pr_suffix, mr.iid),
                 fields: vec![
@@ -702,12 +918,19 @@ fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
                     ("Milestone".to_string(), milestone),
                     ("Target Branch".to_string(), mr.target_branch.clone()),
                     ("Status (Draft/Ready)".to_string(), draft_status.to_string()),
-                    ("Description".to_string(), mr.description.clone().unwrap_or_default()),
+                    (
+                        "Description".to_string(),
+                        mr.description.clone().unwrap_or_default(),
+                    ),
                 ],
                 selected_idx,
                 entity_iid: mr.iid,
                 entity_type: "mr".to_string(),
-                state: { let mut s = ListState::default(); s.select(Some(selected_idx)); s },
+                state: {
+                    let mut s = ListState::default();
+                    s.select(Some(selected_idx));
+                    s
+                },
             });
         }
     }
@@ -725,13 +948,31 @@ async fn handle_entity_update(
     match code {
         KeyCode::Char('t') => {
             let current_title = if entity_type == "issue" {
-                app.issues.items.iter().find(|i| i.iid == iid).map(|i| i.title.clone()).unwrap_or_default()
+                app.issues
+                    .items
+                    .iter()
+                    .find(|i| i.iid == iid)
+                    .map(|i| i.title.clone())
+                    .unwrap_or_default()
             } else {
-                app.mrs.items.iter().find(|m| m.iid == iid).map(|m| m.title.clone()).unwrap_or_default()
+                app.mrs
+                    .items
+                    .iter()
+                    .find(|m| m.iid == iid)
+                    .map(|m| m.title.clone())
+                    .unwrap_or_default()
             };
 
             if let Some(new_title) = edit_in_editor(&current_title, terminal) {
-                run_glab_update(entity_type, iid, &["--title", &new_title], terminal, tx.clone(), tab).await;
+                run_glab_update(
+                    entity_type,
+                    iid,
+                    &["--title", &new_title],
+                    terminal,
+                    tx.clone(),
+                    tab,
+                )
+                .await;
                 if entity_type == "issue" {
                     if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
                         item.title = new_title;
@@ -745,7 +986,13 @@ async fn handle_entity_update(
         }
         KeyCode::Char('r') => {
             if entity_type == "mr" {
-                let is_draft = app.mrs.items.iter().find(|m| m.iid == iid).map(|m| m.draft).unwrap_or(false);
+                let is_draft = app
+                    .mrs
+                    .items
+                    .iter()
+                    .find(|m| m.iid == iid)
+                    .map(|m| m.draft)
+                    .unwrap_or(false);
                 let action = if is_draft { "--ready" } else { "--draft" };
                 run_glab_update(entity_type, iid, &[action], terminal, tx.clone(), tab).await;
                 if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
@@ -755,9 +1002,23 @@ async fn handle_entity_update(
         }
         KeyCode::Char('g') => {
             if entity_type == "mr" {
-                let current_branch = app.mrs.items.iter().find(|m| m.iid == iid).map(|m| m.target_branch.clone()).unwrap_or_default();
+                let current_branch = app
+                    .mrs
+                    .items
+                    .iter()
+                    .find(|m| m.iid == iid)
+                    .map(|m| m.target_branch.clone())
+                    .unwrap_or_default();
                 if let Some(target) = edit_in_editor(&current_branch, terminal) {
-                    run_glab_update(entity_type, iid, &["--target-branch", &target], terminal, tx.clone(), tab).await;
+                    run_glab_update(
+                        entity_type,
+                        iid,
+                        &["--target-branch", &target],
+                        terminal,
+                        tx.clone(),
+                        tab,
+                    )
+                    .await;
                     if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                         item.target_branch = target;
                     }
@@ -768,9 +1029,18 @@ async fn handle_entity_update(
             if entity_type == "issue" {
                 if let Some(res) = edit_in_editor("public", terminal) {
                     if res.to_lowercase().contains("confidential") {
-                        run_glab_update(entity_type, iid, &["--confidential"], terminal, tx.clone(), tab).await;
+                        run_glab_update(
+                            entity_type,
+                            iid,
+                            &["--confidential"],
+                            terminal,
+                            tx.clone(),
+                            tab,
+                        )
+                        .await;
                     } else {
-                        run_glab_update(entity_type, iid, &["--public"], terminal, tx.clone(), tab).await;
+                        run_glab_update(entity_type, iid, &["--public"], terminal, tx.clone(), tab)
+                            .await;
                     }
                 }
             }
@@ -779,9 +1049,25 @@ async fn handle_entity_update(
             if entity_type == "issue" {
                 if let Some(due_date) = edit_in_editor("YYYY-MM-DD", terminal) {
                     if due_date == "YYYY-MM-DD" || due_date.is_empty() {
-                        run_glab_update(entity_type, iid, &["--due-date", ""], terminal, tx.clone(), tab).await;
+                        run_glab_update(
+                            entity_type,
+                            iid,
+                            &["--due-date", ""],
+                            terminal,
+                            tx.clone(),
+                            tab,
+                        )
+                        .await;
                     } else {
-                        run_glab_update(entity_type, iid, &["--due-date", &due_date], terminal, tx.clone(), tab).await;
+                        run_glab_update(
+                            entity_type,
+                            iid,
+                            &["--due-date", &due_date],
+                            terminal,
+                            tx.clone(),
+                            tab,
+                        )
+                        .await;
                     }
                 }
             }
@@ -789,7 +1075,15 @@ async fn handle_entity_update(
         KeyCode::Char('w') => {
             if entity_type == "issue" {
                 if let Some(weight) = edit_in_editor("0", terminal) {
-                    run_glab_update(entity_type, iid, &["--weight", &weight], terminal, tx.clone(), tab).await;
+                    run_glab_update(
+                        entity_type,
+                        iid,
+                        &["--weight", &weight],
+                        terminal,
+                        tx.clone(),
+                        tab,
+                    )
+                    .await;
                 }
             }
         }
@@ -797,13 +1091,16 @@ async fn handle_entity_update(
             run_glab_update(entity_type, iid, &["-d", "-"], terminal, tx.clone(), tab).await;
             if let Some(client) = &app.gitlab_client {
                 if entity_type == "issue" {
-                    if let Ok(updated) = gitlab::issues::get_issue(client, &app.project_context, iid).await {
+                    if let Ok(updated) =
+                        gitlab::issues::get_issue(client, &app.project_context, iid).await
+                    {
                         if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
                             *item = updated;
                         }
                     }
                 } else if entity_type == "mr" {
-                    if let Ok(updated) = gitlab::mr::get_mr(client, &app.project_context, iid).await {
+                    if let Ok(updated) = gitlab::mr::get_mr(client, &app.project_context, iid).await
+                    {
                         if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                             *item = updated;
                         }
@@ -851,75 +1148,132 @@ fn spawn_refresh_active_tab(
         match tab {
             app::Tab::Issues => {
                 match gitlab::issues::list_issues(&client, &project_context).await {
-                    Ok(issues) => { let _ = tx.send(Event::IssuesFetched(issues)); }
-                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch issues: {}", e))); }
+                    Ok(issues) => {
+                        let _ = tx.send(Event::IssuesFetched(issues));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Event::FetchFailed(
+                            tab,
+                            format!("Failed to fetch issues: {}", e),
+                        ));
+                    }
                 }
             }
             app::Tab::MergeRequests => {
                 match gitlab::mr::list_mrs(&client, &project_context).await {
-                    Ok(mrs) => { let _ = tx.send(Event::MrsFetched(mrs)); }
-                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch MRs: {}", e))); }
+                    Ok(mrs) => {
+                        let _ = tx.send(Event::MrsFetched(mrs));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Event::FetchFailed(
+                            tab,
+                            format!("Failed to fetch MRs: {}", e),
+                        ));
+                    }
                 }
             }
             app::Tab::Pipelines => {
                 match gitlab::pipelines::list_pipelines(&client, &project_context).await {
-                    Ok(pipelines) => { let _ = tx.send(Event::PipelinesFetched(pipelines)); }
-                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch pipelines: {}", e))); }
+                    Ok(pipelines) => {
+                        let _ = tx.send(Event::PipelinesFetched(pipelines));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Event::FetchFailed(
+                            tab,
+                            format!("Failed to fetch pipelines: {}", e),
+                        ));
+                    }
                 }
             }
             app::Tab::Runners => {
                 match gitlab::runners::list_runners(&client, &project_context).await {
-                    Ok(runners) => { let _ = tx.send(Event::RunnersFetched(runners)); }
-                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch runners: {}", e))); }
+                    Ok(runners) => {
+                        let _ = tx.send(Event::RunnersFetched(runners));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Event::FetchFailed(
+                            tab,
+                            format!("Failed to fetch runners: {}", e),
+                        ));
+                    }
                 }
             }
             app::Tab::Releases => {
                 match gitlab::releases::list_releases(&client, &project_context).await {
-                    Ok(releases) => { let _ = tx.send(Event::ReleasesFetched(releases)); }
-                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch releases: {}", e))); }
+                    Ok(releases) => {
+                        let _ = tx.send(Event::ReleasesFetched(releases));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Event::FetchFailed(
+                            tab,
+                            format!("Failed to fetch releases: {}", e),
+                        ));
+                    }
                 }
             }
             app::Tab::Notifications => {
                 match gitlab::notifications::list_notifications(&client).await {
-                    Ok(notifs) => { let _ = tx.send(Event::NotificationsFetched(notifs)); }
-                    Err(e) => { let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch notifications: {}", e))); }
+                    Ok(notifs) => {
+                        let _ = tx.send(Event::NotificationsFetched(notifs));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Event::FetchFailed(
+                            tab,
+                            format!("Failed to fetch notifications: {}", e),
+                        ));
+                    }
                 }
             }
             app::Tab::Jobs => {
                 let branch_name = get_current_branch();
                 let mut found_pipeline_id = None;
-                
+
                 if let Some(branch) = &branch_name {
                     let mr_iid = match gitlab::mr::list_mrs(&client, &project_context).await {
-                        Ok(mrs) => {
-                            mrs.into_iter()
-                                .find(|m| &m.source_branch == branch)
-                                .map(|m| m.iid)
-                        }
+                        Ok(mrs) => mrs
+                            .into_iter()
+                            .find(|m| &m.source_branch == branch)
+                            .map(|m| m.iid),
                         Err(_) => None,
                     };
-                    
-                    if let Ok(pipelines) = gitlab::pipelines::list_pipelines(&client, &project_context).await {
-                        let target_ref = mr_iid.map(|iid| format!("refs/merge-requests/{}/head", iid));
+
+                    if let Ok(pipelines) =
+                        gitlab::pipelines::list_pipelines(&client, &project_context).await
+                    {
+                        let target_ref =
+                            mr_iid.map(|iid| format!("refs/merge-requests/{}/head", iid));
                         if let Some(pipeline) = pipelines.into_iter().find(|p| {
-                            &p.r#ref == branch || target_ref.as_ref().map_or(false, |tr| &p.r#ref == tr)
+                            &p.r#ref == branch
+                                || target_ref.as_ref().map_or(false, |tr| &p.r#ref == tr)
                         }) {
                             found_pipeline_id = Some(pipeline.id);
                         }
                     }
                 }
-                
+
                 if let Some(pipeline_id) = found_pipeline_id {
-                    match gitlab::pipelines::list_pipeline_jobs(&client, &project_context, pipeline_id).await {
+                    match gitlab::pipelines::list_pipeline_jobs(
+                        &client,
+                        &project_context,
+                        pipeline_id,
+                    )
+                    .await
+                    {
                         Ok(jobs) => {
                             let _ = tx.send(Event::JobsTabFetched(pipeline_id, jobs));
                         }
                         Err(e) => {
-                            let _ = tx.send(Event::FetchFailed(tab, format!("Failed to fetch jobs for pipeline {}: {}", pipeline_id, e)));
+                            let _ = tx.send(Event::FetchFailed(
+                                tab,
+                                format!("Failed to fetch jobs for pipeline {}: {}", pipeline_id, e),
+                            ));
                         }
                     }
                 } else {
-                    let _ = tx.send(Event::FetchFailed(tab, "No pipeline found for the current branch/MR.".to_string()));
+                    let _ = tx.send(Event::FetchFailed(
+                        tab,
+                        "No pipeline found for the current branch/MR.".to_string(),
+                    ));
                 }
             }
         }
@@ -958,7 +1312,9 @@ async fn main() -> Result<()> {
                 match crate::utils::update::perform_self_update().await {
                     Ok(updated) => {
                         if updated {
-                            println!("Successfully updated to the latest version! Please restart glab-tui.");
+                            println!(
+                                "Successfully updated to the latest version! Please restart glab-tui."
+                            );
                         } else {
                             println!("Already up to date.");
                         }
@@ -1034,9 +1390,15 @@ async fn main() -> Result<()> {
     app.issues.items = cache.issues;
     app.mrs.items = cache.mrs;
     app.pipelines.items = cache.pipelines;
-    if !app.issues.items.is_empty() { app.loaded_tabs.insert(app::Tab::Issues); }
-    if !app.mrs.items.is_empty() { app.loaded_tabs.insert(app::Tab::MergeRequests); }
-    if !app.pipelines.items.is_empty() { app.loaded_tabs.insert(app::Tab::Pipelines); }
+    if !app.issues.items.is_empty() {
+        app.loaded_tabs.insert(app::Tab::Issues);
+    }
+    if !app.mrs.items.is_empty() {
+        app.loaded_tabs.insert(app::Tab::MergeRequests);
+    }
+    if !app.pipelines.items.is_empty() {
+        app.loaded_tabs.insert(app::Tab::Pipelines);
+    }
     app.update_filter_selection();
 
     if let Ok(client) = gitlab::client::GitlabClient::new().await {
@@ -1057,13 +1419,21 @@ async fn main() -> Result<()> {
                 if let Some(idx) = app.pipelines.state.selected() {
                     let pipe_id = app.filtered_pipelines().get(idx).map(|p| p.id);
                     if let Some(pipe_id) = pipe_id {
-                        if !app.pipeline_jobs.contains_key(&pipe_id) && !app.fetching_pipelines.contains(&pipe_id) {
+                        if !app.pipeline_jobs.contains_key(&pipe_id)
+                            && !app.fetching_pipelines.contains(&pipe_id)
+                        {
                             app.fetching_pipelines.insert(pipe_id);
                             let client_clone = client.clone();
                             let project_context = app.project_context.clone();
                             let tx = events.sender();
                             tokio::spawn(async move {
-                                if let Ok(jobs) = gitlab::pipelines::list_pipeline_jobs(&client_clone, &project_context, pipe_id).await {
+                                if let Ok(jobs) = gitlab::pipelines::list_pipeline_jobs(
+                                    &client_clone,
+                                    &project_context,
+                                    pipe_id,
+                                )
+                                .await
+                                {
                                     let _ = tx.send(Event::PipelineJobs(pipe_id, jobs));
                                 } else {
                                     let _ = tx.send(Event::PipelineJobs(pipe_id, vec![]));
@@ -1083,7 +1453,7 @@ async fn main() -> Result<()> {
                 Event::PipelineJobs(id, jobs) => {
                     app.fetching_pipelines.remove(&id);
                     app.pipeline_jobs.insert(id, jobs.clone());
-                    
+
                     let mut is_active = false;
                     if app.active_tab == app::Tab::Jobs && app.active_pipeline_id == Some(id) {
                         is_active = true;
@@ -1094,10 +1464,11 @@ async fn main() -> Result<()> {
                             }
                         }
                     }
-                    
+
                     if is_active {
                         app.selected_pipeline_jobs = Some(jobs);
-                        app.jobs_list_state.select(app.selected_job_index.or(Some(0)));
+                        app.jobs_list_state
+                            .select(app.selected_job_index.or(Some(0)));
                     }
                 }
                 Event::JobsTabFetched(pipeline_id, jobs) => {
@@ -1215,7 +1586,12 @@ async fn main() -> Result<()> {
                                 if !app.loading_tabs.contains(&tab) {
                                     app.loading_tabs.insert(tab);
                                 }
-                                spawn_refresh_active_tab(client, &app.project_context, tab, events.sender());
+                                spawn_refresh_active_tab(
+                                    client,
+                                    &app.project_context,
+                                    tab,
+                                    events.sender(),
+                                );
                             }
                         }
                         Err(err) => {
@@ -1248,12 +1624,22 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
-                    let is_switch_repo = (key_event.code == KeyCode::Char('s') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)) ||
-                        (key_event.code == KeyCode::Char('S') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL));
+                    let is_switch_repo = (key_event.code == KeyCode::Char('s')
+                        && key_event
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL))
+                        || (key_event.code == KeyCode::Char('S')
+                            && key_event
+                                .modifiers
+                                .contains(crossterm::event::KeyModifiers::CONTROL));
 
-                    if is_switch_repo && app.text_input.is_none() && app.edit_menu.is_none() && app.selector.is_none() {
+                    if is_switch_repo
+                        && app.text_input.is_none()
+                        && app.edit_menu.is_none()
+                        && app.selector.is_none()
+                    {
                         let items = crate::utils::cache::get_switchable_repos();
-                        
+
                         app.selector = Some(crate::app::Selector {
                             title: " Switch Repository ".to_string(),
                             all_items: items,
@@ -1274,20 +1660,39 @@ async fn main() -> Result<()> {
                             entity_type: "app".to_string(),
                             field_type: "switch_repo".to_string(),
                             multi_select: false,
-                            state: { let mut s = ListState::default(); s.select(Some(0)); s },
+                            state: {
+                                let mut s = ListState::default();
+                                s.select(Some(0));
+                                s
+                            },
                         });
                         continue;
                     }
 
-                    let is_refresh = key_event.code == KeyCode::F(5) ||
-                        (key_event.code == KeyCode::Char('r') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)) ||
-                        (key_event.code == KeyCode::Char('R') && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL));
+                    let is_refresh = key_event.code == KeyCode::F(5)
+                        || (key_event.code == KeyCode::Char('r')
+                            && key_event
+                                .modifiers
+                                .contains(crossterm::event::KeyModifiers::CONTROL))
+                        || (key_event.code == KeyCode::Char('R')
+                            && key_event
+                                .modifiers
+                                .contains(crossterm::event::KeyModifiers::CONTROL));
 
-                    if is_refresh && app.text_input.is_none() && app.edit_menu.is_none() && app.selector.is_none() {
+                    if is_refresh
+                        && app.text_input.is_none()
+                        && app.edit_menu.is_none()
+                        && app.selector.is_none()
+                    {
                         if let Some(client) = &app.gitlab_client {
                             if !app.loading_tabs.contains(&app.active_tab) {
                                 app.loading_tabs.insert(app.active_tab);
-                                spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                spawn_refresh_active_tab(
+                                    client,
+                                    &app.project_context,
+                                    app.active_tab,
+                                    events.sender(),
+                                );
                             }
                         }
                         continue;
@@ -1331,17 +1736,42 @@ async fn main() -> Result<()> {
                             KeyCode::Enter => {
                                 let value = text_input.value.clone();
                                 match text_input.action {
-                                    crate::app::TextInputAction::EditField { entity_iid, entity_type, field_type } => {
+                                    crate::app::TextInputAction::EditField {
+                                        entity_iid,
+                                        entity_type,
+                                        field_type,
+                                    } => {
                                         let active_tab = app.active_tab;
-                                        apply_field_text_change(&mut app, &entity_type, entity_iid, &field_type, value, &mut terminal, events.sender(), active_tab).await;
+                                        apply_field_text_change(
+                                            &mut app,
+                                            &entity_type,
+                                            entity_iid,
+                                            &field_type,
+                                            value,
+                                            &mut terminal,
+                                            events.sender(),
+                                            active_tab,
+                                        )
+                                        .await;
                                         rebuild_edit_menu(&mut app, &entity_type, entity_iid);
                                     }
                                     crate::app::TextInputAction::CreateIssue => {
                                         if !value.trim().is_empty() {
-                                            run_glab_cmd(&["issue", "create", "-y", "--title", &value], &mut terminal, events.sender(), app.active_tab).await;
+                                            run_glab_cmd(
+                                                &["issue", "create", "-y", "--title", &value],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
                                         }
                                     }
-                                    crate::app::TextInputAction::AddReviewComment { mr_iid, file_path, line_num, old_line_num } => {
+                                    crate::app::TextInputAction::AddReviewComment {
+                                        mr_iid,
+                                        file_path,
+                                        line_num,
+                                        old_line_num,
+                                    } => {
                                         if !value.trim().is_empty() {
                                             let mut args = vec![
                                                 "mr".to_string(),
@@ -1360,8 +1790,15 @@ async fn main() -> Result<()> {
                                                 args.push("--old-line".to_string());
                                                 args.push(old_line.to_string());
                                             }
-                                            let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-                                            run_glab_cmd(&args_ref, &mut terminal, events.sender(), app.active_tab).await;
+                                            let args_ref: Vec<&str> =
+                                                args.iter().map(|s| s.as_str()).collect();
+                                            run_glab_cmd(
+                                                &args_ref,
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
                                         }
                                     }
                                     crate::app::TextInputAction::EnterPipelineId => {
@@ -1372,9 +1809,18 @@ async fn main() -> Result<()> {
                                                 let project_context = app.project_context.clone();
                                                 let tx = events.sender();
                                                 tokio::spawn(async move {
-                                                    match gitlab::pipelines::list_pipeline_jobs(&client_clone, &project_context, pipeline_id).await {
+                                                    match gitlab::pipelines::list_pipeline_jobs(
+                                                        &client_clone,
+                                                        &project_context,
+                                                        pipeline_id,
+                                                    )
+                                                    .await
+                                                    {
                                                         Ok(jobs) => {
-                                                            let _ = tx.send(Event::JobsTabFetched(pipeline_id, jobs));
+                                                            let _ = tx.send(Event::JobsTabFetched(
+                                                                pipeline_id,
+                                                                jobs,
+                                                            ));
                                                         }
                                                         Err(e) => {
                                                             let _ = tx.send(Event::FetchFailed(app::Tab::Jobs, format!("Failed to fetch jobs for pipeline {}: {}", pipeline_id, e)));
@@ -1383,7 +1829,8 @@ async fn main() -> Result<()> {
                                                 });
                                             }
                                         } else {
-                                            app.error_message = Some("Invalid pipeline ID".to_string());
+                                            app.error_message =
+                                                Some("Invalid pipeline ID".to_string());
                                         }
                                     }
                                 }
@@ -1430,7 +1877,8 @@ async fn main() -> Result<()> {
                                 }
                                 KeyCode::Char('j') | KeyCode::Down => {
                                     if !filtered_items.is_empty() {
-                                        selector.cursor_idx = (selector.cursor_idx + 1) % filtered_items.len();
+                                        selector.cursor_idx =
+                                            (selector.cursor_idx + 1) % filtered_items.len();
                                         selector.state.select(Some(selector.cursor_idx));
                                     }
                                     app.selector = Some(selector);
@@ -1450,10 +1898,12 @@ async fn main() -> Result<()> {
                                     if !filtered_items.is_empty() {
                                         let item = &filtered_items[selector.cursor_idx];
                                         if item.starts_with("+ Create \"") {
-                                            let clean_val = selector.search_query.trim().to_string();
+                                            let clean_val =
+                                                selector.search_query.trim().to_string();
                                             if !clean_val.is_empty() {
                                                 if selector.multi_select {
-                                                    if selector.selected_items.contains(&clean_val) {
+                                                    if selector.selected_items.contains(&clean_val)
+                                                    {
                                                         selector.selected_items.remove(&clean_val);
                                                     } else {
                                                         selector.selected_items.insert(clean_val);
@@ -1486,43 +1936,53 @@ async fn main() -> Result<()> {
                                     let field_type = selector.field_type.clone();
                                     if field_type == "switch_repo" {
                                         let filtered_items = selector.get_filtered_items();
-                                        let mut selected_val = selector.selected_items.iter().next().cloned();
+                                        let mut selected_val =
+                                            selector.selected_items.iter().next().cloned();
                                         if selected_val.is_none() && !filtered_items.is_empty() {
-                                            selected_val = Some(filtered_items[selector.cursor_idx].clone());
+                                            selected_val =
+                                                Some(filtered_items[selector.cursor_idx].clone());
                                         }
-                                        
+
                                         if let Some(mut path) = selected_val {
                                             if path.starts_with("+ Create \"") {
                                                 path = selector.search_query.trim().to_string();
                                             }
-                                            
+
                                             let repos_dir = crate::utils::cache::get_repos_dir();
-                                            let target_path = if std::path::Path::new(&path).is_absolute() {
-                                                std::path::PathBuf::from(&path)
-                                            } else {
-                                                repos_dir.join(&path)
-                                            };
-                                            
-                                            let target_path_str = target_path.to_string_lossy().into_owned();
+                                            let target_path =
+                                                if std::path::Path::new(&path).is_absolute() {
+                                                    std::path::PathBuf::from(&path)
+                                                } else {
+                                                    repos_dir.join(&path)
+                                                };
+
+                                            let target_path_str =
+                                                target_path.to_string_lossy().into_owned();
                                             if crate::utils::cache::is_git_repo(&target_path_str) {
                                                 if std::env::set_current_dir(&target_path).is_ok() {
-                                                    crate::utils::cache::add_recent_repo(&target_path_str);
-                                                    
-                                                    if let Ok(context) = gitlab::client::get_project_context().await {
+                                                    crate::utils::cache::add_recent_repo(
+                                                        &target_path_str,
+                                                    );
+
+                                                    if let Ok(context) =
+                                                        gitlab::client::get_project_context().await
+                                                    {
                                                         app.project_context = context;
                                                     }
-                                                    
-                                                    if let Ok(client) = gitlab::client::GitlabClient::new().await {
+
+                                                    if let Ok(client) =
+                                                        gitlab::client::GitlabClient::new().await
+                                                    {
                                                         app.gitlab_client = Some(client.clone());
                                                     } else {
                                                         app.gitlab_client = None;
                                                     }
-                                                    
+
                                                     app.loaded_tabs.clear();
                                                     app.loading_tabs.clear();
                                                     app.refreshed_tabs.clear();
                                                     app.status_message = None;
-                                                    
+
                                                     app.issues.items.clear();
                                                     app.mrs.items.clear();
                                                     app.pipelines.items.clear();
@@ -1531,38 +1991,82 @@ async fn main() -> Result<()> {
                                                     app.notifications.items.clear();
                                                     app.pipeline_jobs.clear();
                                                     app.fetching_pipelines.clear();
-                                                    
-                                                    let cache = crate::utils::cache::load_cache(&app.project_context);
+
+                                                    let cache = crate::utils::cache::load_cache(
+                                                        &app.project_context,
+                                                    );
                                                     app.issues.items = cache.issues;
                                                     app.mrs.items = cache.mrs;
                                                     app.pipelines.items = cache.pipelines;
-                                                    
-                                                    if !app.issues.items.is_empty() { app.loaded_tabs.insert(app::Tab::Issues); }
-                                                    if !app.mrs.items.is_empty() { app.loaded_tabs.insert(app::Tab::MergeRequests); }
-                                                    if !app.pipelines.items.is_empty() { app.loaded_tabs.insert(app::Tab::Pipelines); }
-                                                    
-                                                    app.issues.state.select(if app.issues.items.is_empty() { None } else { Some(0) });
-                                                    app.mrs.state.select(if app.mrs.items.is_empty() { None } else { Some(0) });
-                                                    app.pipelines.state.select(if app.pipelines.items.is_empty() { None } else { Some(0) });
+
+                                                    if !app.issues.items.is_empty() {
+                                                        app.loaded_tabs.insert(app::Tab::Issues);
+                                                    }
+                                                    if !app.mrs.items.is_empty() {
+                                                        app.loaded_tabs
+                                                            .insert(app::Tab::MergeRequests);
+                                                    }
+                                                    if !app.pipelines.items.is_empty() {
+                                                        app.loaded_tabs.insert(app::Tab::Pipelines);
+                                                    }
+
+                                                    app.issues.state.select(
+                                                        if app.issues.items.is_empty() {
+                                                            None
+                                                        } else {
+                                                            Some(0)
+                                                        },
+                                                    );
+                                                    app.mrs.state.select(
+                                                        if app.mrs.items.is_empty() {
+                                                            None
+                                                        } else {
+                                                            Some(0)
+                                                        },
+                                                    );
+                                                    app.pipelines.state.select(
+                                                        if app.pipelines.items.is_empty() {
+                                                            None
+                                                        } else {
+                                                            Some(0)
+                                                        },
+                                                    );
                                                     app.update_filter_selection();
-                                                    
+
                                                     if let Some(client) = &app.gitlab_client {
                                                         let has_cached = match app.active_tab {
-                                                            app::Tab::Issues => !app.issues.items.is_empty(),
-                                                            app::Tab::MergeRequests => !app.mrs.items.is_empty(),
-                                                            app::Tab::Pipelines => !app.pipelines.items.is_empty(),
+                                                            app::Tab::Issues => {
+                                                                !app.issues.items.is_empty()
+                                                            }
+                                                            app::Tab::MergeRequests => {
+                                                                !app.mrs.items.is_empty()
+                                                            }
+                                                            app::Tab::Pipelines => {
+                                                                !app.pipelines.items.is_empty()
+                                                            }
                                                             _ => false,
                                                         };
                                                         if !has_cached {
                                                             app.loading_tabs.insert(app.active_tab);
                                                         }
-                                                        spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                                        spawn_refresh_active_tab(
+                                                            client,
+                                                            &app.project_context,
+                                                            app.active_tab,
+                                                            events.sender(),
+                                                        );
                                                     }
                                                 } else {
-                                                    app.error_message = Some(format!("Could not change directory to: {}", path));
+                                                    app.error_message = Some(format!(
+                                                        "Could not change directory to: {}",
+                                                        path
+                                                    ));
                                                 }
                                             } else {
-                                                app.error_message = Some(format!("Not a valid git repository: {}", path));
+                                                app.error_message = Some(format!(
+                                                    "Not a valid git repository: {}",
+                                                    path
+                                                ));
                                             }
                                         }
                                         continue;
@@ -1570,19 +2074,22 @@ async fn main() -> Result<()> {
 
                                     if field_type == "create_mr" {
                                         let filtered_items = selector.get_filtered_items();
-                                        let mut selected_val = selector.selected_items.iter().next().cloned();
+                                        let mut selected_val =
+                                            selector.selected_items.iter().next().cloned();
                                         if selected_val.is_none() && !filtered_items.is_empty() {
-                                            selected_val = Some(filtered_items[selector.cursor_idx].clone());
+                                            selected_val =
+                                                Some(filtered_items[selector.cursor_idx].clone());
                                         }
-                                        
+
                                         if let Some(item) = selected_val {
                                             let mut id_val = item.clone();
                                             if id_val.starts_with("+ Create \"") {
                                                 id_val = selector.search_query.trim().to_string();
                                             }
-                                            
+
                                             let parsed_iid = if id_val.starts_with('#') {
-                                                id_val.strip_prefix('#')
+                                                id_val
+                                                    .strip_prefix('#')
                                                     .and_then(|s| s.split(':').next())
                                                     .and_then(|s| s.trim().parse::<u64>().ok())
                                             } else {
@@ -1591,22 +2098,50 @@ async fn main() -> Result<()> {
 
                                             if let Some(issue_iid) = parsed_iid {
                                                 app.selector = None;
-                                                run_glab_cmd(&["mr", "create", "-i", &issue_iid.to_string(), "--copy-issue-labels", "--create-source-branch", "--squash-before-merge"], &mut terminal, events.sender(), app.active_tab).await;
+                                                run_glab_cmd(
+                                                    &[
+                                                        "mr",
+                                                        "create",
+                                                        "-i",
+                                                        &issue_iid.to_string(),
+                                                        "--copy-issue-labels",
+                                                        "--create-source-branch",
+                                                        "--squash-before-merge",
+                                                    ],
+                                                    &mut terminal,
+                                                    events.sender(),
+                                                    app.active_tab,
+                                                )
+                                                .await;
                                             }
                                         }
                                         continue;
                                     }
-                                    
+
                                     let entity_type = selector.entity_type.clone();
                                     let entity_iid = selector.entity_iid;
-                                    let selected_list: Vec<String> = selector.selected_items.iter().cloned().collect();
-                                    
-                                    apply_selector_changes(&mut app, &entity_type, entity_iid, &field_type, selected_list, &mut terminal).await;
-                                    
+                                    let selected_list: Vec<String> =
+                                        selector.selected_items.iter().cloned().collect();
+
+                                    apply_selector_changes(
+                                        &mut app,
+                                        &entity_type,
+                                        entity_iid,
+                                        &field_type,
+                                        selected_list,
+                                        &mut terminal,
+                                    )
+                                    .await;
+
                                     if let Some(client) = &app.gitlab_client {
-                                        spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                        spawn_refresh_active_tab(
+                                            client,
+                                            &app.project_context,
+                                            app.active_tab,
+                                            events.sender(),
+                                        );
                                     }
-                                    
+
                                     rebuild_edit_menu(&mut app, &entity_type, entity_iid);
                                 }
                                 _ => {
@@ -1640,8 +2175,14 @@ async fn main() -> Result<()> {
                                 let field_name = menu.fields[menu.selected_idx].0.clone();
                                 let entity_iid = menu.entity_iid;
                                 let entity_type = menu.entity_type.clone();
-                                
-                                if field_name == "Labels" || field_name == "Assignees" || field_name == "Reviewers" || field_name == "Milestone" || field_name == "Confidential" || field_name == "Status (Draft/Ready)" {
+
+                                if field_name == "Labels"
+                                    || field_name == "Assignees"
+                                    || field_name == "Reviewers"
+                                    || field_name == "Milestone"
+                                    || field_name == "Confidential"
+                                    || field_name == "Status (Draft/Ready)"
+                                {
                                     let mut current_set = std::collections::HashSet::new();
                                     let field_type = match field_name.as_str() {
                                         "Labels" => "labels",
@@ -1661,17 +2202,26 @@ async fn main() -> Result<()> {
                                     let mut is_loading = true;
 
                                     if field_type == "confidential" {
-                                        all_items = vec!["Public".to_string(), "Confidential".to_string()];
+                                        all_items =
+                                            vec!["Public".to_string(), "Confidential".to_string()];
                                         is_loading = false;
                                         // Default Confidential representation in model is not explicitly boolean, so start empty
                                     } else if field_type == "draft_status" {
                                         all_items = vec!["Draft".to_string(), "Ready".to_string()];
                                         is_loading = false;
-                                        if let Some(mr) = app.mrs.items.iter().find(|m| m.iid == entity_iid) {
-                                            current_set.insert(if mr.draft { "Draft".to_string() } else { "Ready".to_string() });
+                                        if let Some(mr) =
+                                            app.mrs.items.iter().find(|m| m.iid == entity_iid)
+                                        {
+                                            current_set.insert(if mr.draft {
+                                                "Draft".to_string()
+                                            } else {
+                                                "Ready".to_string()
+                                            });
                                         }
                                     } else if entity_type == "issue" {
-                                        if let Some(issue) = app.issues.items.iter().find(|i| i.iid == entity_iid) {
+                                        if let Some(issue) =
+                                            app.issues.items.iter().find(|i| i.iid == entity_iid)
+                                        {
                                             match field_type {
                                                 "labels" => {
                                                     for l in &issue.labels {
@@ -1680,7 +2230,8 @@ async fn main() -> Result<()> {
                                                 }
                                                 "assignees" => {
                                                     for a in &issue.assignees {
-                                                        current_set.insert(format!("@{}", a.username));
+                                                        current_set
+                                                            .insert(format!("@{}", a.username));
                                                     }
                                                 }
                                                 "milestone" => {
@@ -1692,7 +2243,9 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                     } else if entity_type == "mr" {
-                                        if let Some(mr) = app.mrs.items.iter().find(|m| m.iid == entity_iid) {
+                                        if let Some(mr) =
+                                            app.mrs.items.iter().find(|m| m.iid == entity_iid)
+                                        {
                                             match field_type {
                                                 "labels" => {
                                                     for l in &mr.labels {
@@ -1701,12 +2254,14 @@ async fn main() -> Result<()> {
                                                 }
                                                 "assignees" => {
                                                     for a in &mr.assignees {
-                                                        current_set.insert(format!("@{}", a.username));
+                                                        current_set
+                                                            .insert(format!("@{}", a.username));
                                                     }
                                                 }
                                                 "reviewers" => {
                                                     for r in &mr.reviewers {
-                                                        current_set.insert(format!("@{}", r.username));
+                                                        current_set
+                                                            .insert(format!("@{}", r.username));
                                                     }
                                                 }
                                                 "milestone" => {
@@ -1731,7 +2286,11 @@ async fn main() -> Result<()> {
                                         entity_type: entity_type.clone(),
                                         field_type: field_type.to_string(),
                                         multi_select,
-                                        state: { let mut s = ListState::default(); s.select(Some(0)); s },
+                                        state: {
+                                            let mut s = ListState::default();
+                                            s.select(Some(0));
+                                            s
+                                        },
                                     });
 
                                     app.edit_menu = Some(menu);
@@ -1744,15 +2303,26 @@ async fn main() -> Result<()> {
                                             let tx = events.sender();
                                             tokio::spawn(async move {
                                                 let res = match field_type.as_str() {
-                                                    "labels" => client.fetch_labels(&project_context).await,
-                                                    "assignees" | "reviewers" => client.fetch_members(&project_context).await,
-                                                    "milestone" => client.fetch_milestones(&project_context).await,
+                                                    "labels" => {
+                                                        client.fetch_labels(&project_context).await
+                                                    }
+                                                    "assignees" | "reviewers" => {
+                                                        client.fetch_members(&project_context).await
+                                                    }
+                                                    "milestone" => {
+                                                        client
+                                                            .fetch_milestones(&project_context)
+                                                            .await
+                                                    }
                                                     _ => Ok(Vec::new()),
                                                 };
                                                 if let Ok(items) = res {
-                                                    let _ = tx.send(Event::SelectorItemsFetched(items));
+                                                    let _ =
+                                                        tx.send(Event::SelectorItemsFetched(items));
                                                 } else {
-                                                    let _ = tx.send(Event::SelectorItemsFetched(Vec::new()));
+                                                    let _ = tx.send(Event::SelectorItemsFetched(
+                                                        Vec::new(),
+                                                    ));
                                                 }
                                             });
                                         }
@@ -1760,7 +2330,11 @@ async fn main() -> Result<()> {
                                     continue;
                                 }
 
-                                if field_name == "Title" || field_name == "Target Branch" || field_name == "Due Date" || field_name == "Weight" {
+                                if field_name == "Title"
+                                    || field_name == "Target Branch"
+                                    || field_name == "Due Date"
+                                    || field_name == "Weight"
+                                {
                                     let field_type = match field_name.as_str() {
                                         "Title" => "title",
                                         "Target Branch" => "target_branch",
@@ -1771,14 +2345,28 @@ async fn main() -> Result<()> {
                                     let current_val = match field_type {
                                         "title" => {
                                             if entity_type == "issue" {
-                                                app.issues.items.iter().find(|i| i.iid == entity_iid).map(|i| i.title.clone()).unwrap_or_default()
+                                                app.issues
+                                                    .items
+                                                    .iter()
+                                                    .find(|i| i.iid == entity_iid)
+                                                    .map(|i| i.title.clone())
+                                                    .unwrap_or_default()
                                             } else {
-                                                app.mrs.items.iter().find(|m| m.iid == entity_iid).map(|m| m.title.clone()).unwrap_or_default()
+                                                app.mrs
+                                                    .items
+                                                    .iter()
+                                                    .find(|m| m.iid == entity_iid)
+                                                    .map(|m| m.title.clone())
+                                                    .unwrap_or_default()
                                             }
                                         }
-                                        "target_branch" => {
-                                            app.mrs.items.iter().find(|m| m.iid == entity_iid).map(|m| m.target_branch.clone()).unwrap_or_default()
-                                        }
+                                        "target_branch" => app
+                                            .mrs
+                                            .items
+                                            .iter()
+                                            .find(|m| m.iid == entity_iid)
+                                            .map(|m| m.target_branch.clone())
+                                            .unwrap_or_default(),
                                         "due_date" => "".to_string(),
                                         "weight" => "0".to_string(),
                                         _ => String::new(),
@@ -1801,7 +2389,16 @@ async fn main() -> Result<()> {
 
                                 if field_name == "Description" {
                                     let active_tab = app.active_tab;
-                                    handle_entity_update(&mut app, &entity_type, entity_iid, KeyCode::Char('d'), &mut terminal, events.sender(), active_tab).await;
+                                    handle_entity_update(
+                                        &mut app,
+                                        &entity_type,
+                                        entity_iid,
+                                        KeyCode::Char('d'),
+                                        &mut terminal,
+                                        events.sender(),
+                                        active_tab,
+                                    )
+                                    .await;
                                     rebuild_edit_menu(&mut app, &entity_type, entity_iid);
                                     continue;
                                 }
@@ -1825,7 +2422,8 @@ async fn main() -> Result<()> {
                             KeyCode::Char('h') | KeyCode::Left => {
                                 if diff_view.focus_on_files {
                                     if !diff_view.visible_nodes.is_empty() {
-                                        let node = &diff_view.visible_nodes[diff_view.selected_visible_idx];
+                                        let node = &diff_view.visible_nodes
+                                            [diff_view.selected_visible_idx];
                                         if node.is_dir && node.is_expanded {
                                             let path_id = node.path_id.clone();
                                             diff_view.root_node.toggle_expanded(&path_id, "");
@@ -1845,7 +2443,8 @@ async fn main() -> Result<()> {
                             KeyCode::Char('l') | KeyCode::Right => {
                                 if diff_view.focus_on_files {
                                     if !diff_view.visible_nodes.is_empty() {
-                                        let node = &diff_view.visible_nodes[diff_view.selected_visible_idx];
+                                        let node = &diff_view.visible_nodes
+                                            [diff_view.selected_visible_idx];
                                         if node.is_dir && !node.is_expanded {
                                             let path_id = node.path_id.clone();
                                             diff_view.root_node.toggle_expanded(&path_id, "");
@@ -1865,7 +2464,8 @@ async fn main() -> Result<()> {
                             KeyCode::Enter | KeyCode::Char(' ') => {
                                 if diff_view.focus_on_files {
                                     if !diff_view.visible_nodes.is_empty() {
-                                        let node = &diff_view.visible_nodes[diff_view.selected_visible_idx];
+                                        let node = &diff_view.visible_nodes
+                                            [diff_view.selected_visible_idx];
                                         if node.is_dir {
                                             let path_id = node.path_id.clone();
                                             diff_view.root_node.toggle_expanded(&path_id, "");
@@ -1888,7 +2488,9 @@ async fn main() -> Result<()> {
                                 if diff_view.focus_on_files {
                                     if !diff_view.visible_nodes.is_empty() {
                                         let old_idx = diff_view.selected_visible_idx;
-                                        diff_view.selected_visible_idx = (diff_view.selected_visible_idx + 1).min(diff_view.visible_nodes.len() - 1);
+                                        diff_view.selected_visible_idx =
+                                            (diff_view.selected_visible_idx + 1)
+                                                .min(diff_view.visible_nodes.len() - 1);
                                         if diff_view.selected_visible_idx != old_idx {
                                             diff_view.cursor_idx = 0;
                                             diff_view.scroll_offset = 0;
@@ -1897,7 +2499,8 @@ async fn main() -> Result<()> {
                                     }
                                 } else {
                                     if !diff_view.lines.is_empty() {
-                                        diff_view.cursor_idx = (diff_view.cursor_idx + 1).min(diff_view.lines.len() - 1);
+                                        diff_view.cursor_idx = (diff_view.cursor_idx + 1)
+                                            .min(diff_view.lines.len() - 1);
                                         diff_view.update_selected_file_from_cursor();
                                     }
                                 }
@@ -1924,7 +2527,11 @@ async fn main() -> Result<()> {
                             }
                             KeyCode::Char('J') => {
                                 if !diff_view.focus_on_files {
-                                    if let Some(&next_hunk) = diff_view.hunks.iter().find(|&&idx| idx > diff_view.cursor_idx) {
+                                    if let Some(&next_hunk) = diff_view
+                                        .hunks
+                                        .iter()
+                                        .find(|&&idx| idx > diff_view.cursor_idx)
+                                    {
                                         diff_view.cursor_idx = next_hunk;
                                         diff_view.update_selected_file_from_cursor();
                                     }
@@ -1933,7 +2540,12 @@ async fn main() -> Result<()> {
                             }
                             KeyCode::Char('K') => {
                                 if !diff_view.focus_on_files {
-                                    if let Some(&prev_hunk) = diff_view.hunks.iter().rev().find(|&&idx| idx < diff_view.cursor_idx) {
+                                    if let Some(&prev_hunk) = diff_view
+                                        .hunks
+                                        .iter()
+                                        .rev()
+                                        .find(|&&idx| idx < diff_view.cursor_idx)
+                                    {
                                         diff_view.cursor_idx = prev_hunk;
                                         diff_view.update_selected_file_from_cursor();
                                     }
@@ -1943,7 +2555,9 @@ async fn main() -> Result<()> {
                             KeyCode::Char('c') => {
                                 if let Some(line) = diff_view.lines.get(diff_view.cursor_idx) {
                                     let can_comment = match line.line_type {
-                                        crate::app::DiffLineType::Addition | crate::app::DiffLineType::Deletion | crate::app::DiffLineType::Normal => true,
+                                        crate::app::DiffLineType::Addition
+                                        | crate::app::DiffLineType::Deletion
+                                        | crate::app::DiffLineType::Normal => true,
                                         _ => false,
                                     };
                                     if can_comment {
@@ -1971,15 +2585,12 @@ async fn main() -> Result<()> {
 
                     if app.focus_column_checklist {
                         match key_event.code {
-                            KeyCode::Esc | KeyCode::Char('t') => {
+                            KeyCode::Esc | KeyCode::Char('t') | KeyCode::Tab | KeyCode::BackTab => {
                                 app.focus_column_checklist = false;
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                let max_idx = match app.active_tab {
-                                    app::Tab::Issues => 3,
-                                    app::Tab::MergeRequests => 4,
-                                    _ => 0,
-                                };
+                                let len = app.active_tab.columns().len();
+                                let max_idx = if len > 0 { len - 1 } else { 0 };
                                 if app.column_checklist_idx < max_idx {
                                     app.column_checklist_idx += 1;
                                 } else {
@@ -1987,11 +2598,8 @@ async fn main() -> Result<()> {
                                 }
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                let max_idx = match app.active_tab {
-                                    app::Tab::Issues => 3,
-                                    app::Tab::MergeRequests => 4,
-                                    _ => 0,
-                                };
+                                let len = app.active_tab.columns().len();
+                                let max_idx = if len > 0 { len - 1 } else { 0 };
                                 if app.column_checklist_idx > 0 {
                                     app.column_checklist_idx -= 1;
                                 } else {
@@ -1999,27 +2607,17 @@ async fn main() -> Result<()> {
                                 }
                             }
                             KeyCode::Char(' ') | KeyCode::Enter => {
-                                match app.active_tab {
-                                    app::Tab::Issues => {
-                                        match app.column_checklist_idx {
-                                            0 => app.show_issue_assignees = !app.show_issue_assignees,
-                                            1 => app.show_issue_labels = !app.show_issue_labels,
-                                            2 => app.show_issue_milestone = !app.show_issue_milestone,
-                                            3 => app.show_issue_author = !app.show_issue_author,
-                                            _ => {}
+                                let cols = app.active_tab.columns();
+                                if let Some(col_name) = cols.get(app.column_checklist_idx) {
+                                    let col_str = col_name.to_string();
+                                    if let Some(set) = app.enabled_columns.get_mut(&app.active_tab)
+                                    {
+                                        if set.contains(&col_str) {
+                                            set.remove(&col_str);
+                                        } else {
+                                            set.insert(col_str);
                                         }
                                     }
-                                    app::Tab::MergeRequests => {
-                                        match app.column_checklist_idx {
-                                            0 => app.show_mr_assignees = !app.show_mr_assignees,
-                                            1 => app.show_mr_reviewers = !app.show_mr_reviewers,
-                                            2 => app.show_mr_labels = !app.show_mr_labels,
-                                            3 => app.show_mr_milestone = !app.show_mr_milestone,
-                                            4 => app.show_mr_author = !app.show_mr_author,
-                                            _ => {}
-                                        }
-                                    }
-                                    _ => {}
                                 }
                             }
                             _ => {}
@@ -2027,7 +2625,11 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
-                    if key_event.code == KeyCode::Char('t') && !app.focus_column_checklist && (app.active_tab == app::Tab::Issues || app.active_tab == app::Tab::MergeRequests) {
+                    if (key_event.code == KeyCode::Tab
+                        || key_event.code == KeyCode::BackTab
+                        || key_event.code == KeyCode::Char('t'))
+                        && !app.focus_column_checklist
+                    {
                         app.focus_column_checklist = true;
                         app.column_checklist_idx = 0;
                         continue;
@@ -2051,71 +2653,109 @@ async fn main() -> Result<()> {
 
                     let mut handled = true;
                     match app.active_tab {
-                        app::Tab::Issues => {
-                            match key_event.code {
-                                KeyCode::Char('n') => {
-                                    app.text_input = Some(crate::app::TextInput {
-                                        title: " Create New Issue Title ".to_string(),
-                                        value: String::new(),
-                                        cursor_idx: 0,
-                                        action: crate::app::TextInputAction::CreateIssue,
-                                    });
-                                }
-                                KeyCode::Char('e') => {
-                                    if let Some(selected_idx) = app.issues.state.selected() {
-                                        let filtered = app.filtered_issues();
-                                        if let Some(issue) = filtered.get(selected_idx) {
-                                            let labels = if issue.labels.is_empty() { "None".to_string() } else { issue.labels.join(", ") };
-                                            let milestone = issue.milestone.as_ref().map(|m| m.title.clone()).unwrap_or_else(|| "None".to_string());
-                                            let assignees = if issue.assignees.is_empty() {
-                                                "None".to_string()
-                                            } else {
-                                                issue.assignees.iter().map(|a| format!("@{}", a.username)).collect::<Vec<_>>().join(", ")
-                                            };
-                                            app.edit_menu = Some(crate::app::EditMenu {
-                                                title: format!("Edit Issue #{}", issue.iid),
-                                                fields: vec![
-                                                    ("Title".to_string(), issue.title.clone()),
-                                                    ("Labels".to_string(), labels),
-                                                    ("Assignees".to_string(), assignees),
-                                                    ("Milestone".to_string(), milestone),
-                                                    ("Confidential".to_string(), "Toggle/Set".to_string()),
-                                                    ("Due Date".to_string(), "Set".to_string()),
-                                                    ("Weight".to_string(), "Set".to_string()),
-                                                    ("Description".to_string(), "(Helix)".to_string()),
-                                                ],
-                                                selected_idx: 0,
-                                                entity_iid: issue.iid,
-                                                entity_type: "issue".to_string(),
-                                                state: { let mut s = ListState::default(); s.select(Some(0)); s },
-                                            });
-                                        }
-                                    }
-                                }
-                                KeyCode::Char('c') => {
-                                    if let Some(selected_idx) = app.issues.state.selected() {
-                                        let filtered = app.filtered_issues();
-                                        if let Some(issue) = filtered.get(selected_idx) {
-                                            let issue_iid = issue.iid;
-                                            run_glab_cmd(&["issue", "close", &issue_iid.to_string()], &mut terminal, events.sender(), app.active_tab).await;
-                                            if let Some(pos) = app.issues.items.iter().position(|i| i.iid == issue_iid) {
-                                                app.issues.items.remove(pos);
-                                            }
-                                            app.update_filter_selection();
-                                        }
-                                    }
-                                }
-                                _ => handled = false,
+                        app::Tab::Issues => match key_event.code {
+                            KeyCode::Char('n') => {
+                                app.text_input = Some(crate::app::TextInput {
+                                    title: " Create New Issue Title ".to_string(),
+                                    value: String::new(),
+                                    cursor_idx: 0,
+                                    action: crate::app::TextInputAction::CreateIssue,
+                                });
                             }
-                        }
+                            KeyCode::Char('e') => {
+                                if let Some(selected_idx) = app.issues.state.selected() {
+                                    let filtered = app.filtered_issues();
+                                    if let Some(issue) = filtered.get(selected_idx) {
+                                        let labels = if issue.labels.is_empty() {
+                                            "None".to_string()
+                                        } else {
+                                            issue.labels.join(", ")
+                                        };
+                                        let milestone = issue
+                                            .milestone
+                                            .as_ref()
+                                            .map(|m| m.title.clone())
+                                            .unwrap_or_else(|| "None".to_string());
+                                        let assignees = if issue.assignees.is_empty() {
+                                            "None".to_string()
+                                        } else {
+                                            issue
+                                                .assignees
+                                                .iter()
+                                                .map(|a| format!("@{}", a.username))
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        };
+                                        app.edit_menu = Some(crate::app::EditMenu {
+                                            title: format!("Edit Issue #{}", issue.iid),
+                                            fields: vec![
+                                                ("Title".to_string(), issue.title.clone()),
+                                                ("Labels".to_string(), labels),
+                                                ("Assignees".to_string(), assignees),
+                                                ("Milestone".to_string(), milestone),
+                                                (
+                                                    "Confidential".to_string(),
+                                                    "Toggle/Set".to_string(),
+                                                ),
+                                                ("Due Date".to_string(), "Set".to_string()),
+                                                ("Weight".to_string(), "Set".to_string()),
+                                                ("Description".to_string(), "(Helix)".to_string()),
+                                            ],
+                                            selected_idx: 0,
+                                            entity_iid: issue.iid,
+                                            entity_type: "issue".to_string(),
+                                            state: {
+                                                let mut s = ListState::default();
+                                                s.select(Some(0));
+                                                s
+                                            },
+                                        });
+                                    }
+                                }
+                            }
+                            KeyCode::Char('c') => {
+                                if let Some(selected_idx) = app.issues.state.selected() {
+                                    let filtered = app.filtered_issues();
+                                    if let Some(issue) = filtered.get(selected_idx) {
+                                        let issue_iid = issue.iid;
+                                        run_glab_cmd(
+                                            &["issue", "close", &issue_iid.to_string()],
+                                            &mut terminal,
+                                            events.sender(),
+                                            app.active_tab,
+                                        )
+                                        .await;
+                                        if let Some(pos) =
+                                            app.issues.items.iter().position(|i| i.iid == issue_iid)
+                                        {
+                                            app.issues.items.remove(pos);
+                                        }
+                                        app.update_filter_selection();
+                                    }
+                                }
+                            }
+                            _ => handled = false,
+                        },
                         app::Tab::MergeRequests => {
                             if key_event.code == KeyCode::Char('n') {
-                                let issue_options: Vec<String> = app.issues.items.iter()
+                                let issue_options: Vec<String> = app
+                                    .issues
+                                    .items
+                                    .iter()
                                     .map(|issue| format!("#{} : {}", issue.iid, issue.title))
                                     .collect();
-                                
-                                let pr_suffix = if app.gitlab_client.as_ref().map(|c| c.is_github).unwrap_or(false) { "PR" } else { "MR" };
-                                
+
+                                let pr_suffix = if app
+                                    .gitlab_client
+                                    .as_ref()
+                                    .map(|c| c.is_github)
+                                    .unwrap_or(false)
+                                {
+                                    "PR"
+                                } else {
+                                    "MR"
+                                };
+
                                 app.selector = Some(crate::app::Selector {
                                     title: format!(" Select Issue for New {} ", pr_suffix),
                                     all_items: issue_options,
@@ -2128,29 +2768,61 @@ async fn main() -> Result<()> {
                                     entity_type: "mr".to_string(),
                                     field_type: "create_mr".to_string(),
                                     multi_select: false,
-                                    state: { let mut s = ListState::default(); s.select(Some(0)); s },
+                                    state: {
+                                        let mut s = ListState::default();
+                                        s.select(Some(0));
+                                        s
+                                    },
                                 });
                             } else if let Some(selected_idx) = app.mrs.state.selected() {
                                 let filtered = app.filtered_mrs();
-                                let mr_info = filtered.get(selected_idx).map(|item| (item.iid, item.title.clone()));
+                                let mr_info = filtered
+                                    .get(selected_idx)
+                                    .map(|item| (item.iid, item.title.clone()));
                                 if let Some((mr_iid, mr_title)) = mr_info {
                                     match key_event.code {
                                         KeyCode::Char('e') => {
                                             let mr = filtered.get(selected_idx).unwrap();
-                                            let labels = if mr.labels.is_empty() { "None".to_string() } else { mr.labels.join(", ") };
-                                            let milestone = mr.milestone.as_ref().map(|m| m.title.clone()).unwrap_or_else(|| "None".to_string());
+                                            let labels = if mr.labels.is_empty() {
+                                                "None".to_string()
+                                            } else {
+                                                mr.labels.join(", ")
+                                            };
+                                            let milestone = mr
+                                                .milestone
+                                                .as_ref()
+                                                .map(|m| m.title.clone())
+                                                .unwrap_or_else(|| "None".to_string());
                                             let assignees = if mr.assignees.is_empty() {
                                                 "None".to_string()
                                             } else {
-                                                mr.assignees.iter().map(|a| format!("@{}", a.username)).collect::<Vec<_>>().join(", ")
+                                                mr.assignees
+                                                    .iter()
+                                                    .map(|a| format!("@{}", a.username))
+                                                    .collect::<Vec<_>>()
+                                                    .join(", ")
                                             };
                                             let reviewers = if mr.reviewers.is_empty() {
                                                 "None".to_string()
                                             } else {
-                                                mr.reviewers.iter().map(|r| format!("@{}", r.username)).collect::<Vec<_>>().join(", ")
+                                                mr.reviewers
+                                                    .iter()
+                                                    .map(|r| format!("@{}", r.username))
+                                                    .collect::<Vec<_>>()
+                                                    .join(", ")
                                             };
-                                            let draft_status = if mr.draft { "Draft" } else { "Ready" };
-                                            let pr_suffix = if app.gitlab_client.as_ref().map(|c| c.is_github).unwrap_or(false) { "PR" } else { "MR" };
+                                            let draft_status =
+                                                if mr.draft { "Draft" } else { "Ready" };
+                                            let pr_suffix = if app
+                                                .gitlab_client
+                                                .as_ref()
+                                                .map(|c| c.is_github)
+                                                .unwrap_or(false)
+                                            {
+                                                "PR"
+                                            } else {
+                                                "MR"
+                                            };
                                             app.edit_menu = Some(crate::app::EditMenu {
                                                 title: format!("Edit {} #{}", pr_suffix, mr.iid),
                                                 fields: vec![
@@ -2159,22 +2831,55 @@ async fn main() -> Result<()> {
                                                     ("Assignees".to_string(), assignees),
                                                     ("Reviewers".to_string(), reviewers),
                                                     ("Milestone".to_string(), milestone),
-                                                    ("Target Branch".to_string(), mr.target_branch.clone()),
-                                                    ("Status (Draft/Ready)".to_string(), draft_status.to_string()),
-                                                    ("Description".to_string(), mr.description.clone().unwrap_or_default()),
+                                                    (
+                                                        "Target Branch".to_string(),
+                                                        mr.target_branch.clone(),
+                                                    ),
+                                                    (
+                                                        "Status (Draft/Ready)".to_string(),
+                                                        draft_status.to_string(),
+                                                    ),
+                                                    (
+                                                        "Description".to_string(),
+                                                        mr.description.clone().unwrap_or_default(),
+                                                    ),
                                                 ],
                                                 selected_idx: 0,
                                                 entity_iid: mr.iid,
                                                 entity_type: "mr".to_string(),
-                                                state: { let mut s = ListState::default(); s.select(Some(0)); s },
+                                                state: {
+                                                    let mut s = ListState::default();
+                                                    s.select(Some(0));
+                                                    s
+                                                },
                                             });
                                         }
                                         KeyCode::Char('a') => {
-                                            run_glab_cmd(&["mr", "approve", &mr_iid.to_string()], &mut terminal, events.sender(), app.active_tab).await;
+                                            run_glab_cmd(
+                                                &["mr", "approve", &mr_iid.to_string()],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
                                         }
                                         KeyCode::Char('m') => {
-                                            run_glab_cmd(&["mr", "merge", &mr_iid.to_string(), "--remove-source-branch", "--squash"], &mut terminal, events.sender(), app.active_tab).await;
-                                            if let Some(pos) = app.mrs.items.iter().position(|m| m.iid == mr_iid) {
+                                            run_glab_cmd(
+                                                &[
+                                                    "mr",
+                                                    "merge",
+                                                    &mr_iid.to_string(),
+                                                    "--remove-source-branch",
+                                                    "--squash",
+                                                ],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
+                                            if let Some(pos) =
+                                                app.mrs.items.iter().position(|m| m.iid == mr_iid)
+                                            {
                                                 app.mrs.items.remove(pos);
                                             }
                                             app.update_filter_selection();
@@ -2185,15 +2890,18 @@ async fn main() -> Result<()> {
                                             let mr_iid = mr_iid;
                                             let mr_iid_str = mr_iid.to_string();
                                             tokio::spawn(async move {
-                                                let is_github = match tokio::process::Command::new("git")
-                                                    .args(["remote", "get-url", "origin"])
-                                                    .output()
-                                                    .await
-                                                    .map(|o| String::from_utf8_lossy(&o.stdout).contains("github.com"))
-                                                {
-                                                    Ok(true) => true,
-                                                    _ => false,
-                                                };
+                                                let is_github =
+                                                    match tokio::process::Command::new("git")
+                                                        .args(["remote", "get-url", "origin"])
+                                                        .output()
+                                                        .await
+                                                        .map(|o| {
+                                                            String::from_utf8_lossy(&o.stdout)
+                                                                .contains("github.com")
+                                                        }) {
+                                                        Ok(true) => true,
+                                                        _ => false,
+                                                    };
 
                                                 let cmd_args = vec!["mr", "diff", &mr_iid_str];
                                                 let mut cmd = if is_github {
@@ -2202,7 +2910,8 @@ async fn main() -> Result<()> {
                                                     c.args(gh_args);
                                                     c
                                                 } else {
-                                                    let mut c = tokio::process::Command::new("glab");
+                                                    let mut c =
+                                                        tokio::process::Command::new("glab");
                                                     c.args(&cmd_args);
                                                     c
                                                 };
@@ -2210,11 +2919,23 @@ async fn main() -> Result<()> {
                                                 match cmd.output().await {
                                                     Ok(output) => {
                                                         if output.status.success() {
-                                                            let raw_diff = String::from_utf8_lossy(&output.stdout).into_owned();
-                                                            let _ = tx.send(Event::DiffFetched(mr_iid, raw_diff));
+                                                            let raw_diff = String::from_utf8_lossy(
+                                                                &output.stdout,
+                                                            )
+                                                            .into_owned();
+                                                            let _ = tx.send(Event::DiffFetched(
+                                                                mr_iid, raw_diff,
+                                                            ));
                                                         } else {
-                                                            let err_msg = String::from_utf8_lossy(&output.stderr);
-                                                            let _ = tx.send(Event::DiffFetchFailed(format!("Failed to fetch diff: {}", err_msg)));
+                                                            let err_msg = String::from_utf8_lossy(
+                                                                &output.stderr,
+                                                            );
+                                                            let _ = tx.send(
+                                                                Event::DiffFetchFailed(format!(
+                                                                    "Failed to fetch diff: {}",
+                                                                    err_msg
+                                                                )),
+                                                            );
                                                         }
                                                     }
                                                     Err(_) => {
@@ -2224,12 +2945,28 @@ async fn main() -> Result<()> {
                                             });
                                         }
                                         KeyCode::Char('o') => {
-                                            run_glab_cmd(&["mr", "view", &mr_iid.to_string(), "-w"], &mut terminal, events.sender(), app.active_tab).await;
+                                            run_glab_cmd(
+                                                &["mr", "view", &mr_iid.to_string(), "-w"],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
                                         }
                                         KeyCode::Char('s') => {
-                                            let is_draft = mr_title.starts_with("Draft:") || mr_title.starts_with("WIP:");
-                                            let action = if is_draft { "--ready" } else { "--draft" };
-                                            run_glab_update("mr", mr_iid, &[action], &mut terminal, events.sender(), app.active_tab).await;
+                                            let is_draft = mr_title.starts_with("Draft:")
+                                                || mr_title.starts_with("WIP:");
+                                            let action =
+                                                if is_draft { "--ready" } else { "--draft" };
+                                            run_glab_update(
+                                                "mr",
+                                                mr_iid,
+                                                &[action],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
                                         }
                                         _ => handled = false,
                                     }
@@ -2242,7 +2979,13 @@ async fn main() -> Result<()> {
                         }
                         app::Tab::Pipelines => {
                             if key_event.code == KeyCode::Char('p') {
-                                run_glab_cmd(&["ci", "run", "--mr"], &mut terminal, events.sender(), app.active_tab).await;
+                                run_glab_cmd(
+                                    &["ci", "run", "--mr"],
+                                    &mut terminal,
+                                    events.sender(),
+                                    app.active_tab,
+                                )
+                                .await;
                             } else if let Some(selected_idx) = app.pipelines.state.selected() {
                                 if let Some(item) = app.filtered_pipelines().get(selected_idx) {
                                     let pipe_id = item.id;
@@ -2255,58 +2998,126 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                         KeyCode::Char('r') => {
-                                             if let Some(client) = &app.gitlab_client {
-                                                 let client_clone = client.clone();
-                                                 let project_context = app.project_context.clone();
-                                                 let tx = events.sender();
-                                                 let active_tab = app.active_tab;
-                                                 if !app.selected_pipelines.is_empty() {
-                                                     let pipe_ids: Vec<u64> = app.selected_pipelines.iter().cloned().collect();
-                                                     for p_id in &pipe_ids {
-                                                         if let Some(p) = app.pipelines.items.iter_mut().find(|pipe| pipe.id == *p_id) {
-                                                             p.status = "running".to_string();
-                                                         }
-                                                     }
-                                                     app.selected_pipelines.clear();
-                                                     tokio::spawn(async move {
-                                                         for p_id in pipe_ids {
-                                                             let endpoint = format!("projects/{}/pipelines/{}/retry", project_context.replace("/", "%2F"), p_id);
-                                                             let _ = client_clone.fetch_raw_api(&endpoint).await;
-                                                         }
-                                                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                                         spawn_refresh_active_tab(&client_clone, &project_context, active_tab, tx);
-                                                     });
-                                                 } else {
-                                                     if let Some(p) = app.pipelines.items.iter_mut().find(|pipe| pipe.id == pipe_id) {
-                                                         p.status = "running".to_string();
-                                                     }
-                                                     tokio::spawn(async move {
-                                                         let endpoint = format!("projects/{}/pipelines/{}/retry", project_context.replace("/", "%2F"), pipe_id);
-                                                         let _ = client_clone.fetch_raw_api(&endpoint).await;
-                                                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                                         spawn_refresh_active_tab(&client_clone, &project_context, active_tab, tx);
-                                                     });
-                                                 }
-                                             }
+                                            if let Some(client) = &app.gitlab_client {
+                                                let client_clone = client.clone();
+                                                let project_context = app.project_context.clone();
+                                                let tx = events.sender();
+                                                let active_tab = app.active_tab;
+                                                if !app.selected_pipelines.is_empty() {
+                                                    let pipe_ids: Vec<u64> = app
+                                                        .selected_pipelines
+                                                        .iter()
+                                                        .cloned()
+                                                        .collect();
+                                                    for p_id in &pipe_ids {
+                                                        if let Some(p) = app
+                                                            .pipelines
+                                                            .items
+                                                            .iter_mut()
+                                                            .find(|pipe| pipe.id == *p_id)
+                                                        {
+                                                            p.status = "running".to_string();
+                                                        }
+                                                    }
+                                                    app.selected_pipelines.clear();
+                                                    tokio::spawn(async move {
+                                                        for p_id in pipe_ids {
+                                                            let endpoint = format!(
+                                                                "projects/{}/pipelines/{}/retry",
+                                                                project_context.replace("/", "%2F"),
+                                                                p_id
+                                                            );
+                                                            let _ = client_clone
+                                                                .fetch_raw_api(&endpoint)
+                                                                .await;
+                                                        }
+                                                        tokio::time::sleep(
+                                                            std::time::Duration::from_secs(1),
+                                                        )
+                                                        .await;
+                                                        spawn_refresh_active_tab(
+                                                            &client_clone,
+                                                            &project_context,
+                                                            active_tab,
+                                                            tx,
+                                                        );
+                                                    });
+                                                } else {
+                                                    if let Some(p) = app
+                                                        .pipelines
+                                                        .items
+                                                        .iter_mut()
+                                                        .find(|pipe| pipe.id == pipe_id)
+                                                    {
+                                                        p.status = "running".to_string();
+                                                    }
+                                                    tokio::spawn(async move {
+                                                        let endpoint = format!(
+                                                            "projects/{}/pipelines/{}/retry",
+                                                            project_context.replace("/", "%2F"),
+                                                            pipe_id
+                                                        );
+                                                        let _ = client_clone
+                                                            .fetch_raw_api(&endpoint)
+                                                            .await;
+                                                        tokio::time::sleep(
+                                                            std::time::Duration::from_secs(1),
+                                                        )
+                                                        .await;
+                                                        spawn_refresh_active_tab(
+                                                            &client_clone,
+                                                            &project_context,
+                                                            active_tab,
+                                                            tx,
+                                                        );
+                                                    });
+                                                }
+                                            }
                                         }
                                         KeyCode::Char('d') => {
-                                             if let Some(p) = app.pipelines.items.iter_mut().find(|pipe| pipe.id == pipe_id) {
-                                                 p.status = "canceled".to_string();
-                                             }
-                                             if let Some(client) = &app.gitlab_client {
-                                                 let client_clone = client.clone();
-                                                 let project_context = app.project_context.clone();
-                                                 let tx = events.sender();
-                                                 let active_tab = app.active_tab;
-                                                 tokio::spawn(async move {
-                                                     let endpoint = format!("projects/{}/pipelines/{}/cancel", project_context.replace("/", "%2F"), pipe_id);
-                                                     let _ = client_clone.fetch_raw_api(&endpoint).await;
-                                                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                                     spawn_refresh_active_tab(&client_clone, &project_context, active_tab, tx);
-                                                 });
-                                             }
+                                            if let Some(p) = app
+                                                .pipelines
+                                                .items
+                                                .iter_mut()
+                                                .find(|pipe| pipe.id == pipe_id)
+                                            {
+                                                p.status = "canceled".to_string();
+                                            }
+                                            if let Some(client) = &app.gitlab_client {
+                                                let client_clone = client.clone();
+                                                let project_context = app.project_context.clone();
+                                                let tx = events.sender();
+                                                let active_tab = app.active_tab;
+                                                tokio::spawn(async move {
+                                                    let endpoint = format!(
+                                                        "projects/{}/pipelines/{}/cancel",
+                                                        project_context.replace("/", "%2F"),
+                                                        pipe_id
+                                                    );
+                                                    let _ =
+                                                        client_clone.fetch_raw_api(&endpoint).await;
+                                                    tokio::time::sleep(
+                                                        std::time::Duration::from_secs(1),
+                                                    )
+                                                    .await;
+                                                    spawn_refresh_active_tab(
+                                                        &client_clone,
+                                                        &project_context,
+                                                        active_tab,
+                                                        tx,
+                                                    );
+                                                });
+                                            }
                                         }
-                                        KeyCode::Char('o') => run_glab_cmd(&["ci", "view", &pipe_id.to_string(), "-w"], &mut terminal, events.sender(), app.active_tab).await,
+                                        KeyCode::Char('o') => {
+                                            run_glab_cmd(
+                                                &["ci", "view", &pipe_id.to_string(), "-w"],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await
+                                        }
                                         _ => handled = false,
                                     }
                                 } else {
@@ -2325,7 +3136,8 @@ async fn main() -> Result<()> {
                                     action: crate::app::TextInputAction::EnterPipelineId,
                                 });
                             } else if let Some(idx) = app.selected_job_index {
-                                let job_info = app.filtered_jobs().get(idx).map(|j| (j.id, j.name.clone()));
+                                let job_info =
+                                    app.filtered_jobs().get(idx).map(|j| (j.id, j.name.clone()));
                                 if let Some((job_id, job_name)) = job_info {
                                     match key_event.code {
                                         KeyCode::Char(' ') => {
@@ -2341,10 +3153,13 @@ async fn main() -> Result<()> {
                                                 let project_context = app.project_context.clone();
                                                 let pipe_id = app.active_pipeline_id.unwrap_or(0);
                                                 let tx = events.sender();
-                                                
+
                                                 if !app.selected_jobs.is_empty() {
-                                                    let job_ids: Vec<u64> = app.selected_jobs.iter().cloned().collect();
-                                                    if let Some(jobs_mut) = &mut app.selected_pipeline_jobs {
+                                                    let job_ids: Vec<u64> =
+                                                        app.selected_jobs.iter().cloned().collect();
+                                                    if let Some(jobs_mut) =
+                                                        &mut app.selected_pipeline_jobs
+                                                    {
                                                         for j in jobs_mut.iter_mut() {
                                                             if app.selected_jobs.contains(&j.id) {
                                                                 j.status = "running".to_string();
@@ -2354,53 +3169,120 @@ async fn main() -> Result<()> {
                                                     app.selected_jobs.clear();
                                                     tokio::spawn(async move {
                                                         for j_id in job_ids {
-                                                            let endpoint = format!("projects/{}/jobs/{}/retry", project_context.replace("/", "%2F"), j_id);
-                                                            let _ = client_clone.fetch_raw_api(&endpoint).await;
+                                                            let endpoint = format!(
+                                                                "projects/{}/jobs/{}/retry",
+                                                                project_context.replace("/", "%2F"),
+                                                                j_id
+                                                            );
+                                                            let _ = client_clone
+                                                                .fetch_raw_api(&endpoint)
+                                                                .await;
                                                         }
-                                                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                                        if let Ok(jobs) = gitlab::pipelines::list_pipeline_jobs(&client_clone, &project_context, pipe_id).await {
-                                                            let _ = tx.send(Event::PipelineJobs(pipe_id, jobs));
+                                                        tokio::time::sleep(
+                                                            std::time::Duration::from_secs(1),
+                                                        )
+                                                        .await;
+                                                        if let Ok(jobs) =
+                                                            gitlab::pipelines::list_pipeline_jobs(
+                                                                &client_clone,
+                                                                &project_context,
+                                                                pipe_id,
+                                                            )
+                                                            .await
+                                                        {
+                                                            let _ = tx.send(Event::PipelineJobs(
+                                                                pipe_id, jobs,
+                                                            ));
                                                         }
                                                     });
                                                 } else {
-                                                    if let Some(jobs_mut) = &mut app.selected_pipeline_jobs {
+                                                    if let Some(jobs_mut) =
+                                                        &mut app.selected_pipeline_jobs
+                                                    {
                                                         if let Some(j) = jobs_mut.get_mut(idx) {
                                                             j.status = "running".to_string();
                                                         }
                                                     }
                                                     tokio::spawn(async move {
-                                                        let endpoint = format!("projects/{}/jobs/{}/retry", project_context.replace("/", "%2F"), job_id);
-                                                        let _ = client_clone.fetch_raw_api(&endpoint).await;
-                                                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                                        if let Ok(jobs) = gitlab::pipelines::list_pipeline_jobs(&client_clone, &project_context, pipe_id).await {
-                                                            let _ = tx.send(Event::PipelineJobs(pipe_id, jobs));
+                                                        let endpoint = format!(
+                                                            "projects/{}/jobs/{}/retry",
+                                                            project_context.replace("/", "%2F"),
+                                                            job_id
+                                                        );
+                                                        let _ = client_clone
+                                                            .fetch_raw_api(&endpoint)
+                                                            .await;
+                                                        tokio::time::sleep(
+                                                            std::time::Duration::from_secs(1),
+                                                        )
+                                                        .await;
+                                                        if let Ok(jobs) =
+                                                            gitlab::pipelines::list_pipeline_jobs(
+                                                                &client_clone,
+                                                                &project_context,
+                                                                pipe_id,
+                                                            )
+                                                            .await
+                                                        {
+                                                            let _ = tx.send(Event::PipelineJobs(
+                                                                pipe_id, jobs,
+                                                            ));
                                                         }
                                                     });
                                                 }
                                             }
                                         }
                                         KeyCode::Char('d') => {
-                                            run_glab_cmd(&["job", "artifact", "master", &job_name], &mut terminal, events.sender(), app.active_tab).await;
+                                            run_glab_cmd(
+                                                &["job", "artifact", "master", &job_name],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
                                         }
                                         KeyCode::Char('o') => {
-                                            run_glab_cmd(&["job", "view", &job_id.to_string(), "-w"], &mut terminal, events.sender(), app.active_tab).await;
+                                            run_glab_cmd(
+                                                &["job", "view", &job_id.to_string(), "-w"],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
                                         }
                                         KeyCode::Char('e') => {
-                                            let temp_file = std::env::temp_dir().join(format!("job_{}_trace.txt", job_id));
+                                            let temp_file = std::env::temp_dir()
+                                                .join(format!("job_{}_trace.txt", job_id));
                                             if let Some(trace) = &app.job_trace {
                                                 let _ = std::fs::write(&temp_file, trace);
                                             } else if let Some(_) = &app.gitlab_client {
-                                                let _ = std::fs::write(&temp_file, "Trace will be here");
+                                                let _ = std::fs::write(
+                                                    &temp_file,
+                                                    "Trace will be here",
+                                                );
                                             }
-                                            crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
+                                            crate::event::PAUSED
+                                                .store(true, std::sync::atomic::Ordering::Relaxed);
                                             disable_raw_mode().unwrap();
-                                            execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
+                                            execute!(
+                                                io::stdout(),
+                                                LeaveAlternateScreen,
+                                                DisableMouseCapture
+                                            )
+                                            .unwrap();
                                             let editor = std::env::var("EDITOR")
                                                 .or_else(|_| std::env::var("VISUAL"))
                                                 .unwrap_or_else(|_| "helix".to_string());
                                             let mut cmd = if cfg!(target_os = "windows") {
                                                 let mut c = std::process::Command::new("cmd");
-                                                c.args(&["/c", &format!("{} \"{}\"", editor, temp_file.to_string_lossy())]);
+                                                c.args(&[
+                                                    "/c",
+                                                    &format!(
+                                                        "{} \"{}\"",
+                                                        editor,
+                                                        temp_file.to_string_lossy()
+                                                    ),
+                                                ]);
                                                 c
                                             } else {
                                                 let mut c = std::process::Command::new(&editor);
@@ -2414,20 +3296,34 @@ async fn main() -> Result<()> {
                                                 let _ = child.wait();
                                             }
                                             enable_raw_mode().unwrap();
-                                            execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
+                                            execute!(
+                                                io::stdout(),
+                                                EnterAlternateScreen,
+                                                EnableMouseCapture
+                                            )
+                                            .unwrap();
                                             terminal.clear().unwrap();
-                                            crate::event::PAUSED.store(false, std::sync::atomic::Ordering::Relaxed);
+                                            crate::event::PAUSED
+                                                .store(false, std::sync::atomic::Ordering::Relaxed);
                                         }
                                         KeyCode::Enter => {
                                             if app.job_trace.is_some() {
                                                 app.details_zoomed = !app.details_zoomed;
                                             } else if let Some(client) = &app.gitlab_client {
-                                                if let Ok(trace) = gitlab::pipelines::get_job_trace(client, &app.project_context, job_id).await {
+                                                if let Ok(trace) = gitlab::pipelines::get_job_trace(
+                                                    client,
+                                                    &app.project_context,
+                                                    job_id,
+                                                )
+                                                .await
+                                                {
                                                     app.job_trace = Some(trace);
                                                     app.job_trace_needs_scroll_to_bottom = true;
                                                     app.details_zoomed = true;
                                                 } else {
-                                                    app.error_message = Some("Failed to fetch job trace".to_string());
+                                                    app.error_message = Some(
+                                                        "Failed to fetch job trace".to_string(),
+                                                    );
                                                 }
                                             }
                                         }
@@ -2446,21 +3342,58 @@ async fn main() -> Result<()> {
                                     let runner_id = item.id;
                                     match key_event.code {
                                         KeyCode::Char('p') => {
-                                            run_glab_cmd(&["api", "-X", "PUT", &format!("runners/{}", runner_id), "-f", "paused=true"], &mut terminal, events.sender(), app.active_tab).await;
-                                            if let Some(runner) = app.runners.items.iter_mut().find(|r| r.id == runner_id) {
+                                            run_glab_cmd(
+                                                &[
+                                                    "api",
+                                                    "-X",
+                                                    "PUT",
+                                                    &format!("runners/{}", runner_id),
+                                                    "-f",
+                                                    "paused=true",
+                                                ],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
+                                            if let Some(runner) = app
+                                                .runners
+                                                .items
+                                                .iter_mut()
+                                                .find(|r| r.id == runner_id)
+                                            {
                                                 runner.status = "paused".to_string();
                                                 runner.active = false;
                                             }
                                         }
                                         KeyCode::Char('r') => {
-                                            run_glab_cmd(&["api", "-X", "PUT", &format!("runners/{}", runner_id), "-f", "paused=false"], &mut terminal, events.sender(), app.active_tab).await;
-                                            if let Some(runner) = app.runners.items.iter_mut().find(|r| r.id == runner_id) {
+                                            run_glab_cmd(
+                                                &[
+                                                    "api",
+                                                    "-X",
+                                                    "PUT",
+                                                    &format!("runners/{}", runner_id),
+                                                    "-f",
+                                                    "paused=false",
+                                                ],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
+                                            if let Some(runner) = app
+                                                .runners
+                                                .items
+                                                .iter_mut()
+                                                .find(|r| r.id == runner_id)
+                                            {
                                                 runner.status = "online".to_string();
                                                 runner.active = true;
                                             }
                                         }
                                         KeyCode::Char('e') => {
-                                            let current_desc = item.description.clone().unwrap_or_default();
+                                            let current_desc =
+                                                item.description.clone().unwrap_or_default();
                                             app.text_input = Some(crate::app::TextInput {
                                                 title: " Edit Runner Description ".to_string(),
                                                 cursor_idx: current_desc.len(),
@@ -2486,7 +3419,13 @@ async fn main() -> Result<()> {
                                 if let Some(item) = app.filtered_releases().get(selected_idx) {
                                     match key_event.code {
                                         KeyCode::Char('o') => {
-                                            run_glab_cmd(&["release", "view", &item.tag_name, "-w"], &mut terminal, events.sender(), app.active_tab).await;
+                                            run_glab_cmd(
+                                                &["release", "view", &item.tag_name, "-w"],
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
                                         }
                                         _ => handled = false,
                                     }
@@ -2518,12 +3457,22 @@ async fn main() -> Result<()> {
                                             app.update_filter_selection();
                                             match app.active_tab {
                                                 app::Tab::Issues => {
-                                                    if let Some(pos) = app.issues.items.iter().position(|i| i.iid == target_iid) {
+                                                    if let Some(pos) = app
+                                                        .issues
+                                                        .items
+                                                        .iter()
+                                                        .position(|i| i.iid == target_iid)
+                                                    {
                                                         app.issues.state.select(Some(pos));
                                                     }
                                                 }
                                                 app::Tab::MergeRequests => {
-                                                    if let Some(pos) = app.mrs.items.iter().position(|m| m.iid == target_iid) {
+                                                    if let Some(pos) = app
+                                                        .mrs
+                                                        .items
+                                                        .iter()
+                                                        .position(|m| m.iid == target_iid)
+                                                    {
                                                         app.mrs.state.select(Some(pos));
                                                     }
                                                 }
@@ -2552,13 +3501,23 @@ async fn main() -> Result<()> {
                                 tokio::spawn(async move {
                                     match crate::utils::update::perform_self_update().await {
                                         Ok(true) => {
-                                            let _ = tx.send(Event::FetchFailed(app::Tab::Notifications, "Update complete! Please restart glab-tui.".to_string()));
+                                            let _ = tx.send(Event::FetchFailed(
+                                                app::Tab::Notifications,
+                                                "Update complete! Please restart glab-tui."
+                                                    .to_string(),
+                                            ));
                                         }
                                         Ok(false) => {
-                                            let _ = tx.send(Event::FetchFailed(app::Tab::Notifications, "Already up to date.".to_string()));
+                                            let _ = tx.send(Event::FetchFailed(
+                                                app::Tab::Notifications,
+                                                "Already up to date.".to_string(),
+                                            ));
                                         }
                                         Err(e) => {
-                                            let _ = tx.send(Event::FetchFailed(app::Tab::Notifications, format!("Update failed: {}", e)));
+                                            let _ = tx.send(Event::FetchFailed(
+                                                app::Tab::Notifications,
+                                                format!("Update failed: {}", e),
+                                            ));
                                         }
                                     }
                                 });
@@ -2570,28 +3529,24 @@ async fn main() -> Result<()> {
                                     app.quit();
                                 }
                             }
-                            KeyCode::Char('J') => {
-                                match app.active_tab {
-                                    app::Tab::Issues => {
-                                        app.issues_scroll = app.issues_scroll.saturating_add(1);
-                                    }
-                                    app::Tab::MergeRequests => {
-                                        app.mrs_scroll = app.mrs_scroll.saturating_add(1);
-                                    }
-                                    _ => {}
+                            KeyCode::Char('J') => match app.active_tab {
+                                app::Tab::Issues => {
+                                    app.issues_scroll = app.issues_scroll.saturating_add(1);
                                 }
-                            }
-                            KeyCode::Char('K') => {
-                                match app.active_tab {
-                                    app::Tab::Issues => {
-                                        app.issues_scroll = app.issues_scroll.saturating_sub(1);
-                                    }
-                                    app::Tab::MergeRequests => {
-                                        app.mrs_scroll = app.mrs_scroll.saturating_sub(1);
-                                    }
-                                    _ => {}
+                                app::Tab::MergeRequests => {
+                                    app.mrs_scroll = app.mrs_scroll.saturating_add(1);
                                 }
-                            }
+                                _ => {}
+                            },
+                            KeyCode::Char('K') => match app.active_tab {
+                                app::Tab::Issues => {
+                                    app.issues_scroll = app.issues_scroll.saturating_sub(1);
+                                }
+                                app::Tab::MergeRequests => {
+                                    app.mrs_scroll = app.mrs_scroll.saturating_sub(1);
+                                }
+                                _ => {}
+                            },
                             KeyCode::Esc | KeyCode::Backspace => {
                                 if app.details_zoomed {
                                     app.details_zoomed = false;
@@ -2601,7 +3556,9 @@ async fn main() -> Result<()> {
                                     } else {
                                         app.active_tab = app::Tab::Pipelines;
                                     }
-                                } else if app.active_tab == app::Tab::Pipelines && app.selected_pipeline_jobs.is_some() {
+                                } else if app.active_tab == app::Tab::Pipelines
+                                    && app.selected_pipeline_jobs.is_some()
+                                {
                                     if app.job_trace.is_some() {
                                         app.job_trace = None;
                                     } else {
@@ -2616,173 +3573,224 @@ async fn main() -> Result<()> {
                             KeyCode::Char('f') => {
                                 app.is_typing_search = true;
                             }
-                            KeyCode::Enter => {
-                                match app.active_tab {
-                                    app::Tab::Notifications => {
-                                        if let Some(idx) = app.notifications.state.selected() {
-                                            if let Some(n) = app.filtered_notifications().get(idx) {
-                                                let n_id = n.id.clone();
-                                                let target_iid = n.target_iid;
-                                                let target_type = n.target_type.clone();
-                                                let client_opt = app.gitlab_client.clone();
-                                                if let Some(client) = client_opt {
-                                                    tokio::spawn(async move {
-                                                        let _ = gitlab::notifications::mark_notification_as_read(&client, &n_id).await;
-                                                    });
-                                                }
-                                                app.active_tab = match target_type.as_str() {
-                                                    "MergeRequest" => app::Tab::MergeRequests,
-                                                    _ => app::Tab::Issues,
-                                                };
-                                                app.update_filter_selection();
-                                                match app.active_tab {
-                                                    app::Tab::Issues => {
-                                                        if let Some(pos) = app.issues.items.iter().position(|i| i.iid == target_iid) {
-                                                            app.issues.state.select(Some(pos));
-                                                        }
+                            KeyCode::Enter => match app.active_tab {
+                                app::Tab::Notifications => {
+                                    if let Some(idx) = app.notifications.state.selected() {
+                                        if let Some(n) = app.filtered_notifications().get(idx) {
+                                            let n_id = n.id.clone();
+                                            let target_iid = n.target_iid;
+                                            let target_type = n.target_type.clone();
+                                            let client_opt = app.gitlab_client.clone();
+                                            if let Some(client) = client_opt {
+                                                tokio::spawn(async move {
+                                                    let _ = gitlab::notifications::mark_notification_as_read(&client, &n_id).await;
+                                                });
+                                            }
+                                            app.active_tab = match target_type.as_str() {
+                                                "MergeRequest" => app::Tab::MergeRequests,
+                                                _ => app::Tab::Issues,
+                                            };
+                                            app.update_filter_selection();
+                                            match app.active_tab {
+                                                app::Tab::Issues => {
+                                                    if let Some(pos) = app
+                                                        .issues
+                                                        .items
+                                                        .iter()
+                                                        .position(|i| i.iid == target_iid)
+                                                    {
+                                                        app.issues.state.select(Some(pos));
                                                     }
-                                                    app::Tab::MergeRequests => {
-                                                        if let Some(pos) = app.mrs.items.iter().position(|m| m.iid == target_iid) {
-                                                            app.mrs.state.select(Some(pos));
-                                                        }
-                                                    }
-                                                    _ => {}
                                                 }
+                                                app::Tab::MergeRequests => {
+                                                    if let Some(pos) = app
+                                                        .mrs
+                                                        .items
+                                                        .iter()
+                                                        .position(|m| m.iid == target_iid)
+                                                    {
+                                                        app.mrs.state.select(Some(pos));
+                                                    }
+                                                }
+                                                _ => {}
                                             }
                                         }
-                                    }
-                                    app::Tab::Pipelines => {
-                                        if let Some(idx) = app.pipelines.state.selected() {
-                                            let pipe_id = app.filtered_pipelines().get(idx).map(|p| p.id);
-                                            if let Some(pipeline_id) = pipe_id {
-                                                if let Some(client) = &app.gitlab_client {
-                                                    app.loading_tabs.insert(app::Tab::Jobs);
-                                                    if let Ok(jobs) = gitlab::pipelines::list_pipeline_jobs(client, &app.project_context, pipeline_id).await {
-                                                        app.pipeline_jobs.insert(pipeline_id, jobs.clone());
-                                                        app.selected_pipeline_jobs = Some(jobs);
-                                                        app.active_pipeline_id = Some(pipeline_id);
-                                                        app.selected_job_index = Some(0);
-                                                        app.jobs_list_state.select(Some(0));
-                                                        app.job_trace_scroll = 0;
-                                                        app.job_trace = None;
-                                                        app.active_tab = app::Tab::Jobs;
-                                                        app.loading_tabs.remove(&app::Tab::Jobs);
-                                                    } else {
-                                                        app.error_message = Some("Failed to fetch jobs".to_string());
-                                                        app.loading_tabs.remove(&app::Tab::Jobs);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    app::Tab::Jobs => {
-                                        if app.job_trace.is_some() {
-                                            app.details_zoomed = !app.details_zoomed;
-                                        } else if let Some(idx) = app.selected_job_index {
-                                            let job_info = app.filtered_jobs().get(idx).map(|j| (j.id, j.name.clone()));
-                                            if let Some((job_id, _)) = job_info {
-                                                if let Some(client) = &app.gitlab_client {
-                                                    if let Ok(trace) = gitlab::pipelines::get_job_trace(client, &app.project_context, job_id).await {
-                                                        app.job_trace = Some(trace);
-                                                        app.job_trace_needs_scroll_to_bottom = true;
-                                                        app.details_zoomed = true;
-                                                    } else {
-                                                        app.error_message = Some("Failed to fetch job trace".to_string());
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        app.details_zoomed = !app.details_zoomed;
                                     }
                                 }
-                            }
-                            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
+                                app::Tab::Pipelines => {
+                                    if let Some(idx) = app.pipelines.state.selected() {
+                                        let pipe_id =
+                                            app.filtered_pipelines().get(idx).map(|p| p.id);
+                                        if let Some(pipeline_id) = pipe_id {
+                                            if let Some(client) = &app.gitlab_client {
+                                                app.loading_tabs.insert(app::Tab::Jobs);
+                                                if let Ok(jobs) =
+                                                    gitlab::pipelines::list_pipeline_jobs(
+                                                        client,
+                                                        &app.project_context,
+                                                        pipeline_id,
+                                                    )
+                                                    .await
+                                                {
+                                                    app.pipeline_jobs
+                                                        .insert(pipeline_id, jobs.clone());
+                                                    app.selected_pipeline_jobs = Some(jobs);
+                                                    app.active_pipeline_id = Some(pipeline_id);
+                                                    app.selected_job_index = Some(0);
+                                                    app.jobs_list_state.select(Some(0));
+                                                    app.job_trace_scroll = 0;
+                                                    app.job_trace = None;
+                                                    app.active_tab = app::Tab::Jobs;
+                                                    app.loading_tabs.remove(&app::Tab::Jobs);
+                                                } else {
+                                                    app.error_message =
+                                                        Some("Failed to fetch jobs".to_string());
+                                                    app.loading_tabs.remove(&app::Tab::Jobs);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                app::Tab::Jobs => {
+                                    if app.job_trace.is_some() {
+                                        app.details_zoomed = !app.details_zoomed;
+                                    } else if let Some(idx) = app.selected_job_index {
+                                        let job_info = app
+                                            .filtered_jobs()
+                                            .get(idx)
+                                            .map(|j| (j.id, j.name.clone()));
+                                        if let Some((job_id, _)) = job_info {
+                                            if let Some(client) = &app.gitlab_client {
+                                                if let Ok(trace) = gitlab::pipelines::get_job_trace(
+                                                    client,
+                                                    &app.project_context,
+                                                    job_id,
+                                                )
+                                                .await
+                                                {
+                                                    app.job_trace = Some(trace);
+                                                    app.job_trace_needs_scroll_to_bottom = true;
+                                                    app.details_zoomed = true;
+                                                } else {
+                                                    app.error_message = Some(
+                                                        "Failed to fetch job trace".to_string(),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    app.details_zoomed = !app.details_zoomed;
+                                }
+                            },
+                            KeyCode::Right | KeyCode::Char('l') => {
                                 app.next_tab();
                                 if let Some(client) = &app.gitlab_client {
-                                    if !app.loading_tabs.contains(&app.active_tab) && !app.refreshed_tabs.contains(&app.active_tab) {
+                                    if !app.loading_tabs.contains(&app.active_tab)
+                                        && !app.refreshed_tabs.contains(&app.active_tab)
+                                    {
                                         if !app.loaded_tabs.contains(&app.active_tab) {
                                             app.loading_tabs.insert(app.active_tab);
                                         }
-                                        spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                        spawn_refresh_active_tab(
+                                            client,
+                                            &app.project_context,
+                                            app.active_tab,
+                                            events.sender(),
+                                        );
                                     }
                                 }
                             }
-                            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
+                            KeyCode::Left | KeyCode::Char('h') => {
                                 app.previous_tab();
                                 if let Some(client) = &app.gitlab_client {
-                                    if !app.loading_tabs.contains(&app.active_tab) && !app.refreshed_tabs.contains(&app.active_tab) {
+                                    if !app.loading_tabs.contains(&app.active_tab)
+                                        && !app.refreshed_tabs.contains(&app.active_tab)
+                                    {
                                         if !app.loaded_tabs.contains(&app.active_tab) {
                                             app.loading_tabs.insert(app.active_tab);
                                         }
-                                        spawn_refresh_active_tab(client, &app.project_context, app.active_tab, events.sender());
+                                        spawn_refresh_active_tab(
+                                            client,
+                                            &app.project_context,
+                                            app.active_tab,
+                                            events.sender(),
+                                        );
                                     }
                                 }
                             }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                match app.active_tab {
-                                    app::Tab::Issues => {
-                                        app.issues.next(app.filtered_issues().len());
-                                        app.issues_scroll = 0;
-                                    }
-                                    app::Tab::MergeRequests => {
-                                        app.mrs.next(app.filtered_mrs().len());
-                                        app.mrs_scroll = 0;
-                                    }
-                                    app::Tab::Pipelines => {
-                                        app.pipelines.next(app.filtered_pipelines().len());
-                                    }
-                                    app::Tab::Jobs => {
-                                        if app.job_trace.is_some() {
-                                            app.job_trace_scroll = app.job_trace_scroll.saturating_add(1);
-                                        } else {
-                                            let len = app.filtered_jobs().len();
-                                            if let Some(idx) = &mut app.selected_job_index {
-                                                if len > 0 && *idx + 1 < len {
-                                                    *idx += 1;
-                                                    app.jobs_list_state.select(Some(*idx));
-                                                    app.job_trace = None;
-                                                }
+                            KeyCode::Down | KeyCode::Char('j') => match app.active_tab {
+                                app::Tab::Issues => {
+                                    app.issues.next(app.filtered_issues().len());
+                                    app.issues_scroll = 0;
+                                }
+                                app::Tab::MergeRequests => {
+                                    app.mrs.next(app.filtered_mrs().len());
+                                    app.mrs_scroll = 0;
+                                }
+                                app::Tab::Pipelines => {
+                                    app.pipelines.next(app.filtered_pipelines().len());
+                                }
+                                app::Tab::Jobs => {
+                                    if app.job_trace.is_some() {
+                                        app.job_trace_scroll =
+                                            app.job_trace_scroll.saturating_add(1);
+                                    } else {
+                                        let len = app.filtered_jobs().len();
+                                        if let Some(idx) = &mut app.selected_job_index {
+                                            if len > 0 && *idx + 1 < len {
+                                                *idx += 1;
+                                                app.jobs_list_state.select(Some(*idx));
+                                                app.job_trace = None;
                                             }
                                         }
                                     }
-                                    app::Tab::Runners => app.runners.next(app.filtered_runners().len()),
-                                    app::Tab::Releases => app.releases.next(app.filtered_releases().len()),
-                                    app::Tab::Notifications => app.notifications.next(app.filtered_notifications().len()),
                                 }
-                            }
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                match app.active_tab {
-                                    app::Tab::Issues => {
-                                        app.issues.previous(app.filtered_issues().len());
-                                        app.issues_scroll = 0;
-                                    }
-                                    app::Tab::MergeRequests => {
-                                        app.mrs.previous(app.filtered_mrs().len());
-                                        app.mrs_scroll = 0;
-                                    }
-                                    app::Tab::Pipelines => {
-                                        app.pipelines.previous(app.filtered_pipelines().len());
-                                    }
-                                    app::Tab::Jobs => {
-                                        if app.job_trace.is_some() {
-                                            app.job_trace_scroll = app.job_trace_scroll.saturating_sub(1);
-                                        } else {
-                                            if let Some(idx) = &mut app.selected_job_index {
-                                                if *idx > 0 {
-                                                    *idx -= 1;
-                                                    app.jobs_list_state.select(Some(*idx));
-                                                    app.job_trace = None;
-                                                }
+                                app::Tab::Runners => app.runners.next(app.filtered_runners().len()),
+                                app::Tab::Releases => {
+                                    app.releases.next(app.filtered_releases().len())
+                                }
+                                app::Tab::Notifications => {
+                                    app.notifications.next(app.filtered_notifications().len())
+                                }
+                            },
+                            KeyCode::Up | KeyCode::Char('k') => match app.active_tab {
+                                app::Tab::Issues => {
+                                    app.issues.previous(app.filtered_issues().len());
+                                    app.issues_scroll = 0;
+                                }
+                                app::Tab::MergeRequests => {
+                                    app.mrs.previous(app.filtered_mrs().len());
+                                    app.mrs_scroll = 0;
+                                }
+                                app::Tab::Pipelines => {
+                                    app.pipelines.previous(app.filtered_pipelines().len());
+                                }
+                                app::Tab::Jobs => {
+                                    if app.job_trace.is_some() {
+                                        app.job_trace_scroll =
+                                            app.job_trace_scroll.saturating_sub(1);
+                                    } else {
+                                        if let Some(idx) = &mut app.selected_job_index {
+                                            if *idx > 0 {
+                                                *idx -= 1;
+                                                app.jobs_list_state.select(Some(*idx));
+                                                app.job_trace = None;
                                             }
                                         }
                                     }
-                                    app::Tab::Runners => app.runners.previous(app.filtered_runners().len()),
-                                    app::Tab::Releases => app.releases.previous(app.filtered_releases().len()),
-                                    app::Tab::Notifications => app.notifications.previous(app.filtered_notifications().len()),
                                 }
-                            }
+                                app::Tab::Runners => {
+                                    app.runners.previous(app.filtered_runners().len())
+                                }
+                                app::Tab::Releases => {
+                                    app.releases.previous(app.filtered_releases().len())
+                                }
+                                app::Tab::Notifications => app
+                                    .notifications
+                                    .previous(app.filtered_notifications().len()),
+                            },
                             _ => {}
                         }
                     }
@@ -2812,34 +3820,42 @@ mod tests {
     fn test_translate_glab_to_gh_issue_close() {
         let glab_args = vec!["issue", "close", "123"];
         let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(gh_args, vec!["issue".to_string(), "close".to_string(), "123".to_string()]);
+        assert_eq!(
+            gh_args,
+            vec!["issue".to_string(), "close".to_string(), "123".to_string()]
+        );
     }
 
     #[test]
     fn test_translate_glab_to_gh_issue_create() {
         let glab_args = vec!["issue", "create", "--title", "Bug report"];
         let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(gh_args, vec![
-            "issue".to_string(),
-            "create".to_string(),
-            "--title".to_string(),
-            "Bug report".to_string(),
-            "--body".to_string(),
-            "".to_string()
-        ]);
+        assert_eq!(
+            gh_args,
+            vec![
+                "issue".to_string(),
+                "create".to_string(),
+                "--title".to_string(),
+                "Bug report".to_string(),
+                "--body".to_string(),
+                "".to_string()
+            ]
+        );
     }
 
     #[test]
     fn test_translate_glab_to_gh_mr_create_with_issue() {
         let glab_args = vec!["mr", "create", "-i", "123", "--copy-issue-labels"];
         let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(gh_args, vec![
-            "pr".to_string(),
-            "create".to_string(),
-            "--fill".to_string(),
-            "--body".to_string(),
-            "Resolves #123".to_string()
-        ]);
+        assert_eq!(
+            gh_args,
+            vec![
+                "pr".to_string(),
+                "create".to_string(),
+                "--fill".to_string(),
+                "--body".to_string(),
+                "Resolves #123".to_string()
+            ]
+        );
     }
 }
-

@@ -1,7 +1,7 @@
 use crate::utils::ui::StatefulTable;
-use ratatui::widgets::{ListState, TableState};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use ratatui::widgets::{ListState, TableState};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tab {
@@ -29,12 +29,60 @@ impl Tab {
     pub fn title(&self, is_github: bool) -> &'static str {
         match self {
             Tab::Issues => "Issues",
-            Tab::MergeRequests => if is_github { "PRs" } else { "MRs" },
+            Tab::MergeRequests => {
+                if is_github {
+                    "PRs"
+                } else {
+                    "MRs"
+                }
+            }
             Tab::Pipelines => "Pipelines",
             Tab::Jobs => "Jobs",
             Tab::Runners => "Runners",
             Tab::Releases => "Releases",
             Tab::Notifications => "Notifications",
+        }
+    }
+
+    pub fn columns(&self) -> Vec<&'static str> {
+        match self {
+            Tab::Issues => vec![
+                "ID",
+                "State",
+                "Title",
+                "Assignees",
+                "Labels",
+                "Milestone",
+                "Author",
+            ],
+            Tab::MergeRequests => vec![
+                "ID",
+                "State",
+                "Status",
+                "Title",
+                "Assignees",
+                "Reviewers",
+                "Labels",
+                "Milestone",
+                "Author",
+            ],
+            Tab::Pipelines => vec!["ID", "Status", "Stages", "Ref"],
+            Tab::Jobs => vec!["ID", "Stage", "Status", "Name", "Matrix"],
+            Tab::Runners => vec!["ID", "Description", "Status", "Active"],
+            Tab::Releases => vec!["Tag", "Release Name", "Date"],
+            Tab::Notifications => vec!["State", "Project", "Type", "ID", "Title"],
+        }
+    }
+
+    pub fn default_columns(&self) -> Vec<&'static str> {
+        match self {
+            Tab::Issues => vec!["ID", "State", "Title", "Labels"],
+            Tab::MergeRequests => vec!["ID", "State", "Status", "Title", "Labels"],
+            Tab::Pipelines => vec!["ID", "Status", "Stages", "Ref"],
+            Tab::Jobs => vec!["ID", "Stage", "Status", "Name", "Matrix"],
+            Tab::Runners => vec!["ID", "Description", "Status", "Active"],
+            Tab::Releases => vec!["Tag", "Release Name", "Date"],
+            Tab::Notifications => vec!["State", "Project", "Type", "ID", "Title"],
         }
     }
 }
@@ -69,20 +117,33 @@ impl Selector {
     pub fn get_filtered_items_with_indices(&self) -> Vec<(String, Option<Vec<usize>>)> {
         let query = self.search_query.trim();
         let mut items: Vec<(String, Option<Vec<usize>>)> = if query.is_empty() {
-            self.all_items.iter().map(|item| (item.clone(), None)).collect()
+            self.all_items
+                .iter()
+                .map(|item| (item.clone(), None))
+                .collect()
         } else {
             let matcher = SkimMatcherV2::default();
-            let mut scored: Vec<(String, Vec<usize>, i64)> = self.all_items.iter()
+            let mut scored: Vec<(String, Vec<usize>, i64)> = self
+                .all_items
+                .iter()
                 .filter_map(|item| {
-                    matcher.fuzzy_indices(item, query).map(|(score, indices)| (item.clone(), indices, score))
+                    matcher
+                        .fuzzy_indices(item, query)
+                        .map(|(score, indices)| (item.clone(), indices, score))
                 })
                 .collect();
             scored.sort_by(|a, b| b.2.cmp(&a.2));
-            scored.into_iter().map(|(item, indices, _)| (item, Some(indices))).collect()
+            scored
+                .into_iter()
+                .map(|(item, indices, _)| (item, Some(indices)))
+                .collect()
         };
-            
+
         if !query.is_empty() {
-            let exact_match = self.all_items.iter().any(|item| item.to_lowercase() == query.to_lowercase());
+            let exact_match = self
+                .all_items
+                .iter()
+                .any(|item| item.to_lowercase() == query.to_lowercase());
             if !exact_match {
                 items.insert(0, (format!("+ Create \"{}\"", query), None));
             }
@@ -91,7 +152,10 @@ impl Selector {
     }
 
     pub fn get_filtered_items(&self) -> Vec<String> {
-        self.get_filtered_items_with_indices().into_iter().map(|(item, _)| item).collect()
+        self.get_filtered_items_with_indices()
+            .into_iter()
+            .map(|(item, _)| item)
+            .collect()
     }
 }
 
@@ -175,7 +239,11 @@ impl DiffTreeNode {
 
     pub fn flatten(&self, depth: usize, prefix: &str, out: &mut Vec<FlatDiffTreeNode>) {
         match self {
-            DiffTreeNode::Directory { name, is_expanded, children } => {
+            DiffTreeNode::Directory {
+                name,
+                is_expanded,
+                children,
+            } => {
                 let path_id = if prefix.is_empty() {
                     name.clone()
                 } else {
@@ -195,8 +263,14 @@ impl DiffTreeNode {
                 if name == "root" || *is_expanded {
                     let mut sorted_children = children.clone();
                     sorted_children.sort_by(|a, b| {
-                        let a_is_dir = match a { DiffTreeNode::Directory { .. } => true, _ => false };
-                        let b_is_dir = match b { DiffTreeNode::Directory { .. } => true, _ => false };
+                        let a_is_dir = match a {
+                            DiffTreeNode::Directory { .. } => true,
+                            _ => false,
+                        };
+                        let b_is_dir = match b {
+                            DiffTreeNode::Directory { .. } => true,
+                            _ => false,
+                        };
                         b_is_dir.cmp(&a_is_dir).then_with(|| a.name().cmp(b.name()))
                     });
                     for child in sorted_children {
@@ -204,7 +278,11 @@ impl DiffTreeNode {
                     }
                 }
             }
-            DiffTreeNode::File { name, file_path, line_idx } => {
+            DiffTreeNode::File {
+                name,
+                file_path,
+                line_idx,
+            } => {
                 let path_id = if prefix.is_empty() {
                     name.clone()
                 } else {
@@ -232,7 +310,11 @@ impl DiffTreeNode {
 
     pub fn toggle_expanded(&mut self, target_path_id: &str, current_prefix: &str) -> bool {
         match self {
-            DiffTreeNode::Directory { name, is_expanded, children } => {
+            DiffTreeNode::Directory {
+                name,
+                is_expanded,
+                children,
+            } => {
                 let path_id = if current_prefix.is_empty() {
                     name.clone()
                 } else {
@@ -317,7 +399,8 @@ impl DiffView {
             if line.starts_with("diff --git") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 4 {
-                    detected_file = Some(parts[3].strip_prefix("b/").unwrap_or(parts[3]).to_string());
+                    detected_file =
+                        Some(parts[3].strip_prefix("b/").unwrap_or(parts[3]).to_string());
                 }
             } else if line.starts_with("--- ") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
@@ -357,7 +440,10 @@ impl DiffView {
                 });
                 old_line_num = None;
                 new_line_num = None;
-            } else if line.starts_with("--- ") || line.starts_with("+++ ") || line.starts_with("index ") {
+            } else if line.starts_with("--- ")
+                || line.starts_with("+++ ")
+                || line.starts_with("index ")
+            {
                 all_lines.push(DiffLine {
                     content: line.to_string(),
                     line_type: DiffLineType::Meta,
@@ -454,7 +540,10 @@ impl DiffView {
     pub fn update_active_lines(&mut self) {
         if self.visible_nodes.is_empty() {
             self.lines = self.all_lines.clone();
-            self.hunks = self.lines.iter().enumerate()
+            self.hunks = self
+                .lines
+                .iter()
+                .enumerate()
                 .filter(|(_, l)| l.line_type == DiffLineType::HunkHeader)
                 .map(|(i, _)| i)
                 .collect();
@@ -465,7 +554,10 @@ impl DiffView {
         let rel_path = if selected_node.path_id == "root" {
             ""
         } else {
-            selected_node.path_id.strip_prefix("root/").unwrap_or(&selected_node.path_id)
+            selected_node
+                .path_id
+                .strip_prefix("root/")
+                .unwrap_or(&selected_node.path_id)
         };
 
         let new_lines = if selected_node.is_dir {
@@ -474,14 +566,20 @@ impl DiffView {
             } else {
                 let prefix1 = format!("{}/", rel_path);
                 let prefix2 = format!("{}\\", rel_path);
-                self.all_lines.iter()
-                    .filter(|line| line.file_path.starts_with(&prefix1) || line.file_path.starts_with(&prefix2) || &line.file_path == rel_path)
+                self.all_lines
+                    .iter()
+                    .filter(|line| {
+                        line.file_path.starts_with(&prefix1)
+                            || line.file_path.starts_with(&prefix2)
+                            || &line.file_path == rel_path
+                    })
                     .cloned()
                     .collect()
             }
         } else {
             if !rel_path.is_empty() {
-                self.all_lines.iter()
+                self.all_lines
+                    .iter()
                     .filter(|line| &line.file_path == rel_path)
                     .cloned()
                     .collect()
@@ -491,7 +589,10 @@ impl DiffView {
         };
 
         self.lines = new_lines;
-        self.hunks = self.lines.iter().enumerate()
+        self.hunks = self
+            .lines
+            .iter()
+            .enumerate()
             .filter(|(_, l)| l.line_type == DiffLineType::HunkHeader)
             .map(|(i, _)| i)
             .collect();
@@ -504,7 +605,12 @@ impl DiffView {
         if let Some(line) = self.lines.get(self.cursor_idx) {
             let active_path = &line.file_path;
             if let Some(pos) = self.visible_nodes.iter().position(|node| {
-                !node.is_dir && node.file_path.as_ref().map(|p| p == active_path).unwrap_or(false)
+                !node.is_dir
+                    && node
+                        .file_path
+                        .as_ref()
+                        .map(|p| p == active_path)
+                        .unwrap_or(false)
             }) {
                 self.selected_visible_idx = pos;
             }
@@ -517,7 +623,7 @@ fn parse_hunk_header(header: &str) -> Option<(u32, u32)> {
     if parts.len() >= 3 {
         let old_part = parts[1].strip_prefix('-')?;
         let new_part = parts[2].strip_prefix('+')?;
-        
+
         let old_start = old_part.split(',').next()?.parse::<u32>().ok()?;
         let new_start = new_part.split(',').next()?.parse::<u32>().ok()?;
         Some((old_start, new_start))
@@ -591,15 +697,7 @@ pub struct App {
     pub status_message: Option<String>,
     pub refreshed_tabs: std::collections::HashSet<Tab>,
     pub tx: Option<tokio::sync::mpsc::UnboundedSender<crate::event::Event>>,
-    pub show_issue_assignees: bool,
-    pub show_issue_labels: bool,
-    pub show_issue_milestone: bool,
-    pub show_issue_author: bool,
-    pub show_mr_assignees: bool,
-    pub show_mr_reviewers: bool,
-    pub show_mr_labels: bool,
-    pub show_mr_milestone: bool,
-    pub show_mr_author: bool,
+    pub enabled_columns: std::collections::HashMap<Tab, std::collections::HashSet<String>>,
     pub focus_column_checklist: bool,
     pub column_checklist_idx: usize,
 }
@@ -646,15 +744,18 @@ impl Default for App {
             status_message: None,
             refreshed_tabs: std::collections::HashSet::new(),
             tx: None,
-            show_issue_assignees: false,
-            show_issue_labels: true,
-            show_issue_milestone: false,
-            show_issue_author: false,
-            show_mr_assignees: false,
-            show_mr_reviewers: false,
-            show_mr_labels: true,
-            show_mr_milestone: false,
-            show_mr_author: false,
+            enabled_columns: {
+                let mut ec = std::collections::HashMap::new();
+                for tab in Tab::ALL {
+                    let set: std::collections::HashSet<String> = tab
+                        .default_columns()
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
+                    ec.insert(tab, set);
+                }
+                ec
+            },
             focus_column_checklist: false,
             column_checklist_idx: 0,
         }
@@ -662,6 +763,13 @@ impl Default for App {
 }
 
 impl App {
+    pub fn is_column_visible(&self, tab: Tab, col: &str) -> bool {
+        if let Some(set) = self.enabled_columns.get(&tab) {
+            set.contains(col)
+        } else {
+            true
+        }
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -673,7 +781,10 @@ impl App {
     }
 
     pub fn next_tab(&mut self) {
-        let current_index = Tab::ALL.iter().position(|t| t == &self.active_tab).unwrap_or(0);
+        let current_index = Tab::ALL
+            .iter()
+            .position(|t| t == &self.active_tab)
+            .unwrap_or(0);
         let next_index = (current_index + 1) % Tab::ALL.len();
         self.active_tab = Tab::ALL[next_index];
         self.selected_pipelines.clear();
@@ -683,7 +794,10 @@ impl App {
     }
 
     pub fn previous_tab(&mut self) {
-        let current_index = Tab::ALL.iter().position(|t| t == &self.active_tab).unwrap_or(0);
+        let current_index = Tab::ALL
+            .iter()
+            .position(|t| t == &self.active_tab)
+            .unwrap_or(0);
         let prev_index = if current_index == 0 {
             Tab::ALL.len() - 1
         } else {
@@ -696,16 +810,20 @@ impl App {
         self.update_filter_selection();
     }
 
-    pub fn filter_issues_list<'a>(items: &'a [crate::gitlab::issues::Issue], query: &str) -> Vec<&'a crate::gitlab::issues::Issue> {
+    pub fn filter_issues_list<'a>(
+        items: &'a [crate::gitlab::issues::Issue],
+        query: &str,
+        enabled_cols: &std::collections::HashSet<String>,
+    ) -> Vec<&'a crate::gitlab::issues::Issue> {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
         let matcher = SkimMatcherV2::default();
         let mut scored_items = Vec::new();
-        
+
         for item in items {
             let mut best_score = None;
-            
+
             let mut check_match = |text: &str| {
                 if let Some(score) = matcher.fuzzy_match(text, query) {
                     if best_score.is_none() || Some(score) > best_score {
@@ -713,57 +831,74 @@ impl App {
                     }
                 }
             };
-            
-            check_match(&format!("#{}", item.iid));
-            check_match(&item.iid.to_string());
-            if item.state == "opened" {
-                check_match("OPEN");
-            } else if item.state == "closed" {
-                check_match("CLOSED");
+
+            if enabled_cols.contains("ID") {
+                check_match(&format!("#{}", item.iid));
+                check_match(&item.iid.to_string());
             }
-            check_match(&item.title);
-            check_match(&item.author.username);
-            check_match(&format!("@{}", item.author.username));
-            check_match(&crate::utils::format::time_ago(&item.updated_at));
-            check_match(&item.updated_at);
-            
-            if let Some(m) = &item.milestone {
-                check_match(&m.title);
+            if enabled_cols.contains("State") {
+                if item.state == "opened" {
+                    check_match("OPEN");
+                } else if item.state == "closed" {
+                    check_match("CLOSED");
+                }
             }
-            for label in &item.labels {
-                check_match(label);
+            if enabled_cols.contains("Title") {
+                check_match(&item.title);
             }
-            for assignee in &item.assignees {
-                check_match(&assignee.username);
-                check_match(&format!("@{}", assignee.username));
+            if enabled_cols.contains("Author") {
+                check_match(&item.author.username);
+                check_match(&format!("@{}", item.author.username));
             }
-            if let Some(desc) = &item.description {
-                check_match(desc);
+            if enabled_cols.contains("Milestone") {
+                if let Some(m) = &item.milestone {
+                    check_match(&m.title);
+                }
             }
-            
+            if enabled_cols.contains("Labels") {
+                for label in &item.labels {
+                    check_match(label);
+                }
+            }
+            if enabled_cols.contains("Assignees") {
+                for assignee in &item.assignees {
+                    check_match(&assignee.username);
+                    check_match(&format!("@{}", assignee.username));
+                }
+            }
+
             if let Some(score) = best_score {
                 scored_items.push((item, score));
             }
         }
-        
+
         scored_items.sort_by(|a, b| b.1.cmp(&a.1));
         scored_items.into_iter().map(|(item, _)| item).collect()
     }
 
     pub fn filtered_issues(&self) -> Vec<&crate::gitlab::issues::Issue> {
-        Self::filter_issues_list(&self.issues.items, &self.search_query)
+        let default_set = std::collections::HashSet::new();
+        let enabled_cols = self
+            .enabled_columns
+            .get(&Tab::Issues)
+            .unwrap_or(&default_set);
+        Self::filter_issues_list(&self.issues.items, &self.search_query, enabled_cols)
     }
 
-    pub fn filter_mrs_list<'a>(items: &'a [crate::gitlab::mr::MergeRequest], query: &str) -> Vec<&'a crate::gitlab::mr::MergeRequest> {
+    pub fn filter_mrs_list<'a>(
+        items: &'a [crate::gitlab::mr::MergeRequest],
+        query: &str,
+        enabled_cols: &std::collections::HashSet<String>,
+    ) -> Vec<&'a crate::gitlab::mr::MergeRequest> {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
         let matcher = SkimMatcherV2::default();
         let mut scored_items = Vec::new();
-        
+
         for item in items {
             let mut best_score = None;
-            
+
             let mut check_match = |text: &str| {
                 if let Some(score) = matcher.fuzzy_match(text, query) {
                     if best_score.is_none() || Some(score) > best_score {
@@ -771,74 +906,92 @@ impl App {
                     }
                 }
             };
-            
-            check_match(&format!("!{}", item.iid));
-            check_match(&item.iid.to_string());
-            if item.state == "opened" {
-                check_match("OPEN");
-            } else if item.state == "merged" {
-                check_match("MERGED");
-            } else if item.state == "closed" {
-                check_match("CLOSED");
+
+            if enabled_cols.contains("ID") {
+                check_match(&format!("!{}", item.iid));
+                check_match(&item.iid.to_string());
             }
-            let (prefix, _) = crate::utils::format::parse_mr_title_prefix(&item.title);
-            if item.draft || prefix.to_lowercase() == "wip" || prefix.to_lowercase() == "draft" {
-                check_match("DRAFT");
-            } else {
-                check_match("READY");
+            if enabled_cols.contains("State") {
+                if item.state == "opened" {
+                    check_match("OPEN");
+                } else if item.state == "merged" {
+                    check_match("MERGED");
+                } else if item.state == "closed" {
+                    check_match("CLOSED");
+                }
             }
-            check_match(&item.title);
-            check_match(&item.author.username);
-            check_match(&format!("@{}", item.author.username));
-            check_match(&crate::utils::format::time_ago(&item.updated_at));
-            check_match(&item.updated_at);
-            
-            if let Some(ms) = &item.milestone {
-                check_match(&ms.title);
+            if enabled_cols.contains("Status") {
+                let (prefix, _) = crate::utils::format::parse_mr_title_prefix(&item.title);
+                if item.draft || prefix.to_lowercase() == "wip" || prefix.to_lowercase() == "draft"
+                {
+                    check_match("DRAFT");
+                } else {
+                    check_match("READY");
+                }
             }
-            check_match(&item.target_branch);
-            for label in &item.labels {
-                check_match(label);
+            if enabled_cols.contains("Title") {
+                check_match(&item.title);
             }
-            for assignee in &item.assignees {
-                check_match(&assignee.username);
-                check_match(&format!("@{}", assignee.username));
+            if enabled_cols.contains("Author") {
+                check_match(&item.author.username);
+                check_match(&format!("@{}", item.author.username));
             }
-            for reviewer in &item.reviewers {
-                check_match(&reviewer.username);
-                check_match(&format!("@{}", reviewer.username));
+            if enabled_cols.contains("Milestone") {
+                if let Some(ms) = &item.milestone {
+                    check_match(&ms.title);
+                }
             }
-            if let Some(desc) = &item.description {
-                check_match(desc);
+            if enabled_cols.contains("Labels") {
+                for label in &item.labels {
+                    check_match(label);
+                }
             }
-            
+            if enabled_cols.contains("Assignees") {
+                for assignee in &item.assignees {
+                    check_match(&assignee.username);
+                    check_match(&format!("@{}", assignee.username));
+                }
+            }
+            if enabled_cols.contains("Reviewers") {
+                for reviewer in &item.reviewers {
+                    check_match(&reviewer.username);
+                    check_match(&format!("@{}", reviewer.username));
+                }
+            }
+
             if let Some(score) = best_score {
                 scored_items.push((item, score));
             }
         }
-        
+
         scored_items.sort_by(|a, b| b.1.cmp(&a.1));
         scored_items.into_iter().map(|(item, _)| item).collect()
     }
 
     pub fn filtered_mrs(&self) -> Vec<&crate::gitlab::mr::MergeRequest> {
-        Self::filter_mrs_list(&self.mrs.items, &self.search_query)
+        let default_set = std::collections::HashSet::new();
+        let enabled_cols = self
+            .enabled_columns
+            .get(&Tab::MergeRequests)
+            .unwrap_or(&default_set);
+        Self::filter_mrs_list(&self.mrs.items, &self.search_query, enabled_cols)
     }
 
     pub fn filter_pipelines_list<'a>(
         items: &'a [crate::gitlab::pipelines::Pipeline],
         query: &str,
         pipeline_jobs: &std::collections::HashMap<u64, Vec<crate::gitlab::pipelines::Job>>,
+        enabled_cols: &std::collections::HashSet<String>,
     ) -> Vec<&'a crate::gitlab::pipelines::Pipeline> {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
         let matcher = SkimMatcherV2::default();
         let mut scored_items = Vec::new();
-        
+
         for item in items {
             let mut best_score = None;
-            
+
             let mut check_match = |text: &str| {
                 if let Some(score) = matcher.fuzzy_match(text, query) {
                     if best_score.is_none() || Some(score) > best_score {
@@ -846,38 +999,54 @@ impl App {
                     }
                 }
             };
-            
-            check_match(&format!("#{}", item.id));
-            check_match(&item.id.to_string());
-            check_match(&item.status);
-            check_match(&item.r#ref);
-            check_match(&crate::utils::format::time_ago(&item.updated_at));
-            check_match(&item.updated_at);
-            
-            if let Some(jobs) = pipeline_jobs.get(&item.id) {
-                for job in jobs {
-                    check_match(&job.name);
-                    check_match(&job.stage);
-                    check_match(&job.status);
+
+            if enabled_cols.contains("ID") {
+                check_match(&format!("#{}", item.id));
+                check_match(&item.id.to_string());
+            }
+            if enabled_cols.contains("Status") {
+                check_match(&item.status);
+            }
+            if enabled_cols.contains("Ref") {
+                check_match(&item.r#ref);
+            }
+            if enabled_cols.contains("Stages") {
+                if let Some(jobs) = pipeline_jobs.get(&item.id) {
+                    for job in jobs {
+                        check_match(&job.name);
+                        check_match(&job.stage);
+                        check_match(&job.status);
+                    }
                 }
             }
-            
+
             if let Some(score) = best_score {
                 scored_items.push((item, score));
             }
         }
-        
+
         scored_items.sort_by(|a, b| b.1.cmp(&a.1));
         scored_items.into_iter().map(|(item, _)| item).collect()
     }
 
     pub fn filtered_pipelines(&self) -> Vec<&crate::gitlab::pipelines::Pipeline> {
-        Self::filter_pipelines_list(&self.pipelines.items, &self.search_query, &self.pipeline_jobs)
+        let default_set = std::collections::HashSet::new();
+        let enabled_cols = self
+            .enabled_columns
+            .get(&Tab::Pipelines)
+            .unwrap_or(&default_set);
+        Self::filter_pipelines_list(
+            &self.pipelines.items,
+            &self.search_query,
+            &self.pipeline_jobs,
+            enabled_cols,
+        )
     }
 
     pub fn filter_jobs_list<'a>(
         items: &'a [crate::gitlab::pipelines::Job],
         query: &str,
+        enabled_cols: &std::collections::HashSet<String>,
     ) -> Vec<&'a crate::gitlab::pipelines::Job> {
         if query.trim().is_empty() {
             return items.iter().collect();
@@ -893,10 +1062,23 @@ impl App {
                     }
                 }
             };
-            check_match(&item.id.to_string());
-            check_match(&item.status);
-            check_match(&item.stage);
-            check_match(&item.name);
+            if enabled_cols.contains("ID") {
+                check_match(&item.id.to_string());
+            }
+            if enabled_cols.contains("Status") {
+                check_match(&item.status);
+            }
+            if enabled_cols.contains("Stage") {
+                check_match(&item.stage);
+            }
+            if enabled_cols.contains("Name") {
+                check_match(&item.name);
+            }
+            if enabled_cols.contains("Matrix") {
+                if let Some(matrix) = &item.matrix {
+                    check_match(matrix);
+                }
+            }
             if let Some(score) = best_score {
                 scored_items.push((item, score));
             }
@@ -907,22 +1089,28 @@ impl App {
 
     pub fn filtered_jobs(&self) -> Vec<&crate::gitlab::pipelines::Job> {
         if let Some(jobs) = &self.selected_pipeline_jobs {
-            Self::filter_jobs_list(jobs, &self.search_query)
+            let default_set = std::collections::HashSet::new();
+            let enabled_cols = self.enabled_columns.get(&Tab::Jobs).unwrap_or(&default_set);
+            Self::filter_jobs_list(jobs, &self.search_query, enabled_cols)
         } else {
             vec![]
         }
     }
 
-    pub fn filter_runners_list<'a>(items: &'a [crate::gitlab::runners::Runner], query: &str) -> Vec<&'a crate::gitlab::runners::Runner> {
+    pub fn filter_runners_list<'a>(
+        items: &'a [crate::gitlab::runners::Runner],
+        query: &str,
+        enabled_cols: &std::collections::HashSet<String>,
+    ) -> Vec<&'a crate::gitlab::runners::Runner> {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
         let matcher = SkimMatcherV2::default();
         let mut scored_items = Vec::new();
-        
+
         for item in items {
             let mut best_score = None;
-            
+
             let mut check_match = |text: &str| {
                 if let Some(score) = matcher.fuzzy_match(text, query) {
                     if best_score.is_none() || Some(score) > best_score {
@@ -930,39 +1118,56 @@ impl App {
                     }
                 }
             };
-            
-            check_match(&item.id.to_string());
-            if let Some(desc) = &item.description {
-                check_match(desc);
+
+            if enabled_cols.contains("ID") {
+                check_match(&item.id.to_string());
             }
-            check_match(&item.status);
-            let active_str = if item.active { "active" } else { "inactive" };
-            check_match(active_str);
-            check_match(&item.active.to_string());
-            
+            if enabled_cols.contains("Description") {
+                if let Some(desc) = &item.description {
+                    check_match(desc);
+                }
+            }
+            if enabled_cols.contains("Status") {
+                check_match(&item.status);
+            }
+            if enabled_cols.contains("Active") {
+                let active_str = if item.active { "active" } else { "inactive" };
+                check_match(active_str);
+                check_match(&item.active.to_string());
+            }
+
             if let Some(score) = best_score {
                 scored_items.push((item, score));
             }
         }
-        
+
         scored_items.sort_by(|a, b| b.1.cmp(&a.1));
         scored_items.into_iter().map(|(item, _)| item).collect()
     }
 
     pub fn filtered_runners(&self) -> Vec<&crate::gitlab::runners::Runner> {
-        Self::filter_runners_list(&self.runners.items, &self.search_query)
+        let default_set = std::collections::HashSet::new();
+        let enabled_cols = self
+            .enabled_columns
+            .get(&Tab::Runners)
+            .unwrap_or(&default_set);
+        Self::filter_runners_list(&self.runners.items, &self.search_query, enabled_cols)
     }
 
-    pub fn filter_releases_list<'a>(items: &'a [crate::gitlab::releases::Release], query: &str) -> Vec<&'a crate::gitlab::releases::Release> {
+    pub fn filter_releases_list<'a>(
+        items: &'a [crate::gitlab::releases::Release],
+        query: &str,
+        enabled_cols: &std::collections::HashSet<String>,
+    ) -> Vec<&'a crate::gitlab::releases::Release> {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
         let matcher = SkimMatcherV2::default();
         let mut scored_items = Vec::new();
-        
+
         for item in items {
             let mut best_score = None;
-            
+
             let mut check_match = |text: &str| {
                 if let Some(score) = matcher.fuzzy_match(text, query) {
                     if best_score.is_none() || Some(score) > best_score {
@@ -970,35 +1175,50 @@ impl App {
                     }
                 }
             };
-            
-            check_match(&item.tag_name);
-            check_match(&item.name);
-            check_match(&item.released_at);
-            check_match(&crate::utils::format::time_ago(&item.released_at));
-            
+
+            if enabled_cols.contains("Tag") {
+                check_match(&item.tag_name);
+            }
+            if enabled_cols.contains("Release Name") {
+                check_match(&item.name);
+            }
+            if enabled_cols.contains("Date") {
+                check_match(&item.released_at);
+                check_match(&crate::utils::format::time_ago(&item.released_at));
+            }
+
             if let Some(score) = best_score {
                 scored_items.push((item, score));
             }
         }
-        
+
         scored_items.sort_by(|a, b| b.1.cmp(&a.1));
         scored_items.into_iter().map(|(item, _)| item).collect()
     }
 
     pub fn filtered_releases(&self) -> Vec<&crate::gitlab::releases::Release> {
-        Self::filter_releases_list(&self.releases.items, &self.search_query)
+        let default_set = std::collections::HashSet::new();
+        let enabled_cols = self
+            .enabled_columns
+            .get(&Tab::Releases)
+            .unwrap_or(&default_set);
+        Self::filter_releases_list(&self.releases.items, &self.search_query, enabled_cols)
     }
 
-    pub fn filter_notifications_list<'a>(items: &'a [crate::gitlab::notifications::Notification], query: &str) -> Vec<&'a crate::gitlab::notifications::Notification> {
+    pub fn filter_notifications_list<'a>(
+        items: &'a [crate::gitlab::notifications::Notification],
+        query: &str,
+        enabled_cols: &std::collections::HashSet<String>,
+    ) -> Vec<&'a crate::gitlab::notifications::Notification> {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
         let matcher = SkimMatcherV2::default();
         let mut scored_items = Vec::new();
-        
+
         for item in items {
             let mut best_score = None;
-            
+
             let mut check_match = |text: &str| {
                 if let Some(score) = matcher.fuzzy_match(text, query) {
                     if best_score.is_none() || Some(score) > best_score {
@@ -1006,24 +1226,40 @@ impl App {
                     }
                 }
             };
-            
-            check_match(&item.title);
-            check_match(&item.project_path);
-            check_match(&item.target_type);
-            check_match(&item.state);
-            check_match(&item.updated_at);
-            
+
+            if enabled_cols.contains("State") {
+                check_match(&item.state);
+            }
+            if enabled_cols.contains("Project") {
+                check_match(&item.project_path);
+            }
+            if enabled_cols.contains("Type") {
+                check_match(&item.target_type);
+            }
+            if enabled_cols.contains("ID") {
+                check_match(&item.target_iid.to_string());
+                check_match(&format!("#{}", item.target_iid));
+            }
+            if enabled_cols.contains("Title") {
+                check_match(&item.title);
+            }
+
             if let Some(score) = best_score {
                 scored_items.push((item, score));
             }
         }
-        
+
         scored_items.sort_by(|a, b| b.1.cmp(&a.1));
         scored_items.into_iter().map(|(item, _)| item).collect()
     }
 
     pub fn filtered_notifications(&self) -> Vec<&crate::gitlab::notifications::Notification> {
-        Self::filter_notifications_list(&self.notifications.items, &self.search_query)
+        let default_set = std::collections::HashSet::new();
+        let enabled_cols = self
+            .enabled_columns
+            .get(&Tab::Notifications)
+            .unwrap_or(&default_set);
+        Self::filter_notifications_list(&self.notifications.items, &self.search_query, enabled_cols)
     }
 
     pub fn update_filter_selection(&mut self) {
@@ -1188,13 +1424,13 @@ mod tests {
 
     #[test]
     fn test_mr_fuzzy_status_matching() {
-        use crate::gitlab::mr::MergeRequest;
         use crate::gitlab::mr::Author;
-        
+        use crate::gitlab::mr::MergeRequest;
+
         let author = Author {
             username: "johndoe".to_string(),
         };
-        
+
         let mr_draft_meta = MergeRequest {
             iid: 1,
             title: "Some MR title".to_string(),
@@ -1244,20 +1480,25 @@ mod tests {
         };
 
         let items = vec![mr_draft_meta, mr_draft_title, mr_ready];
-        
+        let enabled_cols: std::collections::HashSet<String> = Tab::MergeRequests
+            .columns()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
         // Filter by "DRAFT"
-        let filtered_draft = App::filter_mrs_list(&items, "DRAFT");
+        let filtered_draft = App::filter_mrs_list(&items, "DRAFT", &enabled_cols);
         assert_eq!(filtered_draft.len(), 2);
         assert_eq!(filtered_draft[0].iid, 1);
         assert_eq!(filtered_draft[1].iid, 2);
 
         // Filter by "READY"
-        let filtered_ready = App::filter_mrs_list(&items, "READY");
+        let filtered_ready = App::filter_mrs_list(&items, "READY", &enabled_cols);
         assert_eq!(filtered_ready.len(), 1);
         assert_eq!(filtered_ready[0].iid, 3);
 
         // Filter by state "OPEN"
-        let filtered_open = App::filter_mrs_list(&items, "OPEN");
+        let filtered_open = App::filter_mrs_list(&items, "OPEN", &enabled_cols);
         assert_eq!(filtered_open.len(), 3);
         assert_eq!(filtered_open[0].iid, 1);
         assert_eq!(filtered_open[1].iid, 2);
@@ -1285,32 +1526,38 @@ index abcdef..ffffff 100644
 +main new line 1
 ";
         let mut diff_view = DiffView::new(42, diff_content.to_string());
-        
+
         // Check visible nodes (flattened tree)
         assert_eq!(diff_view.visible_nodes.len(), 3);
-        
+
         assert_eq!(diff_view.visible_nodes[0].name, "src");
         assert!(diff_view.visible_nodes[0].is_dir);
-        
+
         assert_eq!(diff_view.visible_nodes[1].name, "app.rs");
         assert!(!diff_view.visible_nodes[1].is_dir);
-        assert_eq!(diff_view.visible_nodes[1].file_path.as_deref(), Some("src/app.rs"));
+        assert_eq!(
+            diff_view.visible_nodes[1].file_path.as_deref(),
+            Some("src/app.rs")
+        );
         assert_eq!(diff_view.visible_nodes[1].line_idx, Some(0));
-        
+
         assert_eq!(diff_view.visible_nodes[2].name, "main.rs");
         assert!(!diff_view.visible_nodes[2].is_dir);
-        assert_eq!(diff_view.visible_nodes[2].file_path.as_deref(), Some("src/main.rs"));
+        assert_eq!(
+            diff_view.visible_nodes[2].file_path.as_deref(),
+            Some("src/main.rs")
+        );
         assert_eq!(diff_view.visible_nodes[2].line_idx, Some(9));
-        
+
         // Focus defaults to files panel
         assert!(diff_view.focus_on_files);
         assert_eq!(diff_view.selected_visible_idx, 0);
-        
+
         // Verify update_selected_file_from_cursor
         diff_view.cursor_idx = 4;
         diff_view.update_selected_file_from_cursor();
         assert_eq!(diff_view.selected_visible_idx, 1);
-        
+
         diff_view.cursor_idx = 10;
         diff_view.update_selected_file_from_cursor();
         assert_eq!(diff_view.selected_visible_idx, 2);
@@ -1328,7 +1575,10 @@ index abcdef..ffffff 100644
 ";
         let color_view = DiffView::new(42, color_diff.to_string());
         assert_eq!(color_view.visible_nodes.len(), 2); // "src" directory and "app.rs" file
-        assert_eq!(color_view.visible_nodes[1].file_path.as_deref(), Some("src/app.rs"));
+        assert_eq!(
+            color_view.visible_nodes[1].file_path.as_deref(),
+            Some("src/app.rs")
+        );
         assert_eq!(color_view.lines[6].line_type, DiffLineType::Addition);
         assert_eq!(color_view.lines[7].line_type, DiffLineType::Deletion);
     }
@@ -1356,16 +1606,16 @@ index abcdef..ffffff 100644
     #[test]
     fn test_column_toggle_checklist_defaults() {
         let app = App::default();
-        assert!(!app.show_issue_assignees);
-        assert!(app.show_issue_labels);
-        assert!(!app.show_issue_milestone);
-        assert!(!app.show_issue_author);
+        assert!(!app.is_column_visible(Tab::Issues, "Assignees"));
+        assert!(app.is_column_visible(Tab::Issues, "Labels"));
+        assert!(!app.is_column_visible(Tab::Issues, "Milestone"));
+        assert!(!app.is_column_visible(Tab::Issues, "Author"));
 
-        assert!(!app.show_mr_assignees);
-        assert!(!app.show_mr_reviewers);
-        assert!(app.show_mr_labels);
-        assert!(!app.show_mr_milestone);
-        assert!(!app.show_mr_author);
+        assert!(!app.is_column_visible(Tab::MergeRequests, "Assignees"));
+        assert!(!app.is_column_visible(Tab::MergeRequests, "Reviewers"));
+        assert!(app.is_column_visible(Tab::MergeRequests, "Labels"));
+        assert!(!app.is_column_visible(Tab::MergeRequests, "Milestone"));
+        assert!(!app.is_column_visible(Tab::MergeRequests, "Author"));
 
         assert!(!app.focus_column_checklist);
         assert_eq!(app.column_checklist_idx, 0);
