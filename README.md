@@ -18,6 +18,8 @@ A terminal user interface (TUI) for GitLab, built on top of [`glab`](https://git
 
 ---
 
+<img width="2560" height="1600" alt="image" src="https://github.com/user-attachments/assets/5ddd589b-9abf-47d7-85d9-bcf31f762fcd" />
+
 ## Prerequisites
 
 | Requirement | Notes |
