@@ -169,6 +169,15 @@ fn gitlab_to_github_endpoint(endpoint: &str) -> String {
     path = path.replace("/members/all", "/assignees");
     path = path.replace("/jobs/", "/actions/jobs/");
     path = path.replace("/trace", "/logs");
+    if path.contains("/milestones/") && path.contains("/issues") {
+        if let Some(milestone_id) = path
+            .split("/milestones/")
+            .nth(1)
+            .and_then(|s| s.split('/').next()) {
+            let base_path = path.split("/milestones/").next().unwrap_or("");
+            return format!("{}/issues?milestone={}&state=all", base_path, milestone_id);
+        }
+    }
     path
 }
 
@@ -196,6 +205,14 @@ fn translate_issue(v: &serde_json::Value) -> serde_json::Value {
 
     let updated_at = v
         .get("updated_at")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let created_at = v
+        .get("created_at")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let closed_at = v
+        .get("closed_at")
         .cloned()
         .unwrap_or(serde_json::Value::Null);
 
@@ -240,6 +257,8 @@ fn translate_issue(v: &serde_json::Value) -> serde_json::Value {
         "state": state,
         "labels": labels,
         "updated_at": updated_at,
+        "created_at": created_at,
+        "closed_at": closed_at,
         "author": author,
         "milestone": milestone,
         "assignees": assignees,
@@ -513,8 +532,29 @@ fn translate_json_to_gitlab(endpoint: &str, val: serde_json::Value) -> Result<se
         }
     } else if endpoint.contains("/milestones") {
         if let Some(arr) = val.as_array() {
-            let list: Vec<serde_json::Value> =
-                arr.iter().filter_map(|m| m.get("title").cloned()).collect();
+            let list: Vec<serde_json::Value> = arr
+                .iter()
+                .map(|m| {
+                    let title = m.get("title").cloned().unwrap_or(serde_json::Value::Null);
+                    let id = m.get("id").cloned().unwrap_or(serde_json::Value::Null);
+                    let number = m.get("number").cloned().unwrap_or(serde_json::Value::Null);
+                    let description = m.get("description").cloned().unwrap_or(serde_json::Value::Null);
+                    let state = m.get("state").and_then(|s| s.as_str()).unwrap_or("open");
+                    let gl_state = if state == "open" { "active" } else { "closed" };
+                    let due_on = m.get("due_on").cloned().unwrap_or(serde_json::Value::Null);
+                    let created_at = m.get("created_at").cloned().unwrap_or(serde_json::Value::Null);
+                    serde_json::json!({
+                        "id": id,
+                        "iid": number,
+                        "title": title,
+                        "description": description,
+                        "state": gl_state,
+                        "start_date": serde_json::Value::Null,
+                        "due_date": due_on,
+                        "created_at": created_at
+                    })
+                })
+                .collect();
             Ok(serde_json::Value::Array(list))
         } else {
             Ok(serde_json::Value::Array(vec![]))

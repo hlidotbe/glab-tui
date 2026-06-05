@@ -25,6 +25,8 @@ pub struct Issue {
     #[serde(default)]
     pub labels: Vec<String>,
     pub updated_at: String,
+    pub created_at: Option<String>,
+    pub closed_at: Option<String>,
     pub author: Author,
     pub milestone: Option<Milestone>,
     #[serde(default)]

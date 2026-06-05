@@ -13,10 +13,12 @@ pub enum Tab {
     Runners,
     Releases,
     Notifications,
+    Milestones,
+    Wiki,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 7] = [
+    pub const ALL: [Tab; 9] = [
         Tab::Issues,
         Tab::MergeRequests,
         Tab::Pipelines,
@@ -24,6 +26,8 @@ impl Tab {
         Tab::Runners,
         Tab::Releases,
         Tab::Notifications,
+        Tab::Milestones,
+        Tab::Wiki,
     ];
 
     pub fn title(&self, is_github: bool) -> &'static str {
@@ -41,6 +45,8 @@ impl Tab {
             Tab::Runners => "Runners",
             Tab::Releases => "Releases",
             Tab::Notifications => "Notifications",
+            Tab::Milestones => "Milestones",
+            Tab::Wiki => "Wiki",
         }
     }
 
@@ -71,6 +77,8 @@ impl Tab {
             Tab::Runners => vec!["ID", "Description", "Status", "Active"],
             Tab::Releases => vec!["Tag", "Release Name", "Date"],
             Tab::Notifications => vec!["State", "Project", "Type", "ID", "Title"],
+            Tab::Milestones => vec!["IID", "Title", "State", "Start Date", "Due Date"],
+            Tab::Wiki => vec!["Title", "Path"],
         }
     }
 
@@ -83,6 +91,8 @@ impl Tab {
             Tab::Runners => vec!["ID", "Description", "Status", "Active"],
             Tab::Releases => vec!["Tag", "Release Name", "Date"],
             Tab::Notifications => vec!["State", "Project", "Type", "ID", "Title"],
+            Tab::Milestones => vec!["IID", "Title", "State", "Due Date"],
+            Tab::Wiki => vec!["Title"],
         }
     }
 }
@@ -633,6 +643,14 @@ fn parse_hunk_header(header: &str) -> Option<(u32, u32)> {
 }
 
 #[derive(Clone, Debug)]
+pub struct DraftComment {
+    pub file_path: String,
+    pub line_num: Option<u32>,
+    pub old_line_num: Option<u32>,
+    pub body: String,
+}
+
+#[derive(Clone, Debug)]
 pub enum TextInputAction {
     EditField {
         entity_iid: u64,
@@ -647,6 +665,11 @@ pub enum TextInputAction {
         old_line_num: Option<u32>,
     },
     EnterPipelineId,
+    CreateRelease,
+    SubmitReviewFinal {
+        mr_iid: u64,
+        status: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -700,6 +723,12 @@ pub struct App {
     pub enabled_columns: std::collections::HashMap<Tab, std::collections::HashSet<String>>,
     pub focus_column_checklist: bool,
     pub column_checklist_idx: usize,
+    pub in_review_mode: bool,
+    pub draft_comments: Vec<DraftComment>,
+    pub milestones: StatefulTable<crate::gitlab::milestones::Milestone>,
+    pub selected_milestone_issues: Option<Vec<crate::gitlab::issues::Issue>>,
+    pub selected_milestone_iid: Option<u64>,
+    pub wiki_pages: StatefulTable<crate::gitlab::wiki::WikiPage>,
 }
 
 impl Default for App {
@@ -758,6 +787,12 @@ impl Default for App {
             },
             focus_column_checklist: false,
             column_checklist_idx: 0,
+            in_review_mode: false,
+            draft_comments: Vec::new(),
+            milestones: StatefulTable::with_items(vec![]),
+            selected_milestone_issues: None,
+            selected_milestone_iid: None,
+            wiki_pages: StatefulTable::with_items(vec![]),
         }
     }
 }
@@ -1262,6 +1297,114 @@ impl App {
         Self::filter_notifications_list(&self.notifications.items, &self.search_query, enabled_cols)
     }
 
+    pub fn filter_milestones_list<'a>(
+        items: &'a [crate::gitlab::milestones::Milestone],
+        query: &str,
+        enabled_cols: &std::collections::HashSet<String>,
+    ) -> Vec<&'a crate::gitlab::milestones::Milestone> {
+        if query.trim().is_empty() {
+            return items.iter().collect();
+        }
+        let matcher = SkimMatcherV2::default();
+        let mut scored_items = Vec::new();
+
+        for item in items {
+            let mut best_score = None;
+
+            let mut check_match = |text: &str| {
+                if let Some(score) = matcher.fuzzy_match(text, query) {
+                    if best_score.is_none() || Some(score) > best_score {
+                        best_score = Some(score);
+                    }
+                }
+            };
+
+            if enabled_cols.contains("IID") {
+                check_match(&item.iid.to_string());
+                check_match(&format!("#{}", item.iid));
+            }
+            if enabled_cols.contains("Title") {
+                check_match(&item.title);
+            }
+            if enabled_cols.contains("State") {
+                check_match(&item.state);
+            }
+            if enabled_cols.contains("Start Date") {
+                if let Some(d) = &item.start_date {
+                    check_match(d);
+                }
+            }
+            if enabled_cols.contains("Due Date") {
+                if let Some(d) = &item.due_date {
+                    check_match(d);
+                }
+            }
+
+            if let Some(score) = best_score {
+                scored_items.push((item, score));
+            }
+        }
+
+        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
+        scored_items.into_iter().map(|(item, _)| item).collect()
+    }
+
+    pub fn filtered_milestones(&self) -> Vec<&crate::gitlab::milestones::Milestone> {
+        let default_set = std::collections::HashSet::new();
+        let enabled_cols = self
+            .enabled_columns
+            .get(&Tab::Milestones)
+            .unwrap_or(&default_set);
+        Self::filter_milestones_list(&self.milestones.items, &self.search_query, enabled_cols)
+    }
+
+    pub fn filter_wiki_list<'a>(
+        items: &'a [crate::gitlab::wiki::WikiPage],
+        query: &str,
+        enabled_cols: &std::collections::HashSet<String>,
+    ) -> Vec<&'a crate::gitlab::wiki::WikiPage> {
+        if query.trim().is_empty() {
+            return items.iter().collect();
+        }
+        let matcher = SkimMatcherV2::default();
+        let mut scored_items = Vec::new();
+
+        for item in items {
+            let mut best_score = None;
+
+            let mut check_match = |text: &str| {
+                if let Some(score) = matcher.fuzzy_match(text, query) {
+                    if best_score.is_none() || Some(score) > best_score {
+                        best_score = Some(score);
+                    }
+                }
+            };
+
+            if enabled_cols.contains("Title") {
+                check_match(&item.title);
+            }
+            if enabled_cols.contains("Path") {
+                check_match(&item.path);
+            }
+
+            if let Some(score) = best_score {
+                scored_items.push((item, score));
+            }
+        }
+
+        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
+        scored_items.into_iter().map(|(item, _)| item).collect()
+    }
+
+    pub fn filtered_wiki(&self) -> Vec<&crate::gitlab::wiki::WikiPage> {
+        let default_set = std::collections::HashSet::new();
+        let enabled_cols = self
+            .enabled_columns
+            .get(&Tab::Wiki)
+            .unwrap_or(&default_set);
+        Self::filter_wiki_list(&self.wiki_pages.items, &self.search_query, enabled_cols)
+    }
+
     pub fn update_filter_selection(&mut self) {
         match self.active_tab {
             Tab::Issues => {
@@ -1381,6 +1524,42 @@ impl App {
                     let idx = self.selected_job_index.unwrap_or(0).min(len - 1);
                     self.selected_job_index = Some(idx);
                     self.jobs_list_state.select(Some(idx));
+                }
+            }
+            Tab::Milestones => {
+                let len = self.filtered_milestones().len();
+                let sel = self.milestones.state.selected();
+                if len == 0 {
+                    self.milestones.state.select(None);
+                } else {
+                    match sel {
+                        Some(idx) => {
+                            if idx >= len {
+                                self.milestones.state.select(Some(len - 1));
+                            }
+                        }
+                        None => {
+                            self.milestones.state.select(Some(0));
+                        }
+                    }
+                }
+            }
+            Tab::Wiki => {
+                let len = self.filtered_wiki().len();
+                let sel = self.wiki_pages.state.selected();
+                if len == 0 {
+                    self.wiki_pages.state.select(None);
+                } else {
+                    match sel {
+                        Some(idx) => {
+                            if idx >= len {
+                                self.wiki_pages.state.select(Some(len - 1));
+                            }
+                        }
+                        None => {
+                            self.wiki_pages.state.select(Some(0));
+                        }
+                    }
                 }
             }
         }

@@ -1276,6 +1276,32 @@ fn spawn_refresh_active_tab(
                     ));
                 }
             }
+            app::Tab::Milestones => {
+                match gitlab::milestones::list_milestones(&client, &project_context).await {
+                    Ok(milestones) => {
+                        let _ = tx.send(Event::MilestonesFetched(milestones));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Event::FetchFailed(
+                            tab,
+                            format!("Failed to fetch milestones: {}", e),
+                        ));
+                    }
+                }
+            }
+            app::Tab::Wiki => {
+                match gitlab::wiki::load_wiki_pages(&project_context).await {
+                    Ok(pages) => {
+                        let _ = tx.send(Event::WikiFetched(pages));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Event::FetchFailed(
+                            tab,
+                            format!("Failed to fetch wiki pages: {}", e),
+                        ));
+                    }
+                }
+            }
         }
     });
 }
@@ -1445,6 +1471,36 @@ async fn main() -> Result<()> {
             }
         }
 
+        if app.active_tab == app::Tab::Milestones {
+            if let Some(client) = &app.gitlab_client {
+                if let Some(idx) = app.milestones.state.selected() {
+                    let milestone_iid = app.filtered_milestones().get(idx).map(|m| m.iid);
+                    if let Some(iid) = milestone_iid {
+                        if app.selected_milestone_iid != Some(iid) {
+                            app.selected_milestone_iid = Some(iid);
+                            app.selected_milestone_issues = None;
+                            let client_clone = client.clone();
+                            let project_context = app.project_context.clone();
+                            let tx = events.sender();
+                            tokio::spawn(async move {
+                                if let Ok(issues) = gitlab::milestones::list_milestone_issues(
+                                    &client_clone,
+                                    &project_context,
+                                    iid,
+                                )
+                                .await
+                                {
+                                    let _ = tx.send(Event::MilestoneIssuesFetched(iid, issues));
+                                } else {
+                                    let _ = tx.send(Event::MilestoneIssuesFetched(iid, vec![]));
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         terminal.draw(|f| ui::render(f, &mut app))?;
 
         if let Some(event) = events.next().await {
@@ -1540,6 +1596,25 @@ async fn main() -> Result<()> {
                     app.releases.items = releases;
                     app.update_filter_selection();
                 }
+                Event::MilestonesFetched(milestones) => {
+                    app.loading_tabs.remove(&app::Tab::Milestones);
+                    app.loaded_tabs.insert(app::Tab::Milestones);
+                    app.refreshed_tabs.insert(app::Tab::Milestones);
+                    app.status_message = None;
+                    app.milestones.items = milestones;
+                    app.update_filter_selection();
+                }
+                Event::MilestoneIssuesFetched(_, issues) => {
+                    app.selected_milestone_issues = Some(issues);
+                }
+                Event::WikiFetched(pages) => {
+                    app.loading_tabs.remove(&app::Tab::Wiki);
+                    app.loaded_tabs.insert(app::Tab::Wiki);
+                    app.refreshed_tabs.insert(app::Tab::Wiki);
+                    app.status_message = None;
+                    app.wiki_pages.items = pages;
+                    app.update_filter_selection();
+                }
                 Event::SelectorItemsFetched(items) => {
                     if let Some(mut selector) = app.selector.take() {
                         selector.all_items = items;
@@ -1556,6 +1631,8 @@ async fn main() -> Result<()> {
                         app::Tab::Runners => !app.runners.items.is_empty(),
                         app::Tab::Releases => !app.releases.items.is_empty(),
                         app::Tab::Notifications => !app.notifications.items.is_empty(),
+                        app::Tab::Milestones => !app.milestones.items.is_empty(),
+                        app::Tab::Wiki => !app.wiki_pages.items.is_empty(),
                         _ => false,
                     };
                     if has_cached_items {
@@ -1832,6 +1909,310 @@ async fn main() -> Result<()> {
                                             app.error_message =
                                                 Some("Invalid pipeline ID".to_string());
                                         }
+                                    }
+                                    crate::app::TextInputAction::CreateRelease => {
+                                        if !value.trim().is_empty() {
+                                            let tag_name = value.trim().to_string();
+                                            let tx = events.sender();
+                                            let active_tab = app.active_tab;
+                                            tokio::spawn(async move {
+                                                let last_tag = if let Ok(output) = tokio::process::Command::new("git")
+                                                    .args(["describe", "--tags", "--abbrev=0"])
+                                                    .output()
+                                                    .await
+                                                {
+                                                    let t = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                                                    if t.is_empty() { None } else { Some(t) }
+                                                } else {
+                                                    None
+                                                };
+
+                                                let log_args = if let Some(ref tag) = last_tag {
+                                                    vec!["log".to_string(), format!("{}..HEAD", tag), "--oneline".to_string()]
+                                                } else {
+                                                    vec!["log".to_string(), "--oneline".to_string()]
+                                                };
+
+                                                let commits = if let Ok(output) = tokio::process::Command::new("git")
+                                                    .args(&log_args)
+                                                    .output()
+                                                    .await
+                                                {
+                                                    String::from_utf8_lossy(&output.stdout)
+                                                        .lines()
+                                                        .map(|line| {
+                                                            let parts: Vec<&str> = line.splitn(2, ' ').collect();
+                                                            if parts.len() == 2 {
+                                                                format!("- {} ({})", parts[1], parts[0])
+                                                            } else {
+                                                                format!("- {}", line)
+                                                            }
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                        .join("\n")
+                                                } else {
+                                                    "".to_string()
+                                                };
+
+                                                let title_range = if let Some(ref tag) = last_tag {
+                                                    format!("Changes since {}", tag)
+                                                } else {
+                                                    "All Changes".to_string()
+                                                };
+
+                                                let changelog = format!(
+                                                    "## Release Notes\n\n### {}\n\n{}\n",
+                                                    title_range,
+                                                    if commits.is_empty() { "- No changes found".to_string() } else { commits }
+                                                );
+
+                                                let temp_path = std::env::temp_dir().join(format!("glab-tui-release-{}.md", tag_name));
+                                                if let Ok(_) = std::fs::write(&temp_path, &changelog) {
+                                                    let temp_str = temp_path.to_string_lossy().to_string();
+                                                    
+                                                    let is_github = match tokio::process::Command::new("git")
+                                                        .args(["remote", "get-url", "origin"])
+                                                        .output()
+                                                        .await
+                                                    {
+                                                        Ok(output) if output.status.success() => {
+                                                            let url = String::from_utf8_lossy(&output.stdout);
+                                                            url.contains("github.com")
+                                                        }
+                                                        _ => false,
+                                                    };
+
+                                                    let program = if is_github { "gh" } else { "glab" };
+                                                    let args = ["release", "create", &tag_name, "-F", &temp_str];
+                                                    
+                                                    let mut cmd = tokio::process::Command::new(program);
+                                                    cmd.args(&args);
+
+                                                    match cmd.output().await {
+                                                        Ok(output) => {
+                                                            let _ = std::fs::remove_file(&temp_path);
+                                                            if output.status.success() {
+                                                                let _ = tx.send(Event::CommandCompleted(active_tab, Ok(())));
+                                                            } else {
+                                                                let err_msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                                                                let _ = tx.send(Event::CommandCompleted(
+                                                                    active_tab,
+                                                                    Err(format!("Command failed: {}", err_msg)),
+                                                                ));
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            let _ = std::fs::remove_file(&temp_path);
+                                                            let _ = tx.send(Event::CommandCompleted(
+                                                                active_tab,
+                                                                Err(format!("Failed to execute command: {}", e)),
+                                                            ));
+                                                        }
+                                                    }
+                                                } else {
+                                                    let _ = tx.send(Event::CommandCompleted(
+                                                        active_tab,
+                                                        Err("Failed to write temporary changelog file".to_string()),
+                                                    ));
+                                                }
+                                            });
+                                        }
+                                    }
+                                    crate::app::TextInputAction::SubmitReviewFinal {
+                                        mr_iid,
+                                        status,
+                                    } => {
+                                        let is_github = app.gitlab_client.as_ref().map_or(false, |c| c.is_github);
+                                        let tx = events.sender();
+                                        let comments = app.draft_comments.clone();
+                                        app.draft_comments.clear();
+                                        app.in_review_mode = false;
+
+                                        let project_context = app.project_context.clone();
+                                        let status_clone = status.clone();
+                                        let value_clone = value.clone();
+
+                                        tokio::spawn(async move {
+                                            if is_github {
+                                                let github_event = match status_clone.as_str() {
+                                                    "Approve" => "APPROVE",
+                                                    "Request Changes" => "REQUEST_CHANGES",
+                                                    _ => "COMMENT",
+                                                };
+                                                let mut json_comments = serde_json::json!([]);
+                                                if let Some(arr) = json_comments.as_array_mut() {
+                                                    for comment in &comments {
+                                                        let line = comment.line_num.or(comment.old_line_num).unwrap_or(1);
+                                                        arr.push(serde_json::json!({
+                                                            "path": comment.file_path,
+                                                            "line": line,
+                                                            "body": comment.body,
+                                                        }));
+                                                    }
+                                                }
+                                                let payload = serde_json::json!({
+                                                    "body": value_clone,
+                                                    "event": github_event,
+                                                    "comments": json_comments,
+                                                });
+                                                let temp_path = std::env::temp_dir().join(format!("glab-tui-review-{}.json", mr_iid));
+                                                if let Ok(_) = std::fs::write(&temp_path, serde_json::to_string(&payload).unwrap()) {
+                                                    let temp_str = temp_path.to_string_lossy().to_string();
+                                                    let output = tokio::process::Command::new("gh")
+                                                        .args([
+                                                            "api",
+                                                            &format!("repos/{}/pulls/{}/reviews", project_context, mr_iid),
+                                                            "--input",
+                                                            &temp_str,
+                                                        ])
+                                                        .output()
+                                                        .await;
+                                                    let _ = std::fs::remove_file(&temp_path);
+                                                    match output {
+                                                        Ok(out) if out.status.success() => {
+                                                            let _ = tx.send(Event::CommandCompleted(
+                                                                app::Tab::MergeRequests,
+                                                                Ok(()),
+                                                            ));
+                                                        }
+                                                        Ok(out) => {
+                                                            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                                                            let _ = tx.send(Event::CommandCompleted(
+                                                                app::Tab::MergeRequests,
+                                                                Err(format!("Submit review failed: {}", err)),
+                                                            ));
+                                                        }
+                                                        Err(e) => {
+                                                            let _ = tx.send(Event::CommandCompleted(
+                                                                app::Tab::MergeRequests,
+                                                                Err(format!("Failed to run gh: {}", e)),
+                                                            ));
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                let encoded_path = project_context.replace("/", "%2F");
+                                                let mut success = true;
+                                                let mut err_msg = String::new();
+
+                                                for comment in &comments {
+                                                    let line = comment.line_num.or(comment.old_line_num).unwrap_or(1);
+                                                    let position = serde_json::json!({
+                                                        "position_type": "text",
+                                                        "new_path": comment.file_path,
+                                                        "new_line": line,
+                                                    });
+                                                    let draft_payload = serde_json::json!({
+                                                        "note": comment.body,
+                                                        "position": position,
+                                                    });
+                                                    let temp_path = std::env::temp_dir().join(format!("glab-tui-draft-{}.json", mr_iid));
+                                                    if let Ok(_) = std::fs::write(&temp_path, serde_json::to_string(&draft_payload).unwrap()) {
+                                                        let temp_str = temp_path.to_string_lossy().to_string();
+                                                        let output = tokio::process::Command::new("glab")
+                                                            .args([
+                                                                "api",
+                                                                &format!("projects/{}/merge_requests/{}/draft_notes", encoded_path, mr_iid),
+                                                                "--input",
+                                                                &temp_str,
+                                                                "-X",
+                                                                "POST",
+                                                            ])
+                                                            .output()
+                                                            .await;
+                                                        let _ = std::fs::remove_file(&temp_path);
+                                                        if let Ok(out) = output {
+                                                            if !out.status.success() {
+                                                                success = false;
+                                                                err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                                                                break;
+                                                            }
+                                                        } else {
+                                                            success = false;
+                                                            err_msg = "Failed to run glab api".to_string();
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+
+                                                if success {
+                                                    let publish_output = tokio::process::Command::new("glab")
+                                                        .args([
+                                                            "api",
+                                                            &format!("projects/{}/merge_requests/{}/draft_notes/bulk_publish", encoded_path, mr_iid),
+                                                            "-X",
+                                                            "POST",
+                                                        ])
+                                                        .output()
+                                                        .await;
+                                                    match publish_output {
+                                                        Ok(out) if out.status.success() => {
+                                                            if status_clone == "Approve" {
+                                                                let approve_output = tokio::process::Command::new("glab")
+                                                                    .args([
+                                                                        "api",
+                                                                        &format!("projects/{}/merge_requests/{}/approve", encoded_path, mr_iid),
+                                                                        "-X",
+                                                                        "POST",
+                                                                    ])
+                                                                    .output()
+                                                                    .await;
+                                                                if let Ok(out) = approve_output {
+                                                                    if !out.status.success() {
+                                                                        err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                                                                    }
+                                                                }
+                                                            }
+                                                            
+                                                            if !value_clone.trim().is_empty() {
+                                                                let note_payload = serde_json::json!({
+                                                                    "body": value_clone,
+                                                                });
+                                                                let temp_path = std::env::temp_dir().join(format!("glab-tui-note-{}.json", mr_iid));
+                                                                if let Ok(_) = std::fs::write(&temp_path, serde_json::to_string(&note_payload).unwrap()) {
+                                                                    let temp_str = temp_path.to_string_lossy().to_string();
+                                                                    let _ = tokio::process::Command::new("glab")
+                                                                        .args([
+                                                                            "api",
+                                                                            &format!("projects/{}/merge_requests/{}/notes", encoded_path, mr_iid),
+                                                                            "--input",
+                                                                            &temp_str,
+                                                                            "-X",
+                                                                            "POST",
+                                                                        ])
+                                                                        .output()
+                                                                        .await;
+                                                                    let _ = std::fs::remove_file(&temp_path);
+                                                                }
+                                                            }
+
+                                                            let _ = tx.send(Event::CommandCompleted(
+                                                                app::Tab::MergeRequests,
+                                                                Ok(()),
+                                                            ));
+                                                        }
+                                                        Ok(out) => {
+                                                            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                                                            let _ = tx.send(Event::CommandCompleted(
+                                                                app::Tab::MergeRequests,
+                                                                Err(format!("Bulk publish failed: {}", err)),
+                                                            ));
+                                                        }
+                                                        Err(e) => {
+                                                            let _ = tx.send(Event::CommandCompleted(
+                                                                app::Tab::MergeRequests,
+                                                                Err(format!("Failed to publish draft notes: {}", e)),
+                                                            ));
+                                                        }
+                                                    }
+                                                } else {
+                                                    let _ = tx.send(Event::CommandCompleted(
+                                                        app::Tab::MergeRequests,
+                                                        Err(format!("Draft notes creation failed: {}", err_msg)),
+                                                    ));
+                                                }
+                                            }
+                                        });
                                     }
                                 }
                             }
@@ -3232,6 +3613,107 @@ async fn main() -> Result<()> {
                                                 }
                                             }
                                         }
+                                        KeyCode::Char('s') => {
+                                            if let Some(jobs) = &app.selected_pipeline_jobs {
+                                                if let Some(highlighted_job) = jobs.get(idx) {
+                                                    let stage_name = &highlighted_job.stage;
+                                                    for job in jobs {
+                                                        if &job.stage == stage_name {
+                                                            app.selected_jobs.insert(job.id);
+                                                        }
+                                                    }
+                                                    app.status_message = Some(format!(
+                                                        "Selected all jobs in stage '{}'",
+                                                        stage_name
+                                                    ));
+                                                }
+                                            }
+                                        }
+                                        KeyCode::Char('c') => {
+                                            if let Some(client) = &app.gitlab_client {
+                                                let client_clone = client.clone();
+                                                let project_context = app.project_context.clone();
+                                                let pipe_id = app.active_pipeline_id.unwrap_or(0);
+                                                let tx = events.sender();
+
+                                                if !app.selected_jobs.is_empty() {
+                                                    let job_ids: Vec<u64> =
+                                                        app.selected_jobs.iter().cloned().collect();
+                                                    if let Some(jobs_mut) =
+                                                        &mut app.selected_pipeline_jobs
+                                                    {
+                                                        for j in jobs_mut.iter_mut() {
+                                                            if app.selected_jobs.contains(&j.id) {
+                                                                j.status = "canceled".to_string();
+                                                            }
+                                                        }
+                                                    }
+                                                    app.selected_jobs.clear();
+                                                    tokio::spawn(async move {
+                                                        for j_id in job_ids {
+                                                            let endpoint = format!(
+                                                                "projects/{}/jobs/{}/cancel",
+                                                                project_context.replace("/", "%2F"),
+                                                                j_id
+                                                            );
+                                                            let _ = client_clone
+                                                                .fetch_raw_api(&endpoint)
+                                                                .await;
+                                                        }
+                                                        tokio::time::sleep(
+                                                            std::time::Duration::from_secs(1),
+                                                        )
+                                                        .await;
+                                                        if let Ok(jobs) =
+                                                            gitlab::pipelines::list_pipeline_jobs(
+                                                                &client_clone,
+                                                                &project_context,
+                                                                pipe_id,
+                                                            )
+                                                            .await
+                                                        {
+                                                            let _ = tx.send(Event::PipelineJobs(
+                                                                pipe_id, jobs,
+                                                            ));
+                                                        }
+                                                    });
+                                                } else {
+                                                    if let Some(jobs_mut) =
+                                                        &mut app.selected_pipeline_jobs
+                                                    {
+                                                        if let Some(j) = jobs_mut.get_mut(idx) {
+                                                            j.status = "canceled".to_string();
+                                                        }
+                                                    }
+                                                    tokio::spawn(async move {
+                                                        let endpoint = format!(
+                                                            "projects/{}/jobs/{}/cancel",
+                                                            project_context.replace("/", "%2F"),
+                                                            job_id
+                                                        );
+                                                        let _ = client_clone
+                                                            .fetch_raw_api(&endpoint)
+                                                            .await;
+                                                        tokio::time::sleep(
+                                                            std::time::Duration::from_secs(1),
+                                                        )
+                                                        .await;
+                                                        if let Ok(jobs) =
+                                                            gitlab::pipelines::list_pipeline_jobs(
+                                                                &client_clone,
+                                                                &project_context,
+                                                                pipe_id,
+                                                            )
+                                                            .await
+                                                        {
+                                                            let _ = tx.send(Event::PipelineJobs(
+                                                                pipe_id, jobs,
+                                                            ));
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
                                         KeyCode::Char('d') => {
                                             run_glab_cmd(
                                                 &["job", "artifact", "master", &job_name],
@@ -3487,6 +3969,12 @@ async fn main() -> Result<()> {
                             } else {
                                 handled = false;
                             }
+                        }
+                        app::Tab::Milestones => {
+                            handled = false;
+                        }
+                        app::Tab::Wiki => {
+                            handled = false;
                         }
                     }
 
@@ -3754,6 +4242,12 @@ async fn main() -> Result<()> {
                                 app::Tab::Notifications => {
                                     app.notifications.next(app.filtered_notifications().len())
                                 }
+                                app::Tab::Milestones => {
+                                    app.milestones.next(app.filtered_milestones().len())
+                                }
+                                app::Tab::Wiki => {
+                                    app.wiki_pages.next(app.filtered_wiki().len())
+                                }
                             },
                             KeyCode::Up | KeyCode::Char('k') => match app.active_tab {
                                 app::Tab::Issues => {
@@ -3790,6 +4284,12 @@ async fn main() -> Result<()> {
                                 app::Tab::Notifications => app
                                     .notifications
                                     .previous(app.filtered_notifications().len()),
+                                app::Tab::Milestones => {
+                                    app.milestones.previous(app.filtered_milestones().len())
+                                }
+                                app::Tab::Wiki => {
+                                    app.wiki_pages.previous(app.filtered_wiki().len())
+                                }
                             },
                             _ => {}
                         }
@@ -3855,6 +4355,22 @@ mod tests {
                 "--fill".to_string(),
                 "--body".to_string(),
                 "Resolves #123".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_translate_glab_to_gh_release_create() {
+        let glab_args = vec!["release", "create", "v1.0.0", "-F", "changelog.md"];
+        let gh_args = translate_glab_to_gh(&glab_args);
+        assert_eq!(
+            gh_args,
+            vec![
+                "release".to_string(),
+                "create".to_string(),
+                "v1.0.0".to_string(),
+                "-F".to_string(),
+                "changelog.md".to_string()
             ]
         );
     }

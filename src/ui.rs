@@ -1539,13 +1539,42 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     widths.push(Constraint::Min(0));
                 }
 
+                let pipelines_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(3), Constraint::Min(0)])
+                    .split(middle_chunks[1]);
+
+                let mut sparkline_spans = Vec::new();
+                for p in app.pipelines.items.iter().take(30).rev() {
+                    let color = match p.status.as_str() {
+                        "success" => THEME.green,
+                        "failed" => THEME.red,
+                        "running" => THEME.blue,
+                        "canceled" => THEME.text_muted,
+                        "pending" => THEME.yellow,
+                        _ => THEME.text_muted,
+                    };
+                    sparkline_spans.push(Span::styled("■ ", Style::default().fg(color)));
+                }
+
+                let sparkline_block = Block::default()
+                    .borders(Borders::BOTTOM)
+                    .border_style(Style::default().fg(THEME.border))
+                    .title(" Pipeline History (Newest on Right) ")
+                    .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD));
+                
+                let sparkline_widget = Paragraph::new(Line::from(sparkline_spans))
+                    .block(sparkline_block);
+
+                f.render_widget(sparkline_widget, pipelines_chunks[0]);
+
                 let table = Table::new(rows, widths)
                     .header(Row::new(header_cells).style(header_style).height(1))
                     .block(main_block)
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
 
-                f.render_stateful_widget(table, middle_chunks[1], &mut app.pipelines.state);
+                f.render_stateful_widget(table, pipelines_chunks[1], &mut app.pipelines.state);
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
@@ -2499,6 +2528,286 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_widget(
                         Paragraph::new("Select an item to view details...")
                             .block(preview_block)
+                            .style(Style::default().fg(THEME.text_muted)),
+                        middle_chunks[2],
+                    );
+                }
+            }
+        }
+        Tab::Milestones => {
+            if app.milestones.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
+                f.render_widget(
+                    Paragraph::new("\n\n Loading milestones...")
+                        .alignment(Alignment::Center)
+                        .block(main_block.clone())
+                        .style(Style::default().fg(THEME.text_muted)),
+                    middle_chunks[1],
+                );
+                f.render_widget(
+                    Paragraph::new("Select a milestone...")
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .title(" Details ")
+                                .border_style(Style::default().fg(THEME.border)),
+                        )
+                        .style(Style::default().fg(THEME.text_muted)),
+                    middle_chunks[2],
+                );
+            } else {
+                let default_set = std::collections::HashSet::new();
+                let filtered_milestones = App::filter_milestones_list(
+                    &app.milestones.items,
+                    &app.search_query,
+                    app.enabled_columns.get(&Tab::Milestones).unwrap_or(&default_set),
+                );
+                
+                let header_cells = Tab::Milestones
+                    .columns()
+                    .into_iter()
+                    .filter(|col| app.is_column_visible(Tab::Milestones, col))
+                    .map(|h| Cell::from(h).style(Style::default().add_modifier(Modifier::BOLD)));
+                let header = Row::new(header_cells)
+                    .style(header_style)
+                    .height(1)
+                    .bottom_margin(1);
+
+                let rows = filtered_milestones.iter().map(|m| {
+                    let mut cells = Vec::new();
+                    let cols = Tab::Milestones.columns();
+                    for col in cols {
+                        if app.is_column_visible(Tab::Milestones, &col) {
+                            let val = match col {
+                                "IID" => m.iid.to_string(),
+                                "Title" => m.title.clone(),
+                                "State" => m.state.clone(),
+                                "Start Date" => m.start_date.clone().unwrap_or_else(|| "N/A".to_string()),
+                                "Due Date" => m.due_date.clone().unwrap_or_else(|| "N/A".to_string()),
+                                _ => "".to_string(),
+                            };
+                            cells.push(Cell::from(val));
+                        }
+                    }
+                    Row::new(cells).style(Style::default().fg(THEME.text_normal))
+                });
+
+                let table = Table::new(rows, [Constraint::Percentage(10), Constraint::Percentage(40), Constraint::Percentage(20), Constraint::Percentage(30)])
+                    .header(header)
+                    .block(main_block.clone())
+                    .row_highlight_style(highlight_style)
+                    .highlight_symbol(" ❯ ");
+
+                f.render_stateful_widget(table, middle_chunks[1], &mut app.milestones.state);
+
+                let preview_block = Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Milestone Details ")
+                    .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
+                    .border_style(Style::default().fg(THEME.border));
+
+                if let Some(selected_idx) = app.milestones.state.selected() {
+                    if let Some(m) = filtered_milestones.get(selected_idx) {
+                        let mut text = Vec::new();
+                        text.push(Line::from(vec![
+                            Span::styled("Title:      ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(&m.title, Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD)),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("State:      ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                &m.state,
+                                Style::default().fg(if m.state == "active" { THEME.green } else { THEME.yellow })
+                            ),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Start Date: ", Style::default().fg(THEME.text_muted)),
+                            Span::raw(m.start_date.as_deref().unwrap_or("N/A")),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled("Due Date:   ", Style::default().fg(THEME.text_muted)),
+                            Span::raw(m.due_date.as_deref().unwrap_or("N/A")),
+                        ]));
+                        if let Some(desc) = &m.description {
+                            text.push(Line::from(""));
+                            text.push(Line::from(Span::styled("Description:", Style::default().add_modifier(Modifier::BOLD))));
+                            text.push(Line::from(desc.as_str()));
+                        }
+                        text.push(Line::from(""));
+
+                        if let Some(issues) = &app.selected_milestone_issues {
+                            let total = issues.len();
+                            let closed = issues.iter().filter(|i| i.state == "closed").count();
+                            let open = total - closed;
+
+                            text.push(Line::from(vec![
+                                Span::styled("Issues Status: ", Style::default().add_modifier(Modifier::BOLD)),
+                                Span::raw(format!("{} Closed / {} Open (Total {})", closed, open, total)),
+                            ]));
+
+                            let pct = if total > 0 { (closed as f32 / total as f32) * 100.0 } else { 0.0 };
+                            let filled_len = if total > 0 { (closed * 20) / total } else { 0 };
+                            let bar = format!(
+                                "[{}{}] {:.1}%",
+                                "█".repeat(filled_len),
+                                "░".repeat(20 - filled_len),
+                                pct
+                            );
+                            text.push(Line::from(Span::styled(bar, Style::default().fg(THEME.green))));
+                            text.push(Line::from(""));
+
+                            text.push(Line::from(Span::styled("Burn-down Chart (Issues Remaining):", Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))));
+                            
+                            let mut close_times: Vec<chrono::DateTime<chrono::Utc>> = issues.iter()
+                                .filter_map(|i| i.closed_at.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&chrono::Utc))))
+                                .collect();
+                            close_times.sort();
+
+                            let start_time = issues.iter()
+                                .filter_map(|i| i.created_at.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&chrono::Utc))))
+                                .min()
+                                .unwrap_or_else(|| chrono::Utc::now() - chrono::Duration::days(30));
+                            let end_time = m.due_date.as_ref()
+                                .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+                                .and_then(|nd| nd.and_hms_opt(23, 59, 59))
+                                .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
+                                .unwrap_or_else(|| close_times.last().cloned().unwrap_or_else(chrono::Utc::now));
+
+                            let duration = end_time.signed_duration_since(start_time);
+                            let steps = 10;
+                            let step_duration = if duration.num_seconds() > 0 { duration / steps } else { chrono::Duration::days(1) };
+
+                            let mut chart_points = Vec::new();
+                            for step in 0..=steps {
+                                let check_time = start_time + step_duration * step;
+                                let closed_before = close_times.iter().filter(|&&t| t <= check_time).count();
+                                let rem = total.saturating_sub(closed_before);
+                                chart_points.push(rem);
+                            }
+
+                            let max_val = total.max(1);
+                            for h in (1..=5).rev() {
+                                let mut line = String::new();
+                                line.push_str("  ");
+                                for &val in &chart_points {
+                                    let val_h = (val * 5) / max_val;
+                                    if val_h >= h {
+                                        line.push('█');
+                                    } else if val_h + 1 == h {
+                                        line.push('▄');
+                                    } else {
+                                        line.push(' ');
+                                    }
+                                }
+                                text.push(Line::from(Span::styled(line, Style::default().fg(THEME.blue))));
+                            }
+                            text.push(Line::from(Span::raw("  └─────────── (Time)")));
+                        } else {
+                            text.push(Line::from("Loading issues details..."));
+                        }
+
+                        f.render_widget(
+                            Paragraph::new(text)
+                                .block(preview_block)
+                                .wrap(ratatui::widgets::Wrap { trim: true }),
+                            middle_chunks[2],
+                        );
+                    } else {
+                        f.render_widget(Paragraph::new("").block(preview_block), middle_chunks[2]);
+                    }
+                } else {
+                    f.render_widget(
+                        Paragraph::new("Select a milestone to view details...")
+                            .block(preview_block)
+                            .style(Style::default().fg(THEME.text_muted)),
+                        middle_chunks[2],
+                    );
+                }
+            }
+        }
+        Tab::Wiki => {
+            if app.wiki_pages.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
+                f.render_widget(
+                    Paragraph::new("\n\n Loading wiki pages...")
+                        .alignment(Alignment::Center)
+                        .block(main_block.clone())
+                        .style(Style::default().fg(THEME.text_muted)),
+                    middle_chunks[1],
+                );
+                f.render_widget(
+                    Paragraph::new("Select a wiki page...")
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .title(" Content ")
+                                .border_style(Style::default().fg(THEME.border)),
+                        )
+                        .style(Style::default().fg(THEME.text_muted)),
+                    middle_chunks[2],
+                );
+            } else {
+                let default_set = std::collections::HashSet::new();
+                let filtered_wiki = App::filter_wiki_list(
+                    &app.wiki_pages.items,
+                    &app.search_query,
+                    app.enabled_columns.get(&Tab::Wiki).unwrap_or(&default_set),
+                );
+
+                let header_cells = Tab::Wiki
+                    .columns()
+                    .into_iter()
+                    .filter(|col| app.is_column_visible(Tab::Wiki, col))
+                    .map(|h| Cell::from(h).style(Style::default().add_modifier(Modifier::BOLD)));
+                let header = Row::new(header_cells)
+                    .style(header_style)
+                    .height(1)
+                    .bottom_margin(1);
+
+                let rows = filtered_wiki.iter().map(|p| {
+                    let mut cells = Vec::new();
+                    let cols = Tab::Wiki.columns();
+                    for col in cols {
+                        if app.is_column_visible(Tab::Wiki, &col) {
+                            let val = match col {
+                                "Title" => p.title.clone(),
+                                "Path" => p.path.clone(),
+                                _ => "".to_string(),
+                            };
+                            cells.push(Cell::from(val));
+                        }
+                    }
+                    Row::new(cells).style(Style::default().fg(THEME.text_normal))
+                });
+
+                let table = Table::new(rows, [Constraint::Percentage(100)])
+                    .header(header)
+                    .block(main_block.clone())
+                    .row_highlight_style(highlight_style)
+                    .highlight_symbol(" ❯ ");
+
+                f.render_stateful_widget(table, middle_chunks[1], &mut app.wiki_pages.state);
+
+                let content_block = Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Wiki Page Content ")
+                    .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))
+                    .border_style(Style::default().fg(THEME.border));
+
+                if let Some(selected_idx) = app.wiki_pages.state.selected() {
+                    if let Some(p) = filtered_wiki.get(selected_idx) {
+                        let lines = render_markdown(&p.content);
+                        f.render_widget(
+                            Paragraph::new(lines)
+                                .block(content_block)
+                                .wrap(ratatui::widgets::Wrap { trim: true }),
+                            middle_chunks[2],
+                        );
+                    } else {
+                        f.render_widget(Paragraph::new("").block(content_block), middle_chunks[2]);
+                    }
+                } else {
+                    f.render_widget(
+                        Paragraph::new("Select a page to view content...")
+                            .block(content_block)
                             .style(Style::default().fg(THEME.text_muted)),
                         middle_chunks[2],
                     );
