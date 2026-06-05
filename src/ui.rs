@@ -2936,6 +2936,25 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
             line_spans.push(Span::styled(&line.content, final_content_style));
             list_lines.push(Line::from(line_spans));
+
+            let matching_comments: Vec<_> = app.draft_comments.iter().filter(|c| {
+                c.file_path == line.file_path
+                    && ((c.line_num.is_some() && c.line_num == line.new_line_num)
+                        || (c.old_line_num.is_some() && c.old_line_num == line.old_line_num))
+            }).collect();
+
+            for comment in matching_comments {
+                let comment_style = Style::default()
+                    .fg(THEME.yellow)
+                    .bg(Color::Rgb(45, 45, 20));
+                
+                let spans = vec![
+                    Span::styled("         ", Style::default()),
+                    Span::styled(" 💬 Draft Note: ", Style::default().fg(THEME.yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(&comment.body, Style::default().fg(THEME.text_normal)),
+                ];
+                list_lines.push(Line::from(spans).style(comment_style));
+            }
         }
 
         let diff_para = Paragraph::new(list_lines).block(diff_block);

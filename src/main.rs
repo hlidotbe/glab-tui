@@ -3032,6 +3032,7 @@ async fn main() -> Result<()> {
                                         });
                                     }
                                 }
+                                app.diff_view = Some(diff_view);
                             }
                             KeyCode::Char('p') => {
                                 app.in_review_mode = !app.in_review_mode;
