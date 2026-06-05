@@ -1539,42 +1539,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     widths.push(Constraint::Min(0));
                 }
 
-                let pipelines_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Length(3), Constraint::Min(0)])
-                    .split(middle_chunks[1]);
-
-                let mut sparkline_spans = Vec::new();
-                for p in app.pipelines.items.iter().take(30).rev() {
-                    let color = match p.status.as_str() {
-                        "success" => THEME.green,
-                        "failed" => THEME.red,
-                        "running" => THEME.blue,
-                        "canceled" => THEME.text_muted,
-                        "pending" => THEME.yellow,
-                        _ => THEME.text_muted,
-                    };
-                    sparkline_spans.push(Span::styled("■ ", Style::default().fg(color)));
-                }
-
-                let sparkline_block = Block::default()
-                    .borders(Borders::BOTTOM)
-                    .border_style(Style::default().fg(THEME.border))
-                    .title(" Pipeline History (Newest on Right) ")
-                    .title_style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD));
-                
-                let sparkline_widget = Paragraph::new(Line::from(sparkline_spans))
-                    .block(sparkline_block);
-
-                f.render_widget(sparkline_widget, pipelines_chunks[0]);
-
                 let table = Table::new(rows, widths)
                     .header(Row::new(header_cells).style(header_style).height(1))
                     .block(main_block)
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
 
-                f.render_stateful_widget(table, pipelines_chunks[1], &mut app.pipelines.state);
+                f.render_stateful_widget(table, middle_chunks[1], &mut app.pipelines.state);
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
@@ -2654,53 +2625,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             );
                             text.push(Line::from(Span::styled(bar, Style::default().fg(THEME.green))));
                             text.push(Line::from(""));
-
-                            text.push(Line::from(Span::styled("Burn-down Chart (Issues Remaining):", Style::default().fg(THEME.text_muted).add_modifier(Modifier::BOLD))));
-                            
-                            let mut close_times: Vec<chrono::DateTime<chrono::Utc>> = issues.iter()
-                                .filter_map(|i| i.closed_at.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&chrono::Utc))))
-                                .collect();
-                            close_times.sort();
-
-                            let start_time = issues.iter()
-                                .filter_map(|i| i.created_at.as_ref().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&chrono::Utc))))
-                                .min()
-                                .unwrap_or_else(|| chrono::Utc::now() - chrono::Duration::days(30));
-                            let end_time = m.due_date.as_ref()
-                                .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-                                .and_then(|nd| nd.and_hms_opt(23, 59, 59))
-                                .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
-                                .unwrap_or_else(|| close_times.last().cloned().unwrap_or_else(chrono::Utc::now));
-
-                            let duration = end_time.signed_duration_since(start_time);
-                            let steps = 10;
-                            let step_duration = if duration.num_seconds() > 0 { duration / steps } else { chrono::Duration::days(1) };
-
-                            let mut chart_points = Vec::new();
-                            for step in 0..=steps {
-                                let check_time = start_time + step_duration * step;
-                                let closed_before = close_times.iter().filter(|&&t| t <= check_time).count();
-                                let rem = total.saturating_sub(closed_before);
-                                chart_points.push(rem);
-                            }
-
-                            let max_val = total.max(1);
-                            for h in (1..=5).rev() {
-                                let mut line = String::new();
-                                line.push_str("  ");
-                                for &val in &chart_points {
-                                    let val_h = (val * 5) / max_val;
-                                    if val_h >= h {
-                                        line.push('█');
-                                    } else if val_h + 1 == h {
-                                        line.push('▄');
-                                    } else {
-                                        line.push(' ');
-                                    }
-                                }
-                                text.push(Line::from(Span::styled(line, Style::default().fg(THEME.blue))));
-                            }
-                            text.push(Line::from(Span::raw("  └─────────── (Time)")));
                         } else {
                             text.push(Line::from("Loading issues details..."));
                         }
