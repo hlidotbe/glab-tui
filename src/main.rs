@@ -1850,32 +1850,45 @@ async fn main() -> Result<()> {
                                         old_line_num,
                                     } => {
                                         if !value.trim().is_empty() {
-                                            let mut args = vec![
-                                                "mr".to_string(),
-                                                "note".to_string(),
-                                                "create".to_string(),
-                                                mr_iid.to_string(),
-                                                "--file".to_string(),
-                                                file_path,
-                                                "-m".to_string(),
-                                                value,
-                                            ];
-                                            if let Some(line) = line_num {
-                                                args.push("--line".to_string());
-                                                args.push(line.to_string());
-                                            } else if let Some(old_line) = old_line_num {
-                                                args.push("--old-line".to_string());
-                                                args.push(old_line.to_string());
+                                            if app.in_review_mode {
+                                                app.draft_comments.push(crate::app::DraftComment {
+                                                    file_path,
+                                                    line_num,
+                                                    old_line_num,
+                                                    body: value,
+                                                });
+                                                app.status_message = Some(format!(
+                                                    "Added draft comment. ({} pending)",
+                                                    app.draft_comments.len()
+                                                ));
+                                            } else {
+                                                let mut args = vec![
+                                                    "mr".to_string(),
+                                                    "note".to_string(),
+                                                    "create".to_string(),
+                                                    mr_iid.to_string(),
+                                                    "--file".to_string(),
+                                                    file_path,
+                                                    "-m".to_string(),
+                                                    value,
+                                                ];
+                                                if let Some(line) = line_num {
+                                                    args.push("--line".to_string());
+                                                    args.push(line.to_string());
+                                                } else if let Some(old_line) = old_line_num {
+                                                    args.push("--old-line".to_string());
+                                                    args.push(old_line.to_string());
+                                                }
+                                                let args_ref: Vec<&str> =
+                                                    args.iter().map(|s| s.as_str()).collect();
+                                                run_glab_cmd(
+                                                    &args_ref,
+                                                    &mut terminal,
+                                                    events.sender(),
+                                                    app.active_tab,
+                                                )
+                                                .await;
                                             }
-                                            let args_ref: Vec<&str> =
-                                                args.iter().map(|s| s.as_str()).collect();
-                                            run_glab_cmd(
-                                                &args_ref,
-                                                &mut terminal,
-                                                events.sender(),
-                                                app.active_tab,
-                                            )
-                                            .await;
                                         }
                                     }
                                     crate::app::TextInputAction::EnterPipelineId => {
@@ -2095,13 +2108,54 @@ async fn main() -> Result<()> {
                                                 let mut success = true;
                                                 let mut err_msg = String::new();
 
+                                                // Fetch MR details to get base_sha, start_sha, and head_sha
+                                                let mr_output = tokio::process::Command::new("glab")
+                                                    .args([
+                                                        "api",
+                                                        &format!("projects/{}/merge_requests/{}", encoded_path, mr_iid),
+                                                    ])
+                                                    .output()
+                                                    .await;
+
+                                                let (base_sha, start_sha, head_sha) = if let Ok(out) = mr_output {
+                                                    if out.status.success() {
+                                                        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&out.stdout) {
+                                                            let base = v["diff_refs"]["base_sha"].as_str().map(|s| s.to_string());
+                                                            let start = v["diff_refs"]["start_sha"].as_str().map(|s| s.to_string());
+                                                            let head = v["diff_refs"]["head_sha"].as_str().map(|s| s.to_string());
+                                                            (base, start, head)
+                                                        } else {
+                                                            (None, None, None)
+                                                        }
+                                                    } else {
+                                                        (None, None, None)
+                                                    }
+                                                } else {
+                                                    (None, None, None)
+                                                };
+
                                                 for comment in &comments {
-                                                    let line = comment.line_num.or(comment.old_line_num).unwrap_or(1);
-                                                    let position = serde_json::json!({
+                                                    let mut position = serde_json::json!({
                                                         "position_type": "text",
                                                         "new_path": comment.file_path,
-                                                        "new_line": line,
                                                     });
+                                                    if let Some(ref base) = base_sha {
+                                                        position["base_sha"] = serde_json::json!(base);
+                                                    }
+                                                    if let Some(ref start) = start_sha {
+                                                        position["start_sha"] = serde_json::json!(start);
+                                                    }
+                                                    if let Some(ref head) = head_sha {
+                                                        position["head_sha"] = serde_json::json!(head);
+                                                    }
+                                                    if let Some(line_num) = comment.line_num {
+                                                        position["new_line"] = serde_json::json!(line_num);
+                                                    }
+                                                    if let Some(old_line_num) = comment.old_line_num {
+                                                        position["old_line"] = serde_json::json!(old_line_num);
+                                                        position["old_path"] = serde_json::json!(comment.file_path);
+                                                    }
+
                                                     let draft_payload = serde_json::json!({
                                                         "note": comment.body,
                                                         "position": position,
@@ -2496,6 +2550,29 @@ async fn main() -> Result<()> {
                                                 .await;
                                             }
                                         }
+                                        continue;
+                                    }
+
+                                    if field_type == "review_submit_status" {
+                                        let filtered_items = selector.get_filtered_items();
+                                        let mut selected_val =
+                                            selector.selected_items.iter().next().cloned();
+                                        if selected_val.is_none() && !filtered_items.is_empty() {
+                                            selected_val =
+                                                Some(filtered_items[selector.cursor_idx].clone());
+                                        }
+
+                                        let status = selected_val.unwrap_or_else(|| "Comment".to_string());
+                                        app.selector = None;
+                                        app.text_input = Some(crate::app::TextInput {
+                                            title: format!(" Submit Review ({}) - Summary/Description ", status),
+                                            value: String::new(),
+                                            cursor_idx: 0,
+                                            action: crate::app::TextInputAction::SubmitReviewFinal {
+                                                mr_iid: selector.entity_iid,
+                                                status,
+                                            },
+                                        });
                                         continue;
                                     }
 
@@ -2955,6 +3032,35 @@ async fn main() -> Result<()> {
                                         });
                                     }
                                 }
+                            }
+                            KeyCode::Char('p') => {
+                                app.in_review_mode = !app.in_review_mode;
+                                app.status_message = Some(format!(
+                                    "Review mode: {}. ({} pending comments)",
+                                    if app.in_review_mode { "ON" } else { "OFF" },
+                                    app.draft_comments.len()
+                                ));
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('r') => {
+                                app.selector = Some(crate::app::Selector {
+                                    title: " Submit Pull Request Review ".to_string(),
+                                    all_items: vec![
+                                        "Approve".to_string(),
+                                        "Request Changes".to_string(),
+                                        "Comment".to_string(),
+                                    ],
+                                    selected_items: std::collections::HashSet::new(),
+                                    cursor_idx: 0,
+                                    search_query: String::new(),
+                                    is_filtering: false,
+                                    is_loading: false,
+                                    entity_iid: diff_view.mr_iid,
+                                    entity_type: "mr".to_string(),
+                                    field_type: "review_submit_status".to_string(),
+                                    multi_select: false,
+                                    state: ListState::default(),
+                                });
                                 app.diff_view = Some(diff_view);
                             }
                             _ => {
