@@ -3194,14 +3194,56 @@ pub fn render(f: &mut Frame, app: &mut App) {
             })
             .collect();
 
-        let list = List::new(items)
-            .block(block)
+        let is_new_entity = menu.entity_iid == 0;
+        let submit_idx = menu.fields.len() + 1;
+        let all_items: Vec<ListItem> = if is_new_entity {
+            let is_submit_selected = menu.selected_idx == submit_idx;
+            let submit_bg = if is_submit_selected { THEME.green } else { Color::Reset };
+            let submit_fg = if is_submit_selected { THEME.bg } else { THEME.green };
+            let submit_line = Line::from(vec![
+                Span::styled(
+                    "          [ Submit ]          ",
+                    Style::default()
+                        .fg(submit_fg)
+                        .bg(submit_bg)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]);
+            let mut v = items;
+            v.push(ListItem::new(Line::from("")));
+            v.push(ListItem::new(submit_line));
+            v
+        } else {
+            items
+        };
+
+        let footer_text = if is_new_entity {
+            " ↑↓ Navigate  Enter: Edit / Submit  Esc: Cancel "
+        } else {
+            " ↑↓ Navigate  Enter: Edit  Esc: Close "
+        };
+
+        let inner_area = block.inner(area);
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(1),
+                Constraint::Length(1),
+            ])
+            .split(inner_area);
+
+        let list = List::new(all_items)
             .style(Style::default().bg(Color::Reset));
 
+        let footer = Paragraph::new(footer_text)
+            .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC));
+
         f.render_widget(Clear, area);
+        f.render_widget(block, area);
         let mut state = menu.state.clone();
-        f.render_stateful_widget(list, area, &mut state);
+        f.render_stateful_widget(list, layout[0], &mut state);
         menu.state = state;
+        f.render_widget(footer, layout[1]);
     }
 
     if let Some(selector) = &mut app.selector {

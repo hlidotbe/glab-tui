@@ -1558,7 +1558,7 @@ async fn main() -> Result<()> {
         app.gitlab_client = Some(client.clone());
         let tx = events.sender();
         if app.issues.items.is_empty() {
-            app.loading_tabs.insert(app.active_tab);
+            app.start_loading_tab(app.active_tab);
         }
         spawn_refresh_active_tab(&client, &app.project_context, app.active_tab, tx.clone(), app.is_column_visible(app.active_tab, "Show Closed Items"));
     } else {
@@ -1655,7 +1655,7 @@ async fn main() -> Result<()> {
                     }
                 }
                 Event::JobsTabFetched(pipeline_id, jobs) => {
-                    app.loading_tabs.remove(&app::Tab::Jobs);
+                    app.complete_loading_tab(app::Tab::Jobs, "Success");
                     app.loaded_tabs.insert(app::Tab::Jobs);
                     app.selected_pipeline_jobs = Some(jobs);
                     app.active_pipeline_id = Some(pipeline_id);
@@ -1665,7 +1665,7 @@ async fn main() -> Result<()> {
                     app.job_trace = None;
                 }
                 Event::IssuesFetched(issues) => {
-                    app.loading_tabs.remove(&app::Tab::Issues);
+                    app.complete_loading_tab(app::Tab::Issues, "Success");
                     app.loaded_tabs.insert(app::Tab::Issues);
                     app.refreshed_tabs.insert(app::Tab::Issues);
                     app.status_message = None;
@@ -1676,7 +1676,7 @@ async fn main() -> Result<()> {
                     crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::MrsFetched(mrs) => {
-                    app.loading_tabs.remove(&app::Tab::MergeRequests);
+                    app.complete_loading_tab(app::Tab::MergeRequests, "Success");
                     app.loaded_tabs.insert(app::Tab::MergeRequests);
                     app.refreshed_tabs.insert(app::Tab::MergeRequests);
                     app.status_message = None;
@@ -1687,7 +1687,7 @@ async fn main() -> Result<()> {
                     crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::PipelinesFetched(pipelines) => {
-                    app.loading_tabs.remove(&app::Tab::Pipelines);
+                    app.complete_loading_tab(app::Tab::Pipelines, "Success");
                     app.loaded_tabs.insert(app::Tab::Pipelines);
                     app.refreshed_tabs.insert(app::Tab::Pipelines);
                     app.status_message = None;
@@ -1700,7 +1700,7 @@ async fn main() -> Result<()> {
                     crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::NotificationsFetched(notifs) => {
-                    app.loading_tabs.remove(&app::Tab::Notifications);
+                    app.complete_loading_tab(app::Tab::Notifications, "Success");
                     app.loaded_tabs.insert(app::Tab::Notifications);
                     app.refreshed_tabs.insert(app::Tab::Notifications);
                     app.status_message = None;
@@ -1708,7 +1708,7 @@ async fn main() -> Result<()> {
                     app.update_filter_selection();
                 }
                 Event::RunnersFetched(runners) => {
-                    app.loading_tabs.remove(&app::Tab::Runners);
+                    app.complete_loading_tab(app::Tab::Runners, "Success");
                     app.loaded_tabs.insert(app::Tab::Runners);
                     app.refreshed_tabs.insert(app::Tab::Runners);
                     app.status_message = None;
@@ -1716,7 +1716,7 @@ async fn main() -> Result<()> {
                     app.update_filter_selection();
                 }
                 Event::ReleasesFetched(releases) => {
-                    app.loading_tabs.remove(&app::Tab::Releases);
+                    app.complete_loading_tab(app::Tab::Releases, "Success");
                     app.loaded_tabs.insert(app::Tab::Releases);
                     app.refreshed_tabs.insert(app::Tab::Releases);
                     app.status_message = None;
@@ -1724,7 +1724,7 @@ async fn main() -> Result<()> {
                     app.update_filter_selection();
                 }
                 Event::MilestonesFetched(milestones) => {
-                    app.loading_tabs.remove(&app::Tab::Milestones);
+                    app.complete_loading_tab(app::Tab::Milestones, "Success");
                     app.loaded_tabs.insert(app::Tab::Milestones);
                     app.refreshed_tabs.insert(app::Tab::Milestones);
                     app.status_message = None;
@@ -1735,7 +1735,7 @@ async fn main() -> Result<()> {
                     app.selected_milestone_issues = Some(issues);
                 }
                 Event::WikiFetched(pages) => {
-                    app.loading_tabs.remove(&app::Tab::Wiki);
+                    app.complete_loading_tab(app::Tab::Wiki, "Success");
                     app.loaded_tabs.insert(app::Tab::Wiki);
                     app.refreshed_tabs.insert(app::Tab::Wiki);
                     app.status_message = None;
@@ -1750,7 +1750,7 @@ async fn main() -> Result<()> {
                     }
                 }
                 Event::FetchFailed(tab, err_msg) => {
-                    app.loading_tabs.remove(&tab);
+                    app.complete_loading_tab(tab, &format!("Failed: {}", err_msg));
                     let has_cached_items = match tab {
                         app::Tab::Issues => !app.issues.items.is_empty(),
                         app::Tab::MergeRequests => !app.mrs.items.is_empty(),
@@ -1786,12 +1786,12 @@ async fn main() -> Result<()> {
                     app.status_message = None;
                     match res {
                         Ok(_) => {
-                            if let Some(client) = &app.gitlab_client {
+                            if let Some(client) = app.gitlab_client.clone() {
                                 if !app.loading_tabs.contains(&tab) {
-                                    app.loading_tabs.insert(tab);
+                                    app.start_loading_tab(tab);
                                 }
                                 spawn_refresh_active_tab(
-                                    client,
+                                    &client,
                                     &app.project_context,
                                     tab,
                                     events.sender(),
@@ -1889,11 +1889,11 @@ async fn main() -> Result<()> {
                         && app.edit_menu.is_none()
                         && app.selector.is_none()
                     {
-                        if let Some(client) = &app.gitlab_client {
+                        if let Some(client) = app.gitlab_client.clone() {
                             if !app.loading_tabs.contains(&app.active_tab) {
-                                app.loading_tabs.insert(app.active_tab);
+                                app.start_loading_tab(app.active_tab);
                                 spawn_refresh_active_tab(
-                                    client,
+                                    &client,
                                     &app.project_context,
                                     app.active_tab,
                                     events.sender(),
@@ -2796,25 +2796,47 @@ async fn main() -> Result<()> {
                                 // close menu
                             }
                             KeyCode::Char('j') | KeyCode::Down => {
-                                menu.selected_idx = (menu.selected_idx + 1) % menu.fields.len();
+                                let max_idx = if menu.entity_iid == 0 {
+                                    menu.fields.len() + 1 // fields + spacer + submit
+                                } else {
+                                    menu.fields.len() - 1
+                                };
+                                menu.selected_idx = if menu.selected_idx >= max_idx {
+                                    0
+                                } else {
+                                    menu.selected_idx + 1
+                                };
+                                // Skip the spacer row (index == fields.len())
+                                if menu.entity_iid == 0 && menu.selected_idx == menu.fields.len() {
+                                    menu.selected_idx += 1;
+                                }
                                 menu.state.select(Some(menu.selected_idx));
                                 app.edit_menu = Some(menu);
                             }
                             KeyCode::Char('k') | KeyCode::Up => {
-                                if menu.selected_idx == 0 {
-                                    menu.selected_idx = menu.fields.len() - 1;
+                                let max_idx = if menu.entity_iid == 0 {
+                                    menu.fields.len() + 1
                                 } else {
-                                    menu.selected_idx -= 1;
+                                    menu.fields.len() - 1
+                                };
+                                menu.selected_idx = if menu.selected_idx == 0 {
+                                    max_idx
+                                } else {
+                                    menu.selected_idx - 1
+                                };
+                                // Skip the spacer row (index == fields.len())
+                                if menu.entity_iid == 0 && menu.selected_idx == menu.fields.len() {
+                                    menu.selected_idx = menu.fields.len().saturating_sub(1);
                                 }
                                 menu.state.select(Some(menu.selected_idx));
                                 app.edit_menu = Some(menu);
                             }
                             KeyCode::Enter => {
-                                let field_name = menu.fields[menu.selected_idx].0.clone();
                                 let entity_iid = menu.entity_iid;
                                 let entity_type = menu.entity_type.clone();
+                                let is_on_submit = entity_iid == 0 && menu.selected_idx == menu.fields.len() + 1;
 
-                                if field_name == "[ Submit ]" {
+                                if is_on_submit {
                                     if entity_iid == 0 {
                                         if entity_type == "new_issue" {
                                             let title = menu.fields.iter().find(|(k, _)| k == "Title").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
@@ -2954,6 +2976,13 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                 }
+
+                                // Not on submit — act on the currently selected field
+                                let field_name = if menu.selected_idx < menu.fields.len() {
+                                    menu.fields[menu.selected_idx].0.clone()
+                                } else {
+                                    String::new()
+                                };
 
                                 if field_name == "Labels"
                                     || field_name == "Assignees"
