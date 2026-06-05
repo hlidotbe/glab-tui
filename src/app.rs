@@ -60,6 +60,7 @@ impl Tab {
                 "Labels",
                 "Milestone",
                 "Author",
+                "Show Closed Items",
             ],
             Tab::MergeRequests => vec![
                 "ID",
@@ -71,6 +72,7 @@ impl Tab {
                 "Labels",
                 "Milestone",
                 "Author",
+                "Show Closed Items",
             ],
             Tab::Pipelines => vec!["ID", "Status", "Stages", "Ref"],
             Tab::Jobs => vec!["ID", "Stage", "Status", "Name", "Matrix"],
@@ -657,6 +659,11 @@ pub enum TextInputAction {
         entity_type: String,
         field_type: String,
     },
+    /// Edit a field inside a "new entity" EditMenu (iid=0). The value is
+    /// written back to `edit_menu.fields[field_idx]` on confirm.
+    EditNewField {
+        field_idx: usize,
+    },
     CreateIssue,
     AddReviewComment {
         mr_iid: u64,
@@ -680,11 +687,19 @@ pub struct TextInput {
     pub action: TextInputAction,
 }
 
+#[derive(Debug, Clone)]
+pub struct TerminalCommand {
+    pub timestamp: String,
+    pub command: String,
+    pub status: String,
+}
+
 pub struct App {
     pub active_tab: Tab,
     pub running: bool,
     pub project_context: String,
     pub gitlab_client: Option<crate::gitlab::client::GitlabClient>,
+    pub terminal_commands: Vec<TerminalCommand>,
     pub issues: StatefulTable<crate::gitlab::issues::Issue>,
     pub mrs: StatefulTable<crate::gitlab::mr::MergeRequest>,
     pub pipelines: StatefulTable<crate::gitlab::pipelines::Pipeline>,
@@ -738,6 +753,7 @@ impl Default for App {
             running: true,
             project_context: "group/repository".to_string(),
             gitlab_client: None,
+            terminal_commands: vec![],
             issues: StatefulTable::with_items(vec![]),
             mrs: StatefulTable::with_items(vec![]),
             pipelines: StatefulTable::with_items(vec![]),
@@ -798,6 +814,29 @@ impl Default for App {
 }
 
 impl App {
+    pub fn start_loading_tab(&mut self, tab: Tab) {
+        if !self.loading_tabs.contains(&tab) {
+            self.loading_tabs.insert(tab);
+            let timestamp = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+            self.terminal_commands.push(crate::app::TerminalCommand {
+                timestamp,
+                command: format!("Fetch {:?}", tab),
+                status: "Running".to_string(),
+            });
+        }
+    }
+
+    pub fn complete_loading_tab(&mut self, tab: Tab, status: &str) {
+        self.loading_tabs.remove(&tab);
+        self.loaded_tabs.insert(tab);
+        self.refreshed_tabs.insert(tab);
+        
+        let cmd_name = format!("Fetch {:?}", tab);
+        if let Some(pos) = self.terminal_commands.iter().rposition(|cmd| cmd.command == cmd_name && cmd.status == "Running") {
+            self.terminal_commands[pos].status = status.to_string();
+        }
+    }
+
     pub fn is_column_visible(&self, tab: Tab, col: &str) -> bool {
         if let Some(set) = self.enabled_columns.get(&tab) {
             set.contains(col)

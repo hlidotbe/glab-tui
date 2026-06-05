@@ -25,6 +25,11 @@ pub enum Event {
     JobsTabFetched(u64, Vec<crate::gitlab::pipelines::Job>),
     CommandStarted(String),
     CommandCompleted(crate::app::Tab, Result<(), String>),
+    TerminalCommandLogged {
+        timestamp: String,
+        command: String,
+        status: String,
+    },
     MilestonesFetched(Vec<crate::gitlab::milestones::Milestone>),
     MilestoneIssuesFetched(u64, Vec<crate::gitlab::issues::Issue>),
     WikiFetched(Vec<crate::gitlab::wiki::WikiPage>),

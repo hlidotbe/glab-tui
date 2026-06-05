@@ -313,22 +313,148 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
                 match args[1] {
                     "create" => {
                         gh_args.push("create".to_string());
+                        let mut title = None;
+                        let mut body = None;
+                        let mut label = None;
+                        let mut assignee = None;
+                        let mut milestone = None;
+                        let mut reviewer = None;
+                        let mut head = None;
+                        let mut base = None;
+                        let mut draft = false;
                         let mut issue_id = None;
+
                         let mut i = 2;
                         while i < args.len() {
-                            if (args[i] == "-i" || args[i] == "--related-issue")
-                                && i + 1 < args.len()
-                            {
-                                issue_id = Some(args[i + 1]);
-                                i += 2;
-                            } else {
-                                i += 1;
+                            match args[i] {
+                                "--title" => {
+                                    if i + 1 < args.len() {
+                                        title = Some(args[i + 1]);
+                                        i += 2;
+                                    } else {
+                                        i += 1;
+                                    }
+                                }
+                                "--description" => {
+                                    if i + 1 < args.len() {
+                                        body = Some(args[i + 1]);
+                                        i += 2;
+                                    } else {
+                                        i += 1;
+                                    }
+                                }
+                                "--label" => {
+                                    if i + 1 < args.len() {
+                                        label = Some(args[i + 1]);
+                                        i += 2;
+                                    } else {
+                                        i += 1;
+                                    }
+                                }
+                                "--assignee" => {
+                                    if i + 1 < args.len() {
+                                        assignee = Some(args[i + 1]);
+                                        i += 2;
+                                    } else {
+                                        i += 1;
+                                    }
+                                }
+                                "--milestone" => {
+                                    if i + 1 < args.len() {
+                                        milestone = Some(args[i + 1]);
+                                        i += 2;
+                                    } else {
+                                        i += 1;
+                                    }
+                                }
+                                "--reviewer" => {
+                                    if i + 1 < args.len() {
+                                        reviewer = Some(args[i + 1]);
+                                        i += 2;
+                                    } else {
+                                        i += 1;
+                                    }
+                                }
+                                "--source-branch" => {
+                                    if i + 1 < args.len() {
+                                        head = Some(args[i + 1]);
+                                        i += 2;
+                                    } else {
+                                        i += 1;
+                                    }
+                                }
+                                "--target-branch" => {
+                                    if i + 1 < args.len() {
+                                        base = Some(args[i + 1]);
+                                        i += 2;
+                                    } else {
+                                        i += 1;
+                                    }
+                                }
+                                "--draft" => {
+                                    draft = true;
+                                    i += 1;
+                                }
+                                "-i" | "--related-issue" => {
+                                    if i + 1 < args.len() {
+                                        issue_id = Some(args[i + 1]);
+                                        i += 2;
+                                    } else {
+                                        i += 1;
+                                    }
+                                }
+                                _ => {
+                                    i += 1;
+                                }
                             }
                         }
-                        gh_args.push("--fill".to_string());
+
+                        if let Some(t) = title {
+                            gh_args.push("--title".to_string());
+                            gh_args.push(t.to_string());
+                        }
+
+                        if title.is_none() {
+                            gh_args.push("--fill".to_string());
+                        }
+
                         if let Some(id) = issue_id {
                             gh_args.push("--body".to_string());
                             gh_args.push(format!("Resolves #{}", id));
+                        } else if let Some(b) = body {
+                            gh_args.push("--body".to_string());
+                            gh_args.push(b.to_string());
+                        } else if title.is_some() {
+                            gh_args.push("--body".to_string());
+                            gh_args.push("".to_string());
+                        }
+
+                        if let Some(l) = label {
+                            gh_args.push("--label".to_string());
+                            gh_args.push(l.to_string());
+                        }
+                        if let Some(a) = assignee {
+                            gh_args.push("--assignee".to_string());
+                            gh_args.push(a.to_string());
+                        }
+                        if let Some(m) = milestone {
+                            gh_args.push("--milestone".to_string());
+                            gh_args.push(m.to_string());
+                        }
+                        if let Some(r) = reviewer {
+                            gh_args.push("--reviewer".to_string());
+                            gh_args.push(r.to_string());
+                        }
+                        if let Some(h) = head {
+                            gh_args.push("--head".to_string());
+                            gh_args.push(h.to_string());
+                        }
+                        if let Some(b) = base {
+                            gh_args.push("--base".to_string());
+                            gh_args.push(b.to_string());
+                        }
+                        if draft {
+                            gh_args.push("--draft".to_string());
                         }
                     }
                     "update" => {
@@ -1141,13 +1267,14 @@ fn spawn_refresh_active_tab(
     project_context: &str,
     tab: app::Tab,
     tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    show_closed: bool,
 ) {
     let client = client.clone();
     let project_context = project_context.to_string();
     tokio::spawn(async move {
         match tab {
             app::Tab::Issues => {
-                match gitlab::issues::list_issues(&client, &project_context).await {
+                match gitlab::issues::list_issues(&client, &project_context, show_closed).await {
                     Ok(issues) => {
                         let _ = tx.send(Event::IssuesFetched(issues));
                     }
@@ -1160,7 +1287,7 @@ fn spawn_refresh_active_tab(
                 }
             }
             app::Tab::MergeRequests => {
-                match gitlab::mr::list_mrs(&client, &project_context).await {
+                match gitlab::mr::list_mrs(&client, &project_context, show_closed).await {
                     Ok(mrs) => {
                         let _ = tx.send(Event::MrsFetched(mrs));
                     }
@@ -1229,7 +1356,7 @@ fn spawn_refresh_active_tab(
                 let mut found_pipeline_id = None;
 
                 if let Some(branch) = &branch_name {
-                    let mr_iid = match gitlab::mr::list_mrs(&client, &project_context).await {
+                    let mr_iid = match gitlab::mr::list_mrs(&client, &project_context, false).await {
                         Ok(mrs) => mrs
                             .into_iter()
                             .find(|m| &m.source_branch == branch)
@@ -1433,7 +1560,7 @@ async fn main() -> Result<()> {
         if app.issues.items.is_empty() {
             app.loading_tabs.insert(app.active_tab);
         }
-        spawn_refresh_active_tab(&client, &app.project_context, app.active_tab, tx.clone());
+        spawn_refresh_active_tab(&client, &app.project_context, app.active_tab, tx.clone(), app.is_column_visible(app.active_tab, "Show Closed Items"));
     } else {
         app.error_message = Some("Failed to initialize GitLab client".to_string());
     }
@@ -1668,6 +1795,7 @@ async fn main() -> Result<()> {
                                     &app.project_context,
                                     tab,
                                     events.sender(),
+                                    app.is_column_visible(app.active_tab, "Show Closed Items"),
                                 );
                             }
                         }
@@ -1769,6 +1897,7 @@ async fn main() -> Result<()> {
                                     &app.project_context,
                                     app.active_tab,
                                     events.sender(),
+                                    app.is_column_visible(app.active_tab, "Show Closed Items"),
                                 );
                             }
                         }
@@ -2268,6 +2397,17 @@ async fn main() -> Result<()> {
                                             }
                                         });
                                     }
+                                    crate::app::TextInputAction::EditNewField {
+                                        field_idx,
+                                    } => {
+                                        // Write the value directly into the edit_menu fields
+                                        // (no CLI call — iid==0 means this entity is not yet created)
+                                        if let Some(ref mut menu) = app.edit_menu {
+                                            if let Some(field) = menu.fields.get_mut(field_idx) {
+                                                field.1 = value.clone();
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             _ => {
@@ -2489,6 +2629,7 @@ async fn main() -> Result<()> {
                                                             &app.project_context,
                                                             app.active_tab,
                                                             events.sender(),
+                                                            app.is_column_visible(app.active_tab, "Show Closed Items"),
                                                         );
                                                     }
                                                 } else {
@@ -2578,29 +2719,68 @@ async fn main() -> Result<()> {
 
                                     let entity_type = selector.entity_type.clone();
                                     let entity_iid = selector.entity_iid;
-                                    let selected_list: Vec<String> =
+                                    let filtered_items = selector.get_filtered_items();
+                                    let mut selected_list: Vec<String> =
                                         selector.selected_items.iter().cloned().collect();
 
-                                    apply_selector_changes(
-                                        &mut app,
-                                        &entity_type,
-                                        entity_iid,
-                                        &field_type,
-                                        selected_list,
-                                        &mut terminal,
-                                    )
-                                    .await;
-
-                                    if let Some(client) = &app.gitlab_client {
-                                        spawn_refresh_active_tab(
-                                            client,
-                                            &app.project_context,
-                                            app.active_tab,
-                                            events.sender(),
-                                        );
+                                    // Auto-select highlighted item on Enter for single-select fields if nothing selected
+                                    if !selector.multi_select && selected_list.is_empty() {
+                                        if !filtered_items.is_empty() {
+                                            let item = &filtered_items[selector.cursor_idx];
+                                            if !item.starts_with("+ Create \"") {
+                                                selected_list.push(item.clone());
+                                            }
+                                        }
                                     }
 
-                                    rebuild_edit_menu(&mut app, &entity_type, entity_iid);
+                                    if entity_iid == 0 {
+                                        // Write the values directly to the active field of app.edit_menu
+                                        if let Some(ref mut menu) = app.edit_menu {
+                                            let target_field_name = match field_type.as_str() {
+                                                "labels" => "Labels",
+                                                "assignees" => "Assignees",
+                                                "reviewers" => "Reviewers",
+                                                "milestone" => "Milestone",
+                                                "confidential" => "Confidential",
+                                                "draft_status" => "Status (Draft/Ready)",
+                                                _ => "",
+                                            };
+                                            if !target_field_name.is_empty() {
+                                                if let Some(f) = menu.fields.iter_mut().find(|f| f.0 == target_field_name) {
+                                                     let display_val = if field_type == "confidential" {
+                                                         selected_list.first().cloned().unwrap_or_else(|| "No".to_string())
+                                                     } else if field_type == "draft_status" {
+                                                         selected_list.first().cloned().unwrap_or_else(|| "Ready".to_string())
+                                                     } else {
+                                                         selected_list.join(", ")
+                                                     };
+                                                     f.1 = display_val;
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        apply_selector_changes(
+                                            &mut app,
+                                            &entity_type,
+                                            entity_iid,
+                                            &field_type,
+                                            selected_list,
+                                            &mut terminal,
+                                        )
+                                        .await;
+
+                                        if let Some(client) = &app.gitlab_client {
+                                            spawn_refresh_active_tab(
+                                                client,
+                                                &app.project_context,
+                                                app.active_tab,
+                                                events.sender(),
+                                                app.is_column_visible(app.active_tab, "Show Closed Items"),
+                                            );
+                                        }
+
+                                        rebuild_edit_menu(&mut app, &entity_type, entity_iid);
+                                    }
                                 }
                                 _ => {
                                     app.selector = Some(selector);
@@ -2634,6 +2814,147 @@ async fn main() -> Result<()> {
                                 let entity_iid = menu.entity_iid;
                                 let entity_type = menu.entity_type.clone();
 
+                                if field_name == "[ Submit ]" {
+                                    if entity_iid == 0 {
+                                        if entity_type == "new_issue" {
+                                            let title = menu.fields.iter().find(|(k, _)| k == "Title").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let description = menu.fields.iter().find(|(k, _)| k == "Description").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let labels = menu.fields.iter().find(|(k, _)| k == "Labels").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let assignees = menu.fields.iter().find(|(k, _)| k == "Assignees").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let milestone = menu.fields.iter().find(|(k, _)| k == "Milestone").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let confidential = menu.fields.iter().find(|(k, _)| k == "Confidential").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let due_date = menu.fields.iter().find(|(k, _)| k == "Due Date").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let weight = menu.fields.iter().find(|(k, _)| k == "Weight").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+
+                                            let mut cmd_args = vec!["issue", "create"];
+                                            if !title.is_empty() {
+                                                cmd_args.push("--title");
+                                                cmd_args.push(&title);
+                                            }
+                                            if !description.is_empty() {
+                                                cmd_args.push("--description");
+                                                cmd_args.push(&description);
+                                            }
+                                            if !labels.is_empty() {
+                                                cmd_args.push("--label");
+                                                cmd_args.push(&labels);
+                                            }
+                                            let clean_assignees;
+                                            if !assignees.is_empty() {
+                                                clean_assignees = assignees
+                                                    .split(',')
+                                                    .map(|a| a.trim().trim_start_matches('@').to_string())
+                                                    .collect::<Vec<_>>()
+                                                    .join(",");
+                                                cmd_args.push("--assignee");
+                                                cmd_args.push(&clean_assignees);
+                                            }
+                                            if !milestone.is_empty() {
+                                                cmd_args.push("--milestone");
+                                                cmd_args.push(&milestone);
+                                            }
+                                            if confidential.to_lowercase() == "yes" {
+                                                cmd_args.push("--confidential");
+                                            }
+                                            if !due_date.is_empty() {
+                                                cmd_args.push("--due-date");
+                                                cmd_args.push(&due_date);
+                                            }
+                                            if !weight.is_empty() && weight != "0" {
+                                                cmd_args.push("--weight");
+                                                cmd_args.push(&weight);
+                                            }
+
+                                            app.edit_menu = None;
+                                            run_glab_cmd(&cmd_args, &mut terminal, events.sender(), app.active_tab).await;
+                                            
+                                            if let Some(client) = &app.gitlab_client {
+                                                spawn_refresh_active_tab(
+                                                    client,
+                                                    &app.project_context,
+                                                    app.active_tab,
+                                                    events.sender(),
+                                                    app.is_column_visible(app.active_tab, "Show Closed Items"),
+                                                );
+                                            }
+                                            continue;
+                                        } else if entity_type == "new_mr" {
+                                            let title = menu.fields.iter().find(|(k, _)| k == "Title").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let source = menu.fields.iter().find(|(k, _)| k == "Source Branch").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let target = menu.fields.iter().find(|(k, _)| k == "Target Branch").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let labels = menu.fields.iter().find(|(k, _)| k == "Labels").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let assignees = menu.fields.iter().find(|(k, _)| k == "Assignees").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let reviewers = menu.fields.iter().find(|(k, _)| k == "Reviewers").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let milestone = menu.fields.iter().find(|(k, _)| k == "Milestone").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let status = menu.fields.iter().find(|(k, _)| k == "Status (Draft/Ready)").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let description = menu.fields.iter().find(|(k, _)| k == "Description").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+
+                                            let mut cmd_args = vec!["mr", "create", "-y"];
+                                            if !title.is_empty() {
+                                                cmd_args.push("--title");
+                                                cmd_args.push(&title);
+                                            }
+                                            if !source.is_empty() {
+                                                cmd_args.push("--source-branch");
+                                                cmd_args.push(&source);
+                                            }
+                                            if !target.is_empty() {
+                                                cmd_args.push("--target-branch");
+                                                cmd_args.push(&target);
+                                            }
+                                            if !labels.is_empty() {
+                                                cmd_args.push("--label");
+                                                cmd_args.push(&labels);
+                                            }
+                                            let clean_assignees;
+                                            if !assignees.is_empty() {
+                                                clean_assignees = assignees
+                                                    .split(',')
+                                                    .map(|a| a.trim().trim_start_matches('@').to_string())
+                                                    .collect::<Vec<_>>()
+                                                    .join(",");
+                                                cmd_args.push("--assignee");
+                                                cmd_args.push(&clean_assignees);
+                                            }
+                                            let clean_reviewers;
+                                            if !reviewers.is_empty() {
+                                                clean_reviewers = reviewers
+                                                    .split(',')
+                                                    .map(|r| r.trim().trim_start_matches('@').to_string())
+                                                    .collect::<Vec<_>>()
+                                                    .join(",");
+                                                cmd_args.push("--reviewer");
+                                                cmd_args.push(&clean_reviewers);
+                                            }
+                                            if !milestone.is_empty() {
+                                                cmd_args.push("--milestone");
+                                                cmd_args.push(&milestone);
+                                            }
+                                            if status.to_lowercase() == "draft" {
+                                                cmd_args.push("--draft");
+                                            }
+                                            if !description.is_empty() {
+                                                cmd_args.push("--description");
+                                                cmd_args.push(&description);
+                                            }
+
+                                            app.edit_menu = None;
+                                            run_glab_cmd(&cmd_args, &mut terminal, events.sender(), app.active_tab).await;
+                                            
+                                            if let Some(client) = &app.gitlab_client {
+                                                spawn_refresh_active_tab(
+                                                    client,
+                                                    &app.project_context,
+                                                    app.active_tab,
+                                                    events.sender(),
+                                                    app.is_column_visible(app.active_tab, "Show Closed Items"),
+                                                );
+                                            }
+                                            continue;
+                                        }
+                                    }
+                                }
+
                                 if field_name == "Labels"
                                     || field_name == "Assignees"
                                     || field_name == "Reviewers"
@@ -2663,11 +2984,17 @@ async fn main() -> Result<()> {
                                         all_items =
                                             vec!["Public".to_string(), "Confidential".to_string()];
                                         is_loading = false;
-                                        // Default Confidential representation in model is not explicitly boolean, so start empty
                                     } else if field_type == "draft_status" {
                                         all_items = vec!["Draft".to_string(), "Ready".to_string()];
                                         is_loading = false;
-                                        if let Some(mr) =
+                                        if entity_iid == 0 {
+                                            let current_val = menu.fields[menu.selected_idx].1.clone();
+                                            if !current_val.is_empty() {
+                                                current_set.insert(current_val);
+                                            } else {
+                                                current_set.insert("Ready".to_string());
+                                            }
+                                        } else if let Some(mr) =
                                             app.mrs.items.iter().find(|m| m.iid == entity_iid)
                                         {
                                             current_set.insert(if mr.draft {
@@ -2675,6 +3002,22 @@ async fn main() -> Result<()> {
                                             } else {
                                                 "Ready".to_string()
                                             });
+                                        }
+                                    }
+
+                                    if entity_iid == 0 {
+                                        let current_val = menu.fields[menu.selected_idx].1.clone();
+                                        if !current_val.is_empty() && field_type != "draft_status" {
+                                            if multi_select {
+                                                for item in current_val.split(',') {
+                                                    let trimmed = item.trim().to_string();
+                                                    if !trimmed.is_empty() {
+                                                        current_set.insert(trimmed);
+                                                    }
+                                                }
+                                            } else {
+                                                current_set.insert(current_val);
+                                            }
                                         }
                                     } else if entity_type == "issue" {
                                         if let Some(issue) =
@@ -2789,63 +3132,84 @@ async fn main() -> Result<()> {
                                 }
 
                                 if field_name == "Title"
+                                    || field_name == "Source Branch"
                                     || field_name == "Target Branch"
                                     || field_name == "Due Date"
                                     || field_name == "Weight"
+                                    || field_name == "Description"
                                 {
-                                    let field_type = match field_name.as_str() {
-                                        "Title" => "title",
-                                        "Target Branch" => "target_branch",
-                                        "Due Date" => "due_date",
-                                        "Weight" => "weight",
-                                        _ => "",
-                                    };
-                                    let current_val = match field_type {
-                                        "title" => {
-                                            if entity_type == "issue" {
-                                                app.issues
-                                                    .items
-                                                    .iter()
-                                                    .find(|i| i.iid == entity_iid)
-                                                    .map(|i| i.title.clone())
-                                                    .unwrap_or_default()
-                                            } else {
-                                                app.mrs
-                                                    .items
-                                                    .iter()
-                                                    .find(|m| m.iid == entity_iid)
-                                                    .map(|m| m.title.clone())
-                                                    .unwrap_or_default()
+                                    let current_val = if entity_iid == 0 {
+                                        menu.fields[menu.selected_idx].1.clone()
+                                    } else {
+                                        let field_type = match field_name.as_str() {
+                                            "Title" => "title",
+                                            "Target Branch" => "target_branch",
+                                            "Due Date" => "due_date",
+                                            "Weight" => "weight",
+                                            _ => "",
+                                        };
+                                        match field_type {
+                                            "title" => {
+                                                if entity_type == "issue" {
+                                                    app.issues
+                                                        .items
+                                                        .iter()
+                                                        .find(|i| i.iid == entity_iid)
+                                                        .map(|i| i.title.clone())
+                                                        .unwrap_or_default()
+                                                } else {
+                                                    app.mrs
+                                                        .items
+                                                        .iter()
+                                                        .find(|m| m.iid == entity_iid)
+                                                        .map(|m| m.title.clone())
+                                                        .unwrap_or_default()
+                                                }
                                             }
+                                            "target_branch" => app
+                                                .mrs
+                                                .items
+                                                .iter()
+                                                .find(|m| m.iid == entity_iid)
+                                                .map(|m| m.target_branch.clone())
+                                                .unwrap_or_default(),
+                                            "due_date" => "".to_string(),
+                                            "weight" => "0".to_string(),
+                                            _ => String::new(),
                                         }
-                                        "target_branch" => app
-                                            .mrs
-                                            .items
-                                            .iter()
-                                            .find(|m| m.iid == entity_iid)
-                                            .map(|m| m.target_branch.clone())
-                                            .unwrap_or_default(),
-                                        "due_date" => "".to_string(),
-                                        "weight" => "0".to_string(),
-                                        _ => String::new(),
+                                    };
+
+                                    let action = if entity_iid == 0 {
+                                        crate::app::TextInputAction::EditNewField {
+                                            field_idx: menu.selected_idx,
+                                        }
+                                    } else {
+                                        let field_type = match field_name.as_str() {
+                                            "Title" => "title",
+                                            "Target Branch" => "target_branch",
+                                            "Due Date" => "due_date",
+                                            "Weight" => "weight",
+                                            _ => "",
+                                        };
+                                        crate::app::TextInputAction::EditField {
+                                            entity_iid,
+                                            entity_type: entity_type.clone(),
+                                            field_type: field_type.to_string(),
+                                        }
                                     };
 
                                     app.text_input = Some(crate::app::TextInput {
                                         title: format!("Edit {}", field_name),
                                         cursor_idx: current_val.len(),
                                         value: current_val,
-                                        action: crate::app::TextInputAction::EditField {
-                                            entity_iid,
-                                            entity_type: entity_type.clone(),
-                                            field_type: field_type.to_string(),
-                                        },
+                                        action,
                                     });
 
                                     app.edit_menu = Some(menu);
                                     continue;
                                 }
 
-                                if field_name == "Description" {
+                                if field_name == "Description" && entity_iid > 0 {
                                     let active_tab = app.active_tab;
                                     handle_entity_update(
                                         &mut app,
@@ -3528,6 +3892,7 @@ async fn main() -> Result<()> {
                                                             &project_context,
                                                             active_tab,
                                                             tx,
+                                                            false,
                                                         );
                                                     });
                                                 } else {
@@ -3557,6 +3922,7 @@ async fn main() -> Result<()> {
                                                             &project_context,
                                                             active_tab,
                                                             tx,
+                                                            false,
                                                         );
                                                     });
                                                 }
@@ -3593,6 +3959,7 @@ async fn main() -> Result<()> {
                                                         &project_context,
                                                         active_tab,
                                                         tx,
+                                                        false,
                                                     );
                                                 });
                                             }
@@ -4293,6 +4660,7 @@ async fn main() -> Result<()> {
                                             &app.project_context,
                                             app.active_tab,
                                             events.sender(),
+                                            app.is_column_visible(app.active_tab, "Show Closed Items"),
                                         );
                                     }
                                 }
@@ -4311,6 +4679,7 @@ async fn main() -> Result<()> {
                                             &app.project_context,
                                             app.active_tab,
                                             events.sender(),
+                                            app.is_column_visible(app.active_tab, "Show Closed Items"),
                                         );
                                     }
                                 }

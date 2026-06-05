@@ -432,8 +432,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(2), // Top header bar
+            Constraint::Min(0),    // Main workspace
+            Constraint::Length(6), // Under the Hood pane
+        ])
         .split(size);
+
+    let title_area = chunks[0];
 
     // Top: Title & Context (Zellij Vibe Horizontal Bar)
     let mut title_spans = vec![
@@ -493,7 +499,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .borders(Borders::BOTTOM)
                 .border_style(Style::default().fg(THEME.border)),
         );
-    f.render_widget(title, chunks[0]);
+    f.render_widget(title, title_area);
 
     // Middle: Sidebar | Main Area | Preview Area
     let can_zoom = app.active_tab != Tab::Pipelines || app.selected_pipeline_jobs.is_some();
@@ -720,7 +726,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    Row::new(cells).height(1)
+                    let row_style = if is_selected {
+                        Style::default().bg(THEME.highlight_bg)
+                    } else {
+                        Style::default()
+                    };
+                    Row::new(cells).style(row_style).height(1)
                 });
 
                 let mut header_cells = Vec::new();
@@ -1157,7 +1168,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    Row::new(cells).height(1)
+                    let row_style = if is_selected {
+                        Style::default().bg(THEME.highlight_bg)
+                    } else {
+                        Style::default()
+                    };
+                    Row::new(cells).style(row_style).height(1)
                 });
 
                 let mut header_cells = Vec::new();
@@ -1510,7 +1526,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    Row::new(row_cells).height(1)
+                    let row_style = if is_row_highlighted {
+                        Style::default().bg(THEME.highlight_bg)
+                    } else if is_checked {
+                        Style::default().bg(THEME.checked_bg)
+                    } else {
+                        Style::default()
+                    };
+                    Row::new(row_cells).style(row_style).height(1)
                 });
 
                 let mut header_cells = Vec::new();
@@ -1734,7 +1757,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    Row::new(row_cells).height(1)
+                    let row_style = if is_job_selected {
+                        Style::default().bg(THEME.highlight_bg)
+                    } else if is_checked {
+                        Style::default().bg(THEME.checked_bg)
+                    } else {
+                        Style::default()
+                    };
+                    Row::new(row_cells).style(row_style).height(1)
                 });
 
                 let mut header_cells = Vec::new();
@@ -1947,7 +1977,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    Row::new(row_cells).height(1)
+                    let row_style = if is_row_highlighted {
+                        Style::default().bg(THEME.highlight_bg)
+                    } else {
+                        Style::default()
+                    };
+                    Row::new(row_cells).style(row_style).height(1)
                 });
 
                 let mut header_cells = Vec::new();
@@ -2199,7 +2234,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    Row::new(row_cells).height(1)
+                    let row_style = if is_row_highlighted {
+                        Style::default().bg(THEME.highlight_bg)
+                    } else {
+                        Style::default()
+                    };
+                    Row::new(row_cells).style(row_style).height(1)
                 });
 
                 let mut header_cells = Vec::new();
@@ -2391,7 +2431,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    Row::new(row_cells).height(1)
+                    let row_style = if is_row_highlighted {
+                        Style::default().bg(THEME.highlight_bg)
+                    } else {
+                        Style::default()
+                    };
+                    Row::new(row_cells).style(row_style).height(1)
                 });
 
                 let mut header_cells = Vec::new();
@@ -2543,7 +2588,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .height(1)
                     .bottom_margin(1);
 
-                let rows = filtered_milestones.iter().map(|m| {
+                let rows = filtered_milestones.iter().enumerate().map(|(idx, m)| {
                     let mut cells = Vec::new();
                     let cols = Tab::Milestones.columns();
                     for col in cols {
@@ -2559,7 +2604,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             cells.push(Cell::from(val));
                         }
                     }
-                    Row::new(cells).style(Style::default().fg(THEME.text_normal))
+                    let is_selected = app.milestones.state.selected() == Some(idx);
+                    let row_style = if is_selected {
+                        Style::default().bg(THEME.highlight_bg)
+                    } else {
+                        Style::default().fg(THEME.text_normal)
+                    };
+                    Row::new(cells).style(row_style)
                 });
 
                 let table = Table::new(rows, [Constraint::Percentage(10), Constraint::Percentage(40), Constraint::Percentage(20), Constraint::Percentage(30)])
@@ -2686,7 +2737,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .height(1)
                     .bottom_margin(1);
 
-                let rows = filtered_wiki.iter().map(|p| {
+                let rows = filtered_wiki.iter().enumerate().map(|(idx, p)| {
                     let mut cells = Vec::new();
                     let cols = Tab::Wiki.columns();
                     for col in cols {
@@ -2699,7 +2750,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             cells.push(Cell::from(val));
                         }
                     }
-                    Row::new(cells).style(Style::default().fg(THEME.text_normal))
+                    let is_selected = app.wiki_pages.state.selected() == Some(idx);
+                    let row_style = if is_selected {
+                        Style::default().bg(THEME.highlight_bg)
+                    } else {
+                        Style::default().fg(THEME.text_normal)
+                    };
+                    Row::new(cells).style(row_style)
                 });
 
                 let table = Table::new(rows, [Constraint::Percentage(100)])
@@ -2737,6 +2794,105 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     );
                 }
             }
+        }
+    }
+
+    // Terminal bottom pane
+    {
+        let bottom_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(THEME.border))
+            .title(" Terminal ")
+            .title_style(Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD));
+
+        let bottom_area = chunks[2];
+        f.render_widget(bottom_block.clone(), bottom_area);
+
+        let bottom_inner = bottom_block.inner(bottom_area);
+        if bottom_inner.height > 0 {
+            let mut log_lines = Vec::new();
+            let log_height = bottom_inner.height as usize;
+            
+            // Get the last N commands where N is the height of the pane
+            let num_cmds = app.terminal_commands.len();
+            let display_count = std::cmp::min(num_cmds, log_height);
+            let start_idx = num_cmds.saturating_sub(display_count);
+            
+            // Add padding empty lines if we have fewer commands than the log height
+            if display_count < log_height {
+                for _ in 0..(log_height - display_count) {
+                    log_lines.push(Line::from(""));
+                }
+            }
+
+            for i in start_idx..num_cmds {
+                if let Some(cmd) = app.terminal_commands.get(i) {
+                    let time_str = if cmd.timestamp.len() >= 8 {
+                        let parts: Vec<&str> = cmd.timestamp.split('T').collect();
+                        if parts.len() > 1 {
+                            parts[1].chars().take(8).collect::<String>()
+                        } else {
+                            cmd.timestamp.chars().take(8).collect::<String>()
+                        }
+                    } else {
+                        cmd.timestamp.clone()
+                    };
+
+                    let (status_text, status_color) = match cmd.status.as_str() {
+                        "Success" => ("SUCCESS", THEME.green),
+                        "Running" => ("RUNNING", THEME.yellow),
+                        s if s.starts_with("Failed") => ("FAILED ", THEME.red),
+                        _ => ("PENDING", THEME.yellow),
+                    };
+
+                    let err_detail = if cmd.status.starts_with("Failed: ") {
+                        Some(&cmd.status[8..])
+                    } else if cmd.status.starts_with("Failed") && cmd.status.len() > 6 {
+                        Some(&cmd.status[6..])
+                    } else {
+                        None
+                    };
+
+                    let status_span = Span::styled(status_text, Style::default().fg(status_color).add_modifier(Modifier::BOLD));
+                    
+                    let mut cmd_spans = vec![
+                        Span::styled(format!("[{}] ", time_str), Style::default().fg(THEME.text_muted)),
+                        status_span,
+                    ];
+
+                    let cmd_clean = cmd.command.trim();
+                    if cmd_clean.starts_with("Fetch") || cmd_clean.starts_with("Error") || cmd_clean.starts_with("Loading") {
+                        cmd_spans.push(Span::styled(" • ", Style::default().fg(THEME.text_muted)));
+                        cmd_spans.push(Span::styled(cmd_clean, Style::default().fg(THEME.text_normal)));
+                        if let Some(detail) = err_detail {
+                            cmd_spans.push(Span::styled(format!(": {}", detail), Style::default().fg(THEME.red)));
+                        }
+                    } else {
+                        cmd_spans.push(Span::styled(" $ ", Style::default().fg(THEME.text_muted)));
+                        let (cmd_bin, cmd_args) = if cmd_clean.starts_with("glab") {
+                            ("glab", &cmd_clean[4..])
+                        } else if cmd_clean.starts_with("gh") {
+                            ("gh", &cmd_clean[2..])
+                        } else {
+                            ("", cmd_clean)
+                        };
+
+                        if !cmd_bin.is_empty() {
+                            cmd_spans.push(Span::styled(cmd_bin, Style::default().fg(THEME.yellow).add_modifier(Modifier::BOLD)));
+                        }
+
+                        let max_args_len = (bottom_inner.width as usize).saturating_sub(30);
+                        cmd_spans.push(Span::styled(truncate(cmd_args, max_args_len), Style::default().fg(THEME.text_normal)));
+                        if let Some(detail) = err_detail {
+                            cmd_spans.push(Span::styled(format!(" ({})", detail), Style::default().fg(THEME.red)));
+                        }
+                    }
+
+                    log_lines.push(Line::from(cmd_spans));
+                }
+            }
+
+            f.render_widget(Paragraph::new(log_lines), bottom_inner);
         }
     }
 
@@ -2972,22 +3128,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         app.diff_view = Some(updated_diff_view);
     }
 
-    // Error Popup overlay
-    if let Some(err) = &app.error_message {
-        let block = Block::default()
-            .title(" Error ")
-            .title_style(Style::default().fg(THEME.red).add_modifier(Modifier::BOLD))
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .style(Style::default().fg(THEME.red).bg(Color::Reset));
-        let paragraph = Paragraph::new(err.clone())
-            .block(block)
-            .alignment(Alignment::Center);
 
-        let area = centered_rect(60, 20, size);
-        f.render_widget(Clear, area); //this clears out the background
-        f.render_widget(paragraph, area);
-    }
 
     if let Some(menu) = &mut app.edit_menu {
         let block = Block::default()
@@ -3008,22 +3149,48 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .iter()
             .enumerate()
             .map(|(i, (label, val))| {
-                let style = if i == menu.selected_idx {
-                    Style::default()
-                        .bg(THEME.highlight_bg)
-                        .fg(THEME.text_normal)
-                        .add_modifier(Modifier::BOLD)
+                let is_selected = i == menu.selected_idx;
+                let bg_color = if is_selected {
+                    THEME.highlight_bg
+                } else {
+                    Color::Reset
+                };
+
+                let label_style = if is_selected {
+                    Style::default().fg(THEME.purple).bg(bg_color).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(THEME.text_muted)
+                };
+
+                let sep_style = if is_selected {
+                    Style::default().fg(THEME.purple).bg(bg_color).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(THEME.text_muted)
+                };
+
+                let val_style = if is_selected {
+                    Style::default().fg(THEME.text_normal).bg(bg_color).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(THEME.text_normal)
                 };
-                ListItem::new(vec![Line::from(vec![
-                    Span::styled(
-                        format!("  {:20} ", label),
-                        Style::default().fg(THEME.text_muted),
-                    ),
-                    Span::styled(" ❯ ", Style::default().fg(THEME.text_muted)),
-                    Span::styled(val, style),
-                ])])
+
+                let (display_val, display_style) = if val.is_empty() {
+                    if is_selected {
+                        (" <type or select> ▋".to_string(), Style::default().fg(THEME.text_muted).bg(bg_color).add_modifier(Modifier::ITALIC))
+                    } else {
+                        (" <empty>".to_string(), Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC))
+                    }
+                } else {
+                    (val.clone(), val_style)
+                };
+
+                let line = Line::from(vec![
+                    Span::styled(format!("  {:18} ", label), label_style),
+                    Span::styled(" ❯ ", sep_style),
+                    Span::styled(display_val, display_style),
+                ]);
+
+                ListItem::new(line).style(Style::default().bg(bg_color))
             })
             .collect();
 
@@ -3182,7 +3349,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             line_spans.push(Span::styled(item.clone(), style));
                         }
 
-                        ListItem::new(vec![Line::from(line_spans)])
+                        let item_style = if i == selector.cursor_idx {
+                            Style::default().bg(THEME.highlight_bg)
+                        } else {
+                            Style::default()
+                        };
+                        ListItem::new(vec![Line::from(line_spans)]).style(item_style)
                     })
                     .collect();
 
@@ -3250,147 +3422,104 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
 
         let shortcuts = [
-            Shortcut {
-                category: "Global & Nav",
-                key: "l / →",
-                action: "Next tab",
-            },
-            Shortcut {
-                category: "Global & Nav",
-                key: "h / ←",
-                action: "Previous tab",
-            },
-            Shortcut {
-                category: "Global & Nav",
-                key: "Tab / t",
-                action: "Toggle columns config popup",
-            },
-            Shortcut {
-                category: "Global & Nav",
-                key: "j / k / ↓ / ↑",
-                action: "Select item / Scroll jobs",
-            },
-            Shortcut {
-                category: "Global & Nav",
-                key: "J / K",
-                action: "Scroll description / trace",
-            },
-            Shortcut {
-                category: "Global & Nav",
-                key: "f / /",
-                action: "Open fuzzy search / filter bar",
-            },
-            Shortcut {
-                category: "Global & Nav",
-                key: "F5 / Ctrl+R",
-                action: "Refresh active tab data",
-            },
-            Shortcut {
-                category: "Global & Nav",
-                key: "? / F1",
-                action: "Show this help modal",
-            },
-            Shortcut {
-                category: "Global & Nav",
-                key: "q / Esc",
-                action: "Quit / Close overlay",
-            },
-            Shortcut {
-                category: "Issues & MRs",
-                key: "n",
-                action: "Create new Issue / MR",
-            },
-            Shortcut {
-                category: "Issues & MRs",
-                key: "e",
-                action: "Open parameter edit menu",
-            },
-            Shortcut {
-                category: "Issues & MRs",
-                key: "c",
-                action: "Close selected Issue",
-            },
-            Shortcut {
-                category: "Issues & MRs",
-                key: "a",
-                action: "Approve selected MR",
-            },
-            Shortcut {
-                category: "Issues & MRs",
-                key: "m",
-                action: "Merge selected MR (squash + delete)",
-            },
-            Shortcut {
-                category: "Issues & MRs",
-                key: "s",
-                action: "Toggle Draft / Ready status",
-            },
-            Shortcut {
-                category: "Issues & MRs",
-                key: "v",
-                action: "View Merge Request diff changes",
-            },
-            Shortcut {
-                category: "Pipelines",
-                key: "Enter",
-                action: "View jobs list / View job trace",
-            },
-            Shortcut {
-                category: "Pipelines",
-                key: "Esc / Backspc",
-                action: "Go back (jobs -> pipes, trace -> jobs)",
-            },
-            Shortcut {
-                category: "Pipelines",
-                key: "p",
-                action: "Trigger new pipeline from MR",
-            },
-            Shortcut {
-                category: "Pipelines",
-                key: "r",
-                action: "Retry pipeline or selected job(s)",
-            },
-            Shortcut {
-                category: "Pipelines",
-                key: "c / d",
-                action: "Cancel pipeline execution",
-            },
-            Shortcut {
-                category: "Pipelines",
-                key: "d",
-                action: "Download pipeline job artifact",
-            },
-            Shortcut {
-                category: "Pipelines",
-                key: "e",
-                action: "Open job trace in external $EDITOR",
-            },
-            Shortcut {
-                category: "Pipelines",
-                key: "Space",
-                action: "Check / uncheck item for bulk retry",
-            },
-            Shortcut {
-                category: "Other Tabs",
-                key: "p / r",
-                action: "Pause / Resume runner",
-            },
-            Shortcut {
-                category: "Other Tabs",
-                key: "e",
-                action: "Edit runner description text",
-            },
-            Shortcut {
-                category: "Other Tabs",
-                key: "Enter",
-                action: "View release notes in terminal",
-            },
-            Shortcut {
-                category: "Other Tabs",
-                key: "o",
-                action: "Open MR/Pipeline/Release in browser",
-            },
+            // Global & Nav
+            Shortcut { category: "Global & Nav", key: "l / →", action: "Next tab" },
+            Shortcut { category: "Global & Nav", key: "h / ←", action: "Previous tab" },
+            Shortcut { category: "Global & Nav", key: "Tab / t", action: "Toggle columns config popup" },
+            Shortcut { category: "Global & Nav", key: "j / k / ↓ / ↑", action: "Select item / Scroll page" },
+            Shortcut { category: "Global & Nav", key: "J / K", action: "Scroll description / trace / notes" },
+            Shortcut { category: "Global & Nav", key: "f / /", action: "Open fuzzy search / filter bar" },
+            Shortcut { category: "Global & Nav", key: "F5 / Ctrl+R", action: "Refresh active tab data" },
+            Shortcut { category: "Global & Nav", key: "Ctrl+S", action: "Switch repository" },
+            Shortcut { category: "Global & Nav", key: "u", action: "Check for updates" },
+            Shortcut { category: "Global & Nav", key: "? / F1", action: "Show this help modal" },
+            Shortcut { category: "Global & Nav", key: "q / Esc", action: "Quit / Close overlay" },
+            Shortcut { category: "Global & Nav", key: "Ctrl+C", action: "Quit program" },
+
+            // Issues
+            Shortcut { category: "Issues", key: "n", action: "Create new Issue" },
+            Shortcut { category: "Issues", key: "e", action: "Open parameter edit menu" },
+            Shortcut { category: "Issues", key: "c", action: "Close selected Issue" },
+            Shortcut { category: "Issues", key: "o", action: "Open selected Issue in browser" },
+
+            // Merge Requests
+            Shortcut { category: "Merge Requests", key: "n", action: "Create new Merge Request" },
+            Shortcut { category: "Merge Requests", key: "e", action: "Open parameter edit menu" },
+            Shortcut { category: "Merge Requests", key: "a", action: "Approve selected MR" },
+            Shortcut { category: "Merge Requests", key: "m", action: "Merge selected MR (squash + delete)" },
+            Shortcut { category: "Merge Requests", key: "s", action: "Toggle Draft / Ready status" },
+            Shortcut { category: "Merge Requests", key: "v", action: "View Merge Request diff changes" },
+            Shortcut { category: "Merge Requests", key: "o", action: "Open selected MR in browser" },
+
+            // Pipelines
+            Shortcut { category: "Pipelines", key: "Enter", action: "View pipeline jobs list" },
+            Shortcut { category: "Pipelines", key: "p", action: "Trigger new pipeline from MR" },
+            Shortcut { category: "Pipelines", key: "r", action: "Retry selected pipeline(s)" },
+            Shortcut { category: "Pipelines", key: "c", action: "Cancel pipeline execution" },
+            Shortcut { category: "Pipelines", key: "Space", action: "Check / uncheck pipeline for bulk retry" },
+            Shortcut { category: "Pipelines", key: "o", action: "Open pipeline in browser" },
+
+            // Jobs
+            Shortcut { category: "Jobs", key: "Enter", action: "View job trace (toggle zoom)" },
+            Shortcut { category: "Jobs", key: "Esc / Backspc", action: "Go back to Pipelines list" },
+            Shortcut { category: "Jobs", key: "r", action: "Retry selected job(s)" },
+            Shortcut { category: "Jobs", key: "c", action: "Cancel selected job(s)" },
+            Shortcut { category: "Jobs", key: "Space", action: "Check / uncheck job for bulk retry/cancel" },
+            Shortcut { category: "Jobs", key: "s", action: "Select all jobs in stage" },
+            Shortcut { category: "Jobs", key: "d", action: "Download job artifact" },
+            Shortcut { category: "Jobs", key: "e", action: "Open job trace in external $EDITOR" },
+            Shortcut { category: "Jobs", key: "o", action: "Open selected job in browser" },
+
+            // Wiki
+            Shortcut { category: "Wiki", key: "J / K", action: "Scroll wiki page content" },
+
+            // Milestones
+            Shortcut { category: "Milestones", key: "J / K", action: "Scroll milestone issues list" },
+
+            // Runners
+            Shortcut { category: "Runners", key: "p / r", action: "Pause / Resume runner" },
+            Shortcut { category: "Runners", key: "e", action: "Edit runner description text" },
+
+            // Releases
+            Shortcut { category: "Releases", key: "Enter", action: "View release notes (toggle zoom)" },
+            Shortcut { category: "Releases", key: "n", action: "Create new release tag & changelog" },
+            Shortcut { category: "Releases", key: "o", action: "Open release in browser" },
+
+            // Notifications
+            Shortcut { category: "Notifications", key: "Enter", action: "Open notification target & mark read" },
+
+            // Diff View
+            Shortcut { category: "Diff View", key: "q / Esc", action: "Exit Diff View" },
+            Shortcut { category: "Diff View", key: "Tab", action: "Toggle Focus (Files / Diff)" },
+            Shortcut { category: "Diff View", key: "h / l / Left / Right", action: "Switch Panel Focus" },
+            Shortcut { category: "Diff View", key: "j / k / ↓ / ↑", action: "Navigate files or diff lines" },
+            Shortcut { category: "Diff View", key: "J / K", action: "Next / Previous Hunk" },
+            Shortcut { category: "Diff View", key: "c", action: "Add Comment on Line" },
+            Shortcut { category: "Diff View", key: "p", action: "Toggle Review Mode (draft comments)" },
+            Shortcut { category: "Diff View", key: "r", action: "Submit Review (approve/changes/comment)" },
+            Shortcut { category: "Diff View", key: "? / F1", action: "Show this help modal" },
         ];
+
+        let active_categories: &[&str] = if app.diff_view.is_some() {
+            &["Diff View"]
+        } else {
+            match app.active_tab {
+                Tab::Issues => &["Global & Nav", "Issues"],
+                Tab::MergeRequests => &["Global & Nav", "Merge Requests"],
+                Tab::Pipelines => &["Global & Nav", "Pipelines"],
+                Tab::Jobs => &["Global & Nav", "Jobs"],
+                Tab::Wiki => &["Global & Nav", "Wiki"],
+                Tab::Milestones => &["Global & Nav", "Milestones"],
+                Tab::Runners => &["Global & Nav", "Runners"],
+                Tab::Releases => &["Global & Nav", "Releases"],
+                Tab::Notifications => &["Global & Nav", "Notifications"],
+            }
+        };
+
+        let filtered_shortcuts: Vec<&Shortcut> = shortcuts
+            .iter()
+            .filter(|s| active_categories.contains(&s.category))
+            .collect();
 
         let block = Block::default()
             .title(" Keyboard Shortcuts ")
@@ -3404,7 +3533,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .border_type(BorderType::Double)
             .style(Style::default().bg(Color::Reset));
 
-        let area = centered_rect_fixed(72, 37, size);
+        let area = centered_rect_fixed(72, 30, size);
 
         let help_chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -3453,403 +3582,52 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .block(search_block);
 
         let rows: Vec<Row> = if app.help_search_query.is_empty() {
-            vec![
-                Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
-                // Section 1: Global & Navigation
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "Global & Nav",
-                        Style::default()
-                            .fg(THEME.purple)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "l / →",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Next tab",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "h / ←",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Previous tab",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "Tab / t",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Toggle columns config popup",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "j / k / ↓ / ↑",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Select item / Scroll jobs",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "J / K",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Scroll description / trace",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "f / /",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Open fuzzy search / filter bar",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "F5 / Ctrl+R",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Refresh active tab data",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "? / F1",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Show this help modal",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "q / Esc",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Quit / Close overlay",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]), // spacer
-                // Section 2: Issues & MRs
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "Issues & MRs",
-                        Style::default()
-                            .fg(THEME.purple)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "n",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Create new Issue / MR",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "e",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Open parameter edit menu",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "c",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Close selected Issue",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "a",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Approve selected MR",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "m",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Merge selected MR (squash + delete)",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "s",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Toggle Draft / Ready status",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "v",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "View Merge Request diff changes",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]), // spacer
-                // Section 3: Pipelines & Jobs
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "Pipelines",
-                        Style::default()
-                            .fg(THEME.purple)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Enter",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "View jobs list / View job trace",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "Esc / Backspc",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Go back (jobs -> pipes, trace -> jobs)",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "p",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Trigger new pipeline from MR",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "r",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Retry pipeline or selected job(s)",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "c / d",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Cancel pipeline execution",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "d",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Download pipeline job artifact",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "e",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Open job trace in external $EDITOR",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "Space",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Check / uncheck item for bulk retry",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]), // spacer
-                // Section 4: Runners, Releases & Extras
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "Other Tabs",
-                        Style::default()
-                            .fg(THEME.purple)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "p / r",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Pause / Resume runner",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "e",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Edit runner description text",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "Enter",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "View release notes in terminal",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "o",
-                        Style::default()
-                            .fg(THEME.text_normal)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Open MR/Pipeline/Release in browser",
-                        Style::default().fg(THEME.text_normal),
-                    )),
-                ]),
-            ]
+            let mut result_rows = Vec::new();
+            let mut last_category = "";
+            for s in &filtered_shortcuts {
+                if s.category != last_category {
+                    if !last_category.is_empty() {
+                        result_rows.push(Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")])); // spacer
+                    }
+                    result_rows.push(Row::new(vec![
+                        Cell::from(Span::styled(
+                            s.category,
+                            Style::default()
+                                .fg(THEME.purple)
+                                .add_modifier(Modifier::BOLD),
+                        )),
+                        Cell::from(Span::styled(
+                            s.key,
+                            Style::default()
+                                .fg(THEME.text_normal)
+                                .add_modifier(Modifier::BOLD),
+                        )),
+                        Cell::from(Span::styled(
+                            s.action,
+                            Style::default().fg(THEME.text_normal),
+                        )),
+                    ]));
+                    last_category = s.category;
+                } else {
+                    result_rows.push(Row::new(vec![
+                        Cell::from(""),
+                        Cell::from(Span::styled(
+                            s.key,
+                            Style::default()
+                                .fg(THEME.text_normal)
+                                .add_modifier(Modifier::BOLD),
+                        )),
+                        Cell::from(Span::styled(
+                            s.action,
+                            Style::default().fg(THEME.text_normal),
+                        )),
+                    ]));
+                }
+            }
+            result_rows
         } else {
             let query = app.help_search_query.to_lowercase();
-            shortcuts
+            filtered_shortcuts
                 .iter()
                 .filter(|s| {
                     s.category.to_lowercase().contains(&query)
@@ -3920,13 +3698,99 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let cols = tab.columns();
         let active_idx = app.column_checklist_idx;
         
-        let list_items: Vec<ListItem> = cols
+        let mut columns_list = Vec::new();
+        let mut filters_list = Vec::new();
+        for (i, col) in cols.iter().enumerate() {
+            if *col == "Show Closed Items" {
+                filters_list.push((i, *col));
+            } else {
+                columns_list.push((i, *col));
+            }
+        }
+
+        // Calculate size for the popup based on columns count (no nested borders anymore)
+        let width = 38;
+        let height = if filters_list.is_empty() {
+            (columns_list.len() + 5) as u16
+        } else {
+            (columns_list.len() + filters_list.len() + 6) as u16
+        };
+        let area = centered_rect_fixed(width, height, size);
+
+        let checklist_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(THEME.border_focused))
+            .title(format!(" Configure View: {} ", tab.title(is_github)))
+            .title_style(
+                Style::default()
+                    .fg(THEME.border_focused)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        f.render_widget(Clear, area);
+        f.render_widget(checklist_block.clone(), area);
+
+        let inner_area = checklist_block.inner(area);
+        
+        // Inner layout: List(s) + Footer
+        let popup_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(1), // Footer
+            ])
+            .split(inner_area);
+
+        let footer_p = Paragraph::new(" [Spc] Toggle • [Up/Dn] Move • [Tab] Close ")
+            .alignment(Alignment::Center)
+            .style(
+                Style::default()
+                    .fg(THEME.text_muted)
+                    .add_modifier(Modifier::ITALIC),
+            );
+        f.render_widget(footer_p, popup_layout[1]);
+
+        let lists_area = popup_layout[0];
+        
+        let layout_chunks = if filters_list.is_empty() {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1), // Columns Header
+                    Constraint::Length(columns_list.len() as u16), // Columns List
+                    Constraint::Min(0), // Spacer
+                ])
+                .split(lists_area)
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1), // Columns Header
+                    Constraint::Length(columns_list.len() as u16), // Columns List
+                    Constraint::Length(1), // Spacer
+                    Constraint::Length(1), // Filters Header
+                    Constraint::Length(filters_list.len() as u16), // Filters List
+                ])
+                .split(lists_area)
+        };
+
+        // Render Columns header
+        let columns_header = Paragraph::new("  COLUMNS")
+            .style(
+                Style::default()
+                    .fg(THEME.header_fg)
+                    .add_modifier(Modifier::BOLD),
+            );
+        f.render_widget(columns_header, layout_chunks[0]);
+
+        // Render Columns list
+        let col_items: Vec<ListItem> = columns_list
             .iter()
-            .enumerate()
-            .map(|(idx, col)| {
+            .map(|&(orig_idx, col)| {
                 let checked = app.is_column_visible(tab, col);
-                let text = format!(" [{}] {}", if checked { "x" } else { " " }, col);
-                let style = if idx == active_idx {
+                let text = format!("  [{}] {}", if checked { "x" } else { " " }, col);
+                let is_active = orig_idx == active_idx;
+                let style = if is_active {
                     Style::default()
                         .fg(THEME.bg)
                         .bg(THEME.border_focused)
@@ -3939,45 +3803,48 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 ListItem::new(text).style(style)
             })
             .collect();
+        f.render_widget(List::new(col_items), layout_chunks[1]);
 
-        // Calculate a nice small size for the popup based on columns count
-        let width = 36;
-        let height = (cols.len() + 4) as u16;
-        let area = centered_rect_fixed(width, height, size);
+        // Render Filters list if present
+        if !filters_list.is_empty() {
+            // Render spacer
+            f.render_widget(Paragraph::new(""), layout_chunks[2]);
 
-        let checklist_block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
-            .title(format!(" Toggle Columns: {} ", tab.title(is_github)))
-            .title_style(
-                Style::default()
-                    .fg(THEME.border_focused)
-                    .add_modifier(Modifier::BOLD),
-            );
+            // Render Filters header
+            let filters_header = Paragraph::new("  FILTERS")
+                .style(
+                    Style::default()
+                        .fg(THEME.purple)
+                        .add_modifier(Modifier::BOLD),
+                );
+            f.render_widget(filters_header, layout_chunks[3]);
 
-        let checklist_list = List::new(list_items);
-        
-        let popup_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .margin(1)
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(1),
-            ])
-            .split(area);
-
-        let footer_p = Paragraph::new(" [Spc] Toggle • [Up/Dn] Move • [Tab] Close ")
-            .alignment(Alignment::Center)
-            .style(
-                Style::default()
-                    .fg(THEME.text_muted)
-                    .add_modifier(Modifier::ITALIC),
-            );
-
-        f.render_widget(Clear, area);
-        f.render_widget(checklist_block, area);
-        f.render_widget(checklist_list, popup_chunks[0]);
-        f.render_widget(footer_p, popup_chunks[1]);
+            let filter_items: Vec<ListItem> = filters_list
+                .iter()
+                .map(|&(orig_idx, col)| {
+                    let checked = app.is_column_visible(tab, col);
+                    let display_name = if col == "Show Closed Items" {
+                        "Show Closed / Merged Items"
+                    } else {
+                        col
+                    };
+                    let text = format!("  [{}] {}", if checked { "x" } else { " " }, display_name);
+                    let is_active = orig_idx == active_idx;
+                    let style = if is_active {
+                        Style::default()
+                            .fg(THEME.bg)
+                            .bg(THEME.border_focused)
+                            .add_modifier(Modifier::BOLD)
+                    } else if checked {
+                        Style::default().fg(THEME.text_normal)
+                    } else {
+                        Style::default().fg(THEME.text_muted)
+                    };
+                    ListItem::new(text).style(style)
+                })
+                .collect();
+            f.render_widget(List::new(filter_items), layout_chunks[4]);
+        }
     }
 }
 
