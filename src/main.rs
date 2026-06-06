@@ -694,19 +694,20 @@ fn is_command_interactive(args: &[&str]) -> bool {
     args.iter().any(|&arg| arg == "-d" || arg == "--desc") && args.iter().any(|&arg| arg == "-")
 }
 
-fn get_command_description(args: &[&str]) -> &'static str {
+fn get_command_description(args: &[&str], is_github: bool) -> String {
+    let pr_suffix = if is_github { "PR" } else { "MR" };
     if args.len() >= 2 {
         match (args[0], args[1]) {
-            ("issue", "create") => "Creating Issue",
-            ("issue", "close") => "Closing Issue",
-            ("mr", "create") => "Creating Merge Request",
-            ("mr", "merge") => "Merging Merge Request",
-            ("mr", "diff") => "Fetching Diff",
-            ("ci", "run") | ("workflow", "run") => "Running Pipeline",
-            _ => "Running Command",
+            ("issue", "create") => "Creating Issue".to_string(),
+            ("issue", "close") => "Closing Issue".to_string(),
+            ("mr", "create") => format!("Creating {}", pr_suffix),
+            ("mr", "merge") => format!("Merging {}", pr_suffix),
+            ("mr", "diff") => "Fetching Diff".to_string(),
+            ("ci", "run") | ("workflow", "run") => "Running Pipeline".to_string(),
+            _ => "Running Command".to_string(),
         }
     } else {
-        "Running Command"
+        "Running Command".to_string()
     }
 }
 
@@ -755,7 +756,7 @@ async fn run_glab_cmd(
 
         let _ = tx.send(Event::CommandCompleted(tab, Ok(())));
     } else {
-        let desc = get_command_description(args);
+        let desc = get_command_description(args, is_github);
         let status_msg = format!("{}: {} {}", desc, program, args.join(" "));
         let _ = tx.send(Event::CommandStarted(status_msg));
 

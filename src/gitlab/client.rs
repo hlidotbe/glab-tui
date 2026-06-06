@@ -7,35 +7,38 @@ pub struct GitlabClient {
     pub tx: Option<tokio::sync::mpsc::UnboundedSender<crate::event::Event>>,
 }
 
-fn get_api_description(endpoint: &str) -> &'static str {
+fn get_api_description(endpoint: &str, is_github: bool) -> String {
+    let pr_suffix = if is_github { "PR" } else { "MR" };
+    let prs_suffix = if is_github { "PRs" } else { "MRs" };
+
     if endpoint.contains("/issues/") {
-        "Fetching Issue"
+        "Fetching Issue".to_string()
     } else if endpoint.contains("/issues") {
-        "Fetching Issues"
+        "Fetching Issues".to_string()
     } else if endpoint.contains("/merge_requests/") {
-        "Fetching Merge Request"
+        format!("Fetching {}", pr_suffix)
     } else if endpoint.contains("/merge_requests") {
-        "Fetching Merge Requests"
+        format!("Fetching {}", prs_suffix)
     } else if endpoint.contains("/pipelines/") && endpoint.contains("/jobs") {
-        "Fetching Pipeline Jobs"
+        "Fetching Pipeline Jobs".to_string()
     } else if endpoint.contains("/pipelines") {
-        "Fetching Pipelines"
+        "Fetching Pipelines".to_string()
     } else if endpoint.contains("/runners") {
-        "Fetching Runners"
+        "Fetching Runners".to_string()
     } else if endpoint.contains("/releases") {
-        "Fetching Releases"
+        "Fetching Releases".to_string()
     } else if endpoint.contains("/milestones/") && endpoint.contains("/issues") {
-        "Fetching Milestone Issues"
+        "Fetching Milestone Issues".to_string()
     } else if endpoint.contains("/milestones") {
-        "Fetching Milestones"
+        "Fetching Milestones".to_string()
     } else if endpoint.contains("/labels") {
-        "Fetching Labels"
+        "Fetching Labels".to_string()
     } else if endpoint.contains("/members") {
-        "Fetching Members"
+        "Fetching Members".to_string()
     } else if endpoint.contains("notifications") || endpoint.contains("todos") {
-        "Fetching Notifications"
+        "Fetching Notifications".to_string()
     } else {
-        "Fetching API"
+        "Fetching API".to_string()
     }
 }
 
@@ -59,7 +62,7 @@ impl GitlabClient {
     }
 
     pub async fn fetch_api<T: serde::de::DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
-        let desc = get_api_description(endpoint);
+        let desc = get_api_description(endpoint, self.is_github);
         let cmd_str = if self.is_github {
             let gh_endpoint = gitlab_to_github_endpoint(endpoint);
             format!("{}: gh api {}", desc, gh_endpoint)
@@ -205,7 +208,7 @@ impl GitlabClient {
     }
 
     pub async fn fetch_raw_api(&self, endpoint: &str) -> Result<String> {
-        let desc = get_api_description(endpoint);
+        let desc = get_api_description(endpoint, self.is_github);
         let cmd_str = if self.is_github {
             let gh_endpoint = gitlab_to_github_endpoint(endpoint);
             format!("{}: gh api {}", desc, gh_endpoint)
