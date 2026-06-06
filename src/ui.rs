@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -376,6 +378,7 @@ fn append_stage_summaries(text: &mut Vec<Line<'static>>, jobs: &[crate::gitlab::
     }
 }
 
+#[allow(dead_code)]
 fn add_cmd(text: &mut Vec<Line<'static>>, key: &str, desc: &str) {
     let padded_key = format!(" {:^3} ", key);
     text.push(Line::from(vec![

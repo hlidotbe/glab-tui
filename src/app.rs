@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::utils::ui::StatefulTable;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -371,6 +373,7 @@ pub struct FlatDiffTreeNode {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct DiffView {
     pub mr_iid: u64,
     pub raw_diff: String,
@@ -664,6 +667,7 @@ pub struct DraftComment {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum TextInputAction {
     EditField {
         entity_iid: u64,

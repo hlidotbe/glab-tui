@@ -1,3 +1,8 @@
+#![allow(clippy::all)]
+#![allow(dead_code)]
+#![allow(unused_variables)]
+#![allow(unused_assignments)]
+
 mod app;
 mod event;
 mod gitlab;
@@ -2816,7 +2821,11 @@ async fn main() -> Result<()> {
                                                                     .await;
                                                                 if let Ok(out) = approve_output {
                                                                     if !out.status.success() {
-                                                                        err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                                                                        let approval_err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                                                                        let _ = tx.send(Event::FetchFailed(
+                                                                            app::Tab::MergeRequests,
+                                                                            format!("MR approval failed: {}", approval_err),
+                                                                        ));
                                                                     }
                                                                 }
                                                             }

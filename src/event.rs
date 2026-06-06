@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -6,6 +8,7 @@ use tokio::sync::mpsc;
 pub static PAUSED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum Event {
     Tick,
     Key(KeyEvent),
