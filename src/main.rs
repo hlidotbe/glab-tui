@@ -1757,6 +1757,9 @@ async fn main() -> Result<()> {
         app.error_message = Some("Failed to initialize GitLab client".to_string());
     }
 
+    let mut last_refresh = std::time::Instant::now();
+    let mut last_active_tab = app.active_tab;
+
     // Run app
     while app.running {
         if app.active_tab == app::Tab::Pipelines {
@@ -1824,7 +1827,31 @@ async fn main() -> Result<()> {
 
         if let Some(event) = events.next().await {
             match event {
-                Event::Tick => app.tick(),
+                Event::Tick => {
+                    app.tick();
+                    if app.active_tab != last_active_tab {
+                        last_active_tab = app.active_tab;
+                        last_refresh = std::time::Instant::now();
+                    } else if last_refresh.elapsed() >= std::time::Duration::from_secs(60) {
+                        if app.text_input.is_none()
+                            && app.edit_menu.is_none()
+                            && app.selector.is_none()
+                            && !app.loading_tabs.contains(&app.active_tab)
+                        {
+                            if let Some(client) = app.gitlab_client.clone() {
+                                app.start_loading_tab(app.active_tab);
+                                spawn_refresh_active_tab(
+                                    &client,
+                                    &app.project_context,
+                                    app.active_tab,
+                                    events.sender(),
+                                    app.is_column_visible(app.active_tab, "Show Closed Items"),
+                                );
+                            }
+                        }
+                        last_refresh = std::time::Instant::now();
+                    }
+                }
                 Event::PipelineJobs(id, jobs) => {
                     app.fetching_pipelines.remove(&id);
                     app.pipeline_jobs.insert(id, jobs.clone());
@@ -2144,6 +2171,7 @@ async fn main() -> Result<()> {
                         && app.edit_menu.is_none()
                         && app.selector.is_none()
                     {
+                        last_refresh = std::time::Instant::now();
                         if let Some(client) = app.gitlab_client.clone() {
                             if !app.loading_tabs.contains(&app.active_tab) {
                                 app.start_loading_tab(app.active_tab);
