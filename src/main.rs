@@ -1739,7 +1739,8 @@ async fn main() -> Result<()> {
     }
     app.update_filter_selection();
 
-    if let Ok(client) = gitlab::client::GitlabClient::new().await {
+    if let Ok(mut client) = gitlab::client::GitlabClient::new().await {
+        client.tx = Some(events.sender());
         app.gitlab_client = Some(client.clone());
         let tx = events.sender();
         if app.issues.items.is_empty() {
@@ -2952,10 +2953,10 @@ async fn main() -> Result<()> {
                                                     {
                                                         app.project_context = context;
                                                     }
-
-                                                    if let Ok(client) =
+                                                    if let Ok(mut client) =
                                                         gitlab::client::GitlabClient::new().await
                                                     {
+                                                        client.tx = Some(events.sender());
                                                         app.gitlab_client = Some(client.clone());
                                                     } else {
                                                         app.gitlab_client = None;
