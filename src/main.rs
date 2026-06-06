@@ -2110,8 +2110,8 @@ async fn main() -> Result<()> {
                         Err(e) => format!("Failed: {}", e),
                     };
                     if let Some(pos) = app.terminal_commands.iter().rposition(|cmd| {
-                        (cmd.command.starts_with("glab")
-                            || cmd.command.starts_with("gh")
+                        (cmd.command.contains("glab")
+                            || cmd.command.contains("gh")
                             || cmd.command.contains("submit")
                             || cmd.command.contains("bulk"))
                             && cmd.status == "Running"
