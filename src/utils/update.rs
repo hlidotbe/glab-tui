@@ -64,7 +64,10 @@ pub async fn perform_self_update() -> Result<bool> {
 
     let archive_path = temp_dir.path().join(&asset_name);
     if !archive_path.exists() {
-        anyhow::bail!("Downloaded asset not found at expected path: {:?}", archive_path);
+        anyhow::bail!(
+            "Downloaded asset not found at expected path: {:?}",
+            archive_path
+        );
     }
 
     let extract_dir = temp_dir.path().join("extracted");
@@ -103,10 +106,17 @@ pub async fn perform_self_update() -> Result<bool> {
         }
     }
 
-    let exe_filename = if target_os == "windows" { "glab-tui.exe" } else { "glab-tui" };
+    let exe_filename = if target_os == "windows" {
+        "glab-tui.exe"
+    } else {
+        "glab-tui"
+    };
     let new_bin_path = extract_dir.join(exe_filename);
     if !new_bin_path.exists() {
-        anyhow::bail!("Extracted binary not found at expected path: {:?}", new_bin_path);
+        anyhow::bail!(
+            "Extracted binary not found at expected path: {:?}",
+            new_bin_path
+        );
     }
 
     let current_exe = std::env::current_exe()?;

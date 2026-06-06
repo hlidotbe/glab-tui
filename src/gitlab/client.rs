@@ -48,13 +48,13 @@ impl GitlabClient {
             .args(["remote", "get-url", "origin"])
             .output()
             .await
-            {
-                Ok(output) if output.status.success() => {
-                    let url = String::from_utf8_lossy(&output.stdout);
-                    url.contains("github.com")
-                }
-                _ => false,
-            };
+        {
+            Ok(output) if output.status.success() => {
+                let url = String::from_utf8_lossy(&output.stdout);
+                url.contains("github.com")
+            }
+            _ => false,
+        };
         Ok(Self {
             is_github,
             tx: None,

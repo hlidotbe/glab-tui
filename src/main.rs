@@ -2081,9 +2081,11 @@ async fn main() -> Result<()> {
                             command,
                             status,
                         });
-                    } else if let Some(pos) = app.terminal_commands.iter().rposition(|cmd| {
-                        cmd.command == command && cmd.status == "Running"
-                    }) {
+                    } else if let Some(pos) = app
+                        .terminal_commands
+                        .iter()
+                        .rposition(|cmd| cmd.command == command && cmd.status == "Running")
+                    {
                         app.terminal_commands[pos].status = status;
                     } else {
                         app.terminal_commands.push(crate::app::TerminalCommand {
@@ -2393,7 +2395,11 @@ async fn main() -> Result<()> {
                                         if !value.trim().is_empty() {
                                             let tag_name = value.trim().to_string();
                                             let tx = events.sender();
-                                            let is_github = app.gitlab_client.as_ref().map(|c| c.is_github).unwrap_or(false);
+                                            let is_github = app
+                                                .gitlab_client
+                                                .as_ref()
+                                                .map(|c| c.is_github)
+                                                .unwrap_or(false);
                                             let program = if is_github { "gh" } else { "glab" };
                                             let _ = tx.send(Event::CommandStarted(format!(
                                                 "Creating Release: {} release create {}",
@@ -3090,10 +3096,12 @@ async fn main() -> Result<()> {
                                                         app.loaded_tabs.insert(app::Tab::Releases);
                                                     }
                                                     if !app.notifications.items.is_empty() {
-                                                        app.loaded_tabs.insert(app::Tab::Notifications);
+                                                        app.loaded_tabs
+                                                            .insert(app::Tab::Notifications);
                                                     }
                                                     if !app.milestones.items.is_empty() {
-                                                        app.loaded_tabs.insert(app::Tab::Milestones);
+                                                        app.loaded_tabs
+                                                            .insert(app::Tab::Milestones);
                                                     }
                                                     if !app.wiki_pages.items.is_empty() {
                                                         app.loaded_tabs.insert(app::Tab::Wiki);
@@ -4682,7 +4690,11 @@ async fn main() -> Result<()> {
 
                                                 let cmd_args = vec!["mr", "diff", &mr_iid_str];
                                                 let program = if is_github { "gh" } else { "glab" };
-                                                let status_msg = format!("Fetching Diff: {} {}", program, cmd_args.join(" "));
+                                                let status_msg = format!(
+                                                    "Fetching Diff: {} {}",
+                                                    program,
+                                                    cmd_args.join(" ")
+                                                );
                                                 let _ = tx.send(Event::CommandStarted(status_msg));
 
                                                 let mut cmd = if is_github {
@@ -5680,7 +5692,7 @@ async fn main() -> Result<()> {
                                 app::Tab::Milestones => {
                                     app.milestones.next(app.filtered_milestones().len())
                                 }
-                                 app::Tab::Wiki => app.wiki_pages.next(app.filtered_wiki().len()),
+                                app::Tab::Wiki => app.wiki_pages.next(app.filtered_wiki().len()),
                                 app::Tab::Terminal => {
                                     app.terminal_scroll = app.terminal_scroll.saturating_sub(1);
                                 }

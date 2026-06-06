@@ -551,12 +551,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     let size = f.area();
 
-    let bottom_height = if app.active_tab == Tab::Terminal { 0 } else { 6 };
+    let bottom_height = if app.active_tab == Tab::Terminal {
+        0
+    } else {
+        6
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // Top header bar
-            Constraint::Min(0),    // Main workspace
+            Constraint::Length(2),             // Top header bar
+            Constraint::Min(0),                // Main workspace
             Constraint::Length(bottom_height), // Under the Hood pane
         ])
         .split(size);
@@ -2982,43 +2986,46 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     );
                 }
             }
-            }
-            Tab::Terminal => {
-                let num_cmds = app.terminal_commands.len();
-                let area = middle_chunks[1];
-                let inner_rect = main_block.inner(area);
-                let log_height = inner_rect.height as usize;
-
-                let max_scroll = num_cmds.saturating_sub(log_height);
-                app.terminal_scroll = app.terminal_scroll.min(max_scroll);
-
-                let block_title = if app.terminal_scroll > 0 {
-                    format!(" Terminal (Scroll: {}/{}) ", app.terminal_scroll, max_scroll)
-                } else {
-                    " Terminal ".to_string()
-                };
-                let custom_main_block = main_block.clone().title(block_title);
-
-                let end_idx = num_cmds.saturating_sub(app.terminal_scroll);
-                let start_idx = end_idx.saturating_sub(log_height);
-
-                let mut log_lines = Vec::new();
-                let visible_count = end_idx - start_idx;
-                if visible_count < log_height {
-                    for _ in 0..(log_height - visible_count) {
-                        log_lines.push(Line::from(""));
-                    }
-                }
-
-                for i in start_idx..end_idx {
-                    if let Some(cmd) = app.terminal_commands.get(i) {
-                        log_lines.push(build_log_line(cmd, inner_rect.width as usize));
-                    }
-                }
-
-                f.render_widget(Paragraph::new(log_lines).block(custom_main_block), area);
-            }
         }
+        Tab::Terminal => {
+            let num_cmds = app.terminal_commands.len();
+            let area = middle_chunks[1];
+            let inner_rect = main_block.inner(area);
+            let log_height = inner_rect.height as usize;
+
+            let max_scroll = num_cmds.saturating_sub(log_height);
+            app.terminal_scroll = app.terminal_scroll.min(max_scroll);
+
+            let block_title = if app.terminal_scroll > 0 {
+                format!(
+                    " Terminal (Scroll: {}/{}) ",
+                    app.terminal_scroll, max_scroll
+                )
+            } else {
+                " Terminal ".to_string()
+            };
+            let custom_main_block = main_block.clone().title(block_title);
+
+            let end_idx = num_cmds.saturating_sub(app.terminal_scroll);
+            let start_idx = end_idx.saturating_sub(log_height);
+
+            let mut log_lines = Vec::new();
+            let visible_count = end_idx - start_idx;
+            if visible_count < log_height {
+                for _ in 0..(log_height - visible_count) {
+                    log_lines.push(Line::from(""));
+                }
+            }
+
+            for i in start_idx..end_idx {
+                if let Some(cmd) = app.terminal_commands.get(i) {
+                    log_lines.push(build_log_line(cmd, inner_rect.width as usize));
+                }
+            }
+
+            f.render_widget(Paragraph::new(log_lines).block(custom_main_block), area);
+        }
+    }
 
     // Terminal bottom pane
     if chunks[2].height > 0 {
