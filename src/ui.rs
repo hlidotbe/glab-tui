@@ -2891,21 +2891,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         None
                     };
 
-                    let status_span = Span::styled(
-                        status_text,
-                        Style::default()
-                            .fg(status_color)
-                            .add_modifier(Modifier::BOLD),
-                    );
-
-                    let mut cmd_spans = vec![
-                        Span::styled(
-                            format!("[{}] ", time_str),
-                            Style::default().fg(THEME.text_muted),
-                        ),
-                        status_span,
-                    ];
-
                     let cmd_clean = cmd.command.trim();
                     let mut desc = "";
                     let mut cmd_to_run = cmd_clean;
@@ -2919,89 +2904,87 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         }
                     }
 
-                    if !desc.is_empty() {
-                        cmd_spans.push(Span::styled(" • ", Style::default().fg(THEME.text_muted)));
-                        let uppercase_desc = desc.to_uppercase();
-                        let padded_desc = format!("{: <25}", uppercase_desc);
-                        cmd_spans.push(Span::styled(
-                            padded_desc,
-                            Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
-                        ));
-                        cmd_spans.push(Span::styled(" $ ", Style::default().fg(THEME.text_muted)));
-
-                        let (cmd_bin, cmd_args) = if cmd_to_run.starts_with("glab") {
-                            ("glab", &cmd_to_run[4..])
-                        } else if cmd_to_run.starts_with("gh") {
-                            ("gh", &cmd_to_run[2..])
+                    let desc_str = if desc.is_empty() {
+                        if cmd_clean.starts_with("glab") || cmd_clean.starts_with("gh") {
+                            "RUNNING COMMAND".to_string()
                         } else {
-                            ("", cmd_to_run)
-                        };
-
-                        if !cmd_bin.is_empty() {
-                            cmd_spans.push(Span::styled(
-                                cmd_bin,
-                                Style::default()
-                                    .fg(THEME.yellow)
-                                    .add_modifier(Modifier::BOLD),
-                            ));
-                        }
-
-                        let max_args_len = (bottom_inner.width as usize).saturating_sub(30 + desc.len());
-                        cmd_spans.push(Span::styled(
-                            truncate(cmd_args, max_args_len),
-                            Style::default().fg(THEME.text_normal),
-                        ));
-                        if let Some(detail) = err_detail {
-                            cmd_spans.push(Span::styled(
-                                format!(" ({})", detail),
-                                Style::default().fg(THEME.red),
-                            ));
-                        }
-                    } else if cmd_clean.starts_with("Fetch")
-                        || cmd_clean.starts_with("Error")
-                        || cmd_clean.starts_with("Loading")
-                    {
-                        cmd_spans.push(Span::styled(" • ", Style::default().fg(THEME.text_muted)));
-                        cmd_spans.push(Span::styled(
-                            cmd_clean,
-                            Style::default().fg(THEME.text_normal),
-                        ));
-                        if let Some(detail) = err_detail {
-                            cmd_spans.push(Span::styled(
-                                format!(": {}", detail),
-                                Style::default().fg(THEME.red),
-                            ));
+                            "SYSTEM LOG".to_string()
                         }
                     } else {
-                        cmd_spans.push(Span::styled(" $ ", Style::default().fg(THEME.text_muted)));
-                        let (cmd_bin, cmd_args) = if cmd_clean.starts_with("glab") {
-                            ("glab", &cmd_clean[4..])
-                        } else if cmd_clean.starts_with("gh") {
-                            ("gh", &cmd_clean[2..])
-                        } else {
-                            ("", cmd_clean)
-                        };
+                        desc.to_uppercase()
+                    };
 
-                        if !cmd_bin.is_empty() {
-                            cmd_spans.push(Span::styled(
-                                cmd_bin,
-                                Style::default()
-                                    .fg(THEME.yellow)
-                                    .add_modifier(Modifier::BOLD),
-                            ));
-                        }
+                    let time_len = 11; // "[HH:MM:SS] "
+                    let action_len = 25; // "ACTION                   "
+                    let sep1_len = 3; // " • "
+                    let sep2_len = 3; // " $ "
+                    let sep3_len = 3; // " • "
+                    let status_len = 7; // "SUCCESS" etc.
+                    let err_len = if let Some(detail) = err_detail {
+                        detail.len() + 3 // " (" + detail + ")"
+                    } else {
+                        0
+                    };
 
-                        let max_args_len = (bottom_inner.width as usize).saturating_sub(30);
+                    let reserved_width = time_len + sep1_len + action_len + sep2_len + sep3_len + status_len + err_len;
+                    let available_width = (bottom_inner.width as usize).saturating_sub(reserved_width);
+                    let truncated_api = truncate(cmd_to_run, available_width);
+
+                    let (cmd_bin, cmd_args) = if truncated_api.starts_with("glab") {
+                        ("glab", truncated_api[4..].to_string())
+                    } else if truncated_api.starts_with("gh") {
+                        ("gh", truncated_api[2..].to_string())
+                    } else {
+                        ("", truncated_api)
+                    };
+
+                    let mut cmd_spans = vec![
+                        // 1. Time
+                        Span::styled(
+                            format!("[{}] ", time_str),
+                            Style::default().fg(THEME.text_muted),
+                        ),
+                        // 2. Action Divider and Name
+                        Span::styled(" • ", Style::default().fg(THEME.text_muted)),
+                        Span::styled(
+                            format!("{: <25}", desc_str),
+                            Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+                        ),
+                        // 3. API Divider
+                        Span::styled(" $ ", Style::default().fg(THEME.text_muted)),
+                    ];
+
+                    // 4. API (glab/gh + arguments)
+                    if !cmd_bin.is_empty() {
                         cmd_spans.push(Span::styled(
-                            truncate(cmd_args, max_args_len),
-                            Style::default().fg(THEME.text_normal),
+                            cmd_bin,
+                            Style::default()
+                                .fg(THEME.yellow)
+                                .add_modifier(Modifier::BOLD),
                         ));
-                        if let Some(detail) = err_detail {
-                            cmd_spans.push(Span::styled(
-                                format!(" ({})", detail),
-                                Style::default().fg(THEME.red),
-                            ));
-                        }
+                    }
+                    cmd_spans.push(Span::styled(
+                        cmd_args,
+                        Style::default().fg(THEME.text_normal),
+                    ));
+
+                    // 5. Status Divider
+                    cmd_spans.push(Span::styled(" • ", Style::default().fg(THEME.text_muted)));
+
+                    // 6. Status
+                    cmd_spans.push(Span::styled(
+                        status_text,
+                        Style::default()
+                            .fg(status_color)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+
+                    // 7. Error Detail
+                    if let Some(detail) = err_detail {
+                        cmd_spans.push(Span::styled(
+                            format!(" ({})", detail),
+                            Style::default().fg(THEME.red),
+                        ));
                     }
 
                     log_lines.push(Line::from(cmd_spans));
