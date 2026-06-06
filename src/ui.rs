@@ -2920,23 +2920,23 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     let sep2_len = 3; // " $ "
                     let sep3_len = 3; // " • "
                     let status_len = 7; // "SUCCESS" etc.
-                    let err_len = if let Some(detail) = err_detail {
-                        detail.len() + 3 // " (" + detail + ")"
-                    } else {
-                        0
-                    };
 
-                    let reserved_width = time_len + sep1_len + action_len + sep2_len + sep3_len + status_len + err_len;
-                    let available_width = (bottom_inner.width as usize).saturating_sub(reserved_width);
-                    let truncated_api = truncate(cmd_to_run, available_width);
+                    let api_col_width = 60; // Fixed width for API column
+                    let reserved_excluding_api = time_len + sep1_len + action_len + sep2_len + sep3_len + status_len;
+                    let max_available = (bottom_inner.width as usize).saturating_sub(reserved_excluding_api);
+                    let target_api_width = std::cmp::min(api_col_width, max_available);
+                    let truncated_api = truncate(cmd_to_run, target_api_width);
 
                     let (cmd_bin, cmd_args) = if truncated_api.starts_with("glab") {
                         ("glab", truncated_api[4..].to_string())
                     } else if truncated_api.starts_with("gh") {
                         ("gh", truncated_api[2..].to_string())
                     } else {
-                        ("", truncated_api)
+                        ("", truncated_api.clone())
                     };
+
+                    let padding_spaces = " ".repeat(target_api_width.saturating_sub(truncated_api.len()));
+                    let cmd_args_padded = format!("{}{}", cmd_args, padding_spaces);
 
                     let mut cmd_spans = vec![
                         // 1. Time
@@ -2954,7 +2954,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         Span::styled(" $ ", Style::default().fg(THEME.text_muted)),
                     ];
 
-                    // 4. API (glab/gh + arguments)
+                    // 4. API (glab/gh + arguments padded)
                     if !cmd_bin.is_empty() {
                         cmd_spans.push(Span::styled(
                             cmd_bin,
@@ -2964,7 +2964,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         ));
                     }
                     cmd_spans.push(Span::styled(
-                        cmd_args,
+                        cmd_args_padded,
                         Style::default().fg(THEME.text_normal),
                     ));
 

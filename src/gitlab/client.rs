@@ -20,7 +20,7 @@ fn get_api_description(endpoint: &str, is_github: bool) -> String {
     } else if endpoint.contains("/merge_requests") {
         format!("Fetching {}", prs_suffix)
     } else if endpoint.contains("/pipelines/") && endpoint.contains("/jobs") {
-        "Fetching Pipeline Jobs".to_string()
+        "Fetching Jobs".to_string()
     } else if endpoint.contains("/pipelines") {
         "Fetching Pipelines".to_string()
     } else if endpoint.contains("/runners") {
