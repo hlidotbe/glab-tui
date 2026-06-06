@@ -823,28 +823,13 @@ impl App {
     pub fn start_loading_tab(&mut self, tab: Tab) {
         if !self.loading_tabs.contains(&tab) {
             self.loading_tabs.insert(tab);
-            let timestamp = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
-            self.terminal_commands.push(crate::app::TerminalCommand {
-                timestamp,
-                command: format!("Fetch {:?}", tab),
-                status: "Running".to_string(),
-            });
         }
     }
 
-    pub fn complete_loading_tab(&mut self, tab: Tab, status: &str) {
+    pub fn complete_loading_tab(&mut self, tab: Tab, _status: &str) {
         self.loading_tabs.remove(&tab);
         self.loaded_tabs.insert(tab);
         self.refreshed_tabs.insert(tab);
-
-        let cmd_name = format!("Fetch {:?}", tab);
-        if let Some(pos) = self
-            .terminal_commands
-            .iter()
-            .rposition(|cmd| cmd.command == cmd_name && cmd.status == "Running")
-        {
-            self.terminal_commands[pos].status = status.to_string();
-        }
     }
 
     pub fn is_column_visible(&self, tab: Tab, col: &str) -> bool {

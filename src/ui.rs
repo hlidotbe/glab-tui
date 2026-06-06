@@ -2907,7 +2907,55 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     ];
 
                     let cmd_clean = cmd.command.trim();
-                    if cmd_clean.starts_with("Fetch")
+                    let mut desc = "";
+                    let mut cmd_to_run = cmd_clean;
+
+                    if let Some(pos) = cmd_clean.find(": ") {
+                        let prefix = &cmd_clean[..pos];
+                        let remainder = &cmd_clean[pos + 2..];
+                        if remainder.starts_with("glab") || remainder.starts_with("gh") {
+                            desc = prefix;
+                            cmd_to_run = remainder;
+                        }
+                    }
+
+                    if !desc.is_empty() {
+                        cmd_spans.push(Span::styled(" • ", Style::default().fg(THEME.text_muted)));
+                        cmd_spans.push(Span::styled(
+                            desc,
+                            Style::default().fg(THEME.text_normal),
+                        ));
+                        cmd_spans.push(Span::styled(" $ ", Style::default().fg(THEME.text_muted)));
+
+                        let (cmd_bin, cmd_args) = if cmd_to_run.starts_with("glab") {
+                            ("glab", &cmd_to_run[4..])
+                        } else if cmd_to_run.starts_with("gh") {
+                            ("gh", &cmd_to_run[2..])
+                        } else {
+                            ("", cmd_to_run)
+                        };
+
+                        if !cmd_bin.is_empty() {
+                            cmd_spans.push(Span::styled(
+                                cmd_bin,
+                                Style::default()
+                                    .fg(THEME.yellow)
+                                    .add_modifier(Modifier::BOLD),
+                            ));
+                        }
+
+                        let max_args_len = (bottom_inner.width as usize).saturating_sub(30 + desc.len());
+                        cmd_spans.push(Span::styled(
+                            truncate(cmd_args, max_args_len),
+                            Style::default().fg(THEME.text_normal),
+                        ));
+                        if let Some(detail) = err_detail {
+                            cmd_spans.push(Span::styled(
+                                format!(" ({})", detail),
+                                Style::default().fg(THEME.red),
+                            ));
+                        }
+                    } else if cmd_clean.starts_with("Fetch")
                         || cmd_clean.starts_with("Error")
                         || cmd_clean.starts_with("Loading")
                     {
@@ -4238,47 +4286,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .collect();
             f.render_widget(List::new(filter_items), layout_chunks[4]);
         }
-    }
-
-    if let Some(err_msg) = &app.error_message {
-        let block = Block::default()
-            .title(" Error / Info ")
-            .title_style(Style::default().fg(THEME.red).add_modifier(Modifier::BOLD))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.red))
-            .style(Style::default().bg(Color::Reset));
-
-        let area = centered_rect(60, 20, size);
-
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .margin(1)
-            .constraints(
-                [
-                    Constraint::Min(0),    // Error message text
-                    Constraint::Length(1), // Help footer
-                ]
-                .as_ref(),
-            )
-            .split(area);
-
-        let msg_p = Paragraph::new(err_msg.as_str())
-            .style(Style::default().fg(THEME.text_normal))
-            .wrap(ratatui::widgets::Wrap { trim: true });
-
-        let footer_p = Paragraph::new(" Press Enter or Esc to dismiss ")
-            .alignment(Alignment::Center)
-            .style(
-                Style::default()
-                    .fg(THEME.text_muted)
-                    .add_modifier(Modifier::ITALIC),
-            )
-            .wrap(ratatui::widgets::Wrap { trim: true });
-
-        f.render_widget(Clear, area);
-        f.render_widget(block, area);
-        f.render_widget(msg_p, chunks[0]);
-        f.render_widget(footer_p, chunks[1]);
     }
 }
 

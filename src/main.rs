@@ -694,6 +694,22 @@ fn is_command_interactive(args: &[&str]) -> bool {
     args.iter().any(|&arg| arg == "-d" || arg == "--desc") && args.iter().any(|&arg| arg == "-")
 }
 
+fn get_command_description(args: &[&str]) -> &'static str {
+    if args.len() >= 2 {
+        match (args[0], args[1]) {
+            ("issue", "create") => "Creating Issue",
+            ("issue", "close") => "Closing Issue",
+            ("mr", "create") => "Creating Merge Request",
+            ("mr", "merge") => "Merging Merge Request",
+            ("mr", "diff") => "Fetching Diff",
+            ("ci", "run") | ("workflow", "run") => "Running Pipeline",
+            _ => "Running Command",
+        }
+    } else {
+        "Running Command"
+    }
+}
+
 async fn run_glab_cmd(
     args: &[&str],
     terminal: &mut AppTerminal,
@@ -739,7 +755,8 @@ async fn run_glab_cmd(
 
         let _ = tx.send(Event::CommandCompleted(tab, Ok(())));
     } else {
-        let status_msg = format!("Running {} {}...", program, args.join(" "));
+        let desc = get_command_description(args);
+        let status_msg = format!("{}: {} {}", desc, program, args.join(" "));
         let _ = tx.send(Event::CommandStarted(status_msg));
 
         let tx_clone = tx.clone();
@@ -1775,6 +1792,12 @@ async fn main() -> Result<()> {
             app.is_column_visible(app.active_tab, "Show Closed Items"),
         );
     } else {
+        let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
+        app.terminal_commands.push(crate::app::TerminalCommand {
+            timestamp,
+            command: "Initialization: gitlab client".to_string(),
+            status: "Failed: Failed to initialize GitLab client".to_string(),
+        });
         app.error_message = Some("Failed to initialize GitLab client".to_string());
     }
 
@@ -2123,13 +2146,6 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
-                    if app.error_message.is_some() {
-                        if key_event.code == KeyCode::Enter || key_event.code == KeyCode::Esc {
-                            app.error_message = None;
-                        }
-                        continue;
-                    }
-
                     if app.show_help {
                         match key_event.code {
                             KeyCode::Esc | KeyCode::Enter => {
@@ -2375,9 +2391,11 @@ async fn main() -> Result<()> {
                                         if !value.trim().is_empty() {
                                             let tag_name = value.trim().to_string();
                                             let tx = events.sender();
+                                            let is_github = app.gitlab_client.as_ref().map(|c| c.is_github).unwrap_or(false);
+                                            let program = if is_github { "gh" } else { "glab" };
                                             let _ = tx.send(Event::CommandStarted(format!(
-                                                "glab release create {}",
-                                                tag_name
+                                                "Creating Release: {} release create {}",
+                                                program, tag_name
                                             )));
                                             let active_tab = app.active_tab;
                                             tokio::spawn(async move {
@@ -2587,7 +2605,7 @@ async fn main() -> Result<()> {
                                                         temp_path.to_string_lossy().to_string();
                                                     let _ =
                                                         tx.send(Event::CommandStarted(format!(
-                                                            "gh api submit review MR #{}",
+                                                            "Submitting Review: gh api submit review MR #{}",
                                                             mr_iid
                                                         )));
                                                     let output = tokio::process::Command::new("gh")
@@ -2640,7 +2658,7 @@ async fn main() -> Result<()> {
                                                 }
                                             } else {
                                                 let _ = tx.send(Event::CommandStarted(format!(
-                                                    "glab submit review MR #{}",
+                                                    "Submitting Review: glab submit review MR #{}",
                                                     mr_iid
                                                 )));
                                                 let encoded_path =
@@ -4662,7 +4680,7 @@ async fn main() -> Result<()> {
 
                                                 let cmd_args = vec!["mr", "diff", &mr_iid_str];
                                                 let program = if is_github { "gh" } else { "glab" };
-                                                let status_msg = format!("{} {}", program, cmd_args.join(" "));
+                                                let status_msg = format!("Fetching Diff: {} {}", program, cmd_args.join(" "));
                                                 let _ = tx.send(Event::CommandStarted(status_msg));
 
                                                 let mut cmd = if is_github {

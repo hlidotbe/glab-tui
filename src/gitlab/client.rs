@@ -7,19 +7,51 @@ pub struct GitlabClient {
     pub tx: Option<tokio::sync::mpsc::UnboundedSender<crate::event::Event>>,
 }
 
+fn get_api_description(endpoint: &str) -> &'static str {
+    if endpoint.contains("/issues/") {
+        "Fetching Issue"
+    } else if endpoint.contains("/issues") {
+        "Fetching Issues"
+    } else if endpoint.contains("/merge_requests/") {
+        "Fetching Merge Request"
+    } else if endpoint.contains("/merge_requests") {
+        "Fetching Merge Requests"
+    } else if endpoint.contains("/pipelines/") && endpoint.contains("/jobs") {
+        "Fetching Pipeline Jobs"
+    } else if endpoint.contains("/pipelines") {
+        "Fetching Pipelines"
+    } else if endpoint.contains("/runners") {
+        "Fetching Runners"
+    } else if endpoint.contains("/releases") {
+        "Fetching Releases"
+    } else if endpoint.contains("/milestones/") && endpoint.contains("/issues") {
+        "Fetching Milestone Issues"
+    } else if endpoint.contains("/milestones") {
+        "Fetching Milestones"
+    } else if endpoint.contains("/labels") {
+        "Fetching Labels"
+    } else if endpoint.contains("/members") {
+        "Fetching Members"
+    } else if endpoint.contains("notifications") || endpoint.contains("todos") {
+        "Fetching Notifications"
+    } else {
+        "Fetching API"
+    }
+}
+
 impl GitlabClient {
     pub async fn new() -> Result<Self> {
         let is_github = match tokio::process::Command::new("git")
             .args(["remote", "get-url", "origin"])
             .output()
             .await
-        {
-            Ok(output) if output.status.success() => {
-                let url = String::from_utf8_lossy(&output.stdout);
-                url.contains("github.com")
-            }
-            _ => false,
-        };
+            {
+                Ok(output) if output.status.success() => {
+                    let url = String::from_utf8_lossy(&output.stdout);
+                    url.contains("github.com")
+                }
+                _ => false,
+            };
         Ok(Self {
             is_github,
             tx: None,
@@ -27,11 +59,12 @@ impl GitlabClient {
     }
 
     pub async fn fetch_api<T: serde::de::DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
+        let desc = get_api_description(endpoint);
         let cmd_str = if self.is_github {
             let gh_endpoint = gitlab_to_github_endpoint(endpoint);
-            format!("gh api {}", gh_endpoint)
+            format!("{}: gh api {}", desc, gh_endpoint)
         } else {
-            format!("glab api {}", endpoint)
+            format!("{}: glab api {}", desc, endpoint)
         };
         let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
         if let Some(ref tx) = self.tx {
@@ -172,11 +205,12 @@ impl GitlabClient {
     }
 
     pub async fn fetch_raw_api(&self, endpoint: &str) -> Result<String> {
+        let desc = get_api_description(endpoint);
         let cmd_str = if self.is_github {
             let gh_endpoint = gitlab_to_github_endpoint(endpoint);
-            format!("gh api {}", gh_endpoint)
+            format!("{}: gh api {}", desc, gh_endpoint)
         } else {
-            format!("glab api {}", endpoint)
+            format!("{}: glab api {}", desc, endpoint)
         };
         let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
         if let Some(ref tx) = self.tx {
