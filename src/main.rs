@@ -1981,6 +1981,29 @@ async fn main() -> Result<()> {
                         app.terminal_commands[pos].status = format!("Failed: {}", err_msg);
                     }
                 }
+                Event::TerminalCommandLogged {
+                    timestamp,
+                    command,
+                    status,
+                } => {
+                    if status == "Running" {
+                        app.terminal_commands.push(crate::app::TerminalCommand {
+                            timestamp,
+                            command,
+                            status,
+                        });
+                    } else if let Some(pos) = app.terminal_commands.iter().rposition(|cmd| {
+                        cmd.command == command && cmd.status == "Running"
+                    }) {
+                        app.terminal_commands[pos].status = status;
+                    } else {
+                        app.terminal_commands.push(crate::app::TerminalCommand {
+                            timestamp,
+                            command,
+                            status,
+                        });
+                    }
+                }
                 Event::CommandStarted(msg) => {
                     let timestamp = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
                     app.terminal_commands.push(crate::app::TerminalCommand {
@@ -4537,6 +4560,10 @@ async fn main() -> Result<()> {
                                                     };
 
                                                 let cmd_args = vec!["mr", "diff", &mr_iid_str];
+                                                let program = if is_github { "gh" } else { "glab" };
+                                                let status_msg = format!("{} {}", program, cmd_args.join(" "));
+                                                let _ = tx.send(Event::CommandStarted(status_msg));
+
                                                 let mut cmd = if is_github {
                                                     let gh_args = translate_glab_to_gh(&cmd_args);
                                                     let mut c = tokio::process::Command::new("gh");
