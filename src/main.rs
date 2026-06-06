@@ -3840,16 +3840,6 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
-                    if (key_event.code == KeyCode::Tab
-                        || key_event.code == KeyCode::BackTab
-                        || key_event.code == KeyCode::Char('t'))
-                        && !app.focus_column_checklist
-                    {
-                        app.focus_column_checklist = true;
-                        app.column_checklist_idx = 0;
-                        continue;
-                    }
-
                     if app.is_typing_search {
                         match key_event.code {
                             KeyCode::Enter | KeyCode::Esc => app.is_typing_search = false,
@@ -3863,6 +3853,16 @@ async fn main() -> Result<()> {
                             }
                             _ => {}
                         }
+                        continue;
+                    }
+
+                    if (key_event.code == KeyCode::Tab
+                        || key_event.code == KeyCode::BackTab
+                        || key_event.code == KeyCode::Char('t'))
+                        && !app.focus_column_checklist
+                    {
+                        app.focus_column_checklist = true;
+                        app.column_checklist_idx = 0;
                         continue;
                     }
 
