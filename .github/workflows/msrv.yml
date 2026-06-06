@@ -11,8 +11,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # edition 2024 requires Rust >= 1.85
-  MSRV: "1.85"
+  # edition 2024 requires Rust >= 1.85, but dependencies require >= 1.88
+  MSRV: "1.88"
 
 jobs:
   msrv:
