@@ -1632,6 +1632,7 @@ fn spawn_refresh_active_tab(
                     ));
                 }
             },
+            app::Tab::Terminal => {}
         }
     });
 }
@@ -5401,6 +5402,9 @@ async fn main() -> Result<()> {
                         app::Tab::Wiki => {
                             handled = false;
                         }
+                        app::Tab::Terminal => {
+                            handled = false;
+                        }
                     }
 
                     if !handled {
@@ -5676,7 +5680,10 @@ async fn main() -> Result<()> {
                                 app::Tab::Milestones => {
                                     app.milestones.next(app.filtered_milestones().len())
                                 }
-                                app::Tab::Wiki => app.wiki_pages.next(app.filtered_wiki().len()),
+                                 app::Tab::Wiki => app.wiki_pages.next(app.filtered_wiki().len()),
+                                app::Tab::Terminal => {
+                                    app.terminal_scroll = app.terminal_scroll.saturating_sub(1);
+                                }
                             },
                             KeyCode::Up | KeyCode::Char('k') => match app.active_tab {
                                 app::Tab::Issues => {
@@ -5718,6 +5725,9 @@ async fn main() -> Result<()> {
                                 }
                                 app::Tab::Wiki => {
                                     app.wiki_pages.previous(app.filtered_wiki().len())
+                                }
+                                app::Tab::Terminal => {
+                                    app.terminal_scroll = app.terminal_scroll.saturating_add(1);
                                 }
                             },
                             _ => {}

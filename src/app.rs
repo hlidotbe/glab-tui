@@ -15,10 +15,11 @@ pub enum Tab {
     Notifications,
     Milestones,
     Wiki,
+    Terminal,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 9] = [
+    pub const ALL: [Tab; 10] = [
         Tab::Issues,
         Tab::MergeRequests,
         Tab::Pipelines,
@@ -28,6 +29,7 @@ impl Tab {
         Tab::Notifications,
         Tab::Milestones,
         Tab::Wiki,
+        Tab::Terminal,
     ];
 
     pub fn title(&self, is_github: bool) -> &'static str {
@@ -47,6 +49,7 @@ impl Tab {
             Tab::Notifications => "Notifications",
             Tab::Milestones => "Milestones",
             Tab::Wiki => "Wiki",
+            Tab::Terminal => "Terminal",
         }
     }
 
@@ -81,6 +84,7 @@ impl Tab {
             Tab::Notifications => vec!["State", "Project", "Type", "ID", "Title"],
             Tab::Milestones => vec!["IID", "Title", "State", "Start Date", "Due Date"],
             Tab::Wiki => vec!["Title", "Path"],
+            Tab::Terminal => vec![],
         }
     }
 
@@ -95,6 +99,7 @@ impl Tab {
             Tab::Notifications => vec!["State", "Project", "Type", "ID", "Title"],
             Tab::Milestones => vec!["IID", "Title", "State", "Due Date"],
             Tab::Wiki => vec!["Title"],
+            Tab::Terminal => vec![],
         }
     }
 }
@@ -750,6 +755,7 @@ pub struct App {
     pub selected_milestone_issues: Option<Vec<crate::gitlab::issues::Issue>>,
     pub selected_milestone_iid: Option<u64>,
     pub wiki_pages: StatefulTable<crate::gitlab::wiki::WikiPage>,
+    pub terminal_scroll: usize,
 }
 
 impl Default for App {
@@ -815,6 +821,7 @@ impl Default for App {
             selected_milestone_issues: None,
             selected_milestone_iid: None,
             wiki_pages: StatefulTable::with_items(vec![]),
+            terminal_scroll: 0,
         }
     }
 }
@@ -1593,6 +1600,7 @@ impl App {
                     }
                 }
             }
+            Tab::Terminal => {}
         }
     }
 }

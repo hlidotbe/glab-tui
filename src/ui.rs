@@ -390,6 +390,125 @@ fn add_cmd(text: &mut Vec<Line<'static>>, key: &str, desc: &str) {
     ]));
 }
 
+fn build_log_line(cmd: &crate::app::TerminalCommand, width: usize) -> Line<'static> {
+    let time_str = if cmd.timestamp.len() >= 8 {
+        let parts: Vec<&str> = cmd.timestamp.split('T').collect();
+        if parts.len() > 1 {
+            parts[1].chars().take(8).collect::<String>()
+        } else {
+            cmd.timestamp.chars().take(8).collect::<String>()
+        }
+    } else {
+        cmd.timestamp.clone()
+    };
+
+    let (status_text, status_color) = match cmd.status.as_str() {
+        "Success" => ("SUCCESS", THEME.green),
+        "Running" => ("RUNNING", THEME.yellow),
+        s if s.starts_with("Failed") => ("FAILED ", THEME.red),
+        _ => ("PENDING", THEME.yellow),
+    };
+
+    let err_detail = if cmd.status.starts_with("Failed: ") {
+        Some(&cmd.status[8..])
+    } else if cmd.status.starts_with("Failed") && cmd.status.len() > 6 {
+        Some(&cmd.status[6..])
+    } else {
+        None
+    };
+
+    let cmd_clean = cmd.command.trim();
+    let mut desc = "";
+    let mut cmd_to_run = cmd_clean;
+
+    if let Some(pos) = cmd_clean.find(": ") {
+        let prefix = &cmd_clean[..pos];
+        let remainder = &cmd_clean[pos + 2..];
+        if remainder.starts_with("glab") || remainder.starts_with("gh") {
+            desc = prefix;
+            cmd_to_run = remainder;
+        }
+    }
+
+    let desc_str = if desc.is_empty() {
+        if cmd_clean.starts_with("glab") || cmd_clean.starts_with("gh") {
+            "RUNNING COMMAND".to_string()
+        } else {
+            "SYSTEM LOG".to_string()
+        }
+    } else {
+        desc.to_uppercase()
+    };
+
+    let time_len = 11; // "[HH:MM:SS] "
+    let status_len = 7; // "SUCCESS"
+    let sep1_len = 3; // " • "
+    let action_len = 20; // Action padded to 20 chars
+    let sep2_len = 3; // " • "
+    let err_len = err_detail.map(|d| d.len() + 3).unwrap_or(0); // " (Error)"
+
+    let reserved = time_len + status_len + sep1_len + action_len + sep2_len + err_len;
+    let max_api_width = width.saturating_sub(reserved);
+
+    let truncated_api = truncate(cmd_to_run, max_api_width);
+
+    let (cmd_bin, cmd_args) = if truncated_api.starts_with("glab") {
+        ("glab", truncated_api[4..].to_string())
+    } else if truncated_api.starts_with("gh") {
+        ("gh", truncated_api[2..].to_string())
+    } else {
+        ("", truncated_api.clone())
+    };
+
+    let mut spans = vec![
+        // 1. Time
+        Span::styled(
+            format!("[{}] ", time_str),
+            Style::default().fg(THEME.text_muted),
+        ),
+        // 2. Status
+        Span::styled(
+            format!("{: <7}", status_text),
+            Style::default()
+                .fg(status_color)
+                .add_modifier(Modifier::BOLD),
+        ),
+        // 3. Sep1
+        Span::styled(" • ", Style::default().fg(THEME.text_muted)),
+        // 4. Action
+        Span::styled(
+            format!("{: <20}", desc_str),
+            Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+        ),
+        // 5. Sep2
+        Span::styled(" • ", Style::default().fg(THEME.text_muted)),
+    ];
+
+    // 6. API
+    if !cmd_bin.is_empty() {
+        spans.push(Span::styled(
+            cmd_bin,
+            Style::default()
+                .fg(THEME.yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    spans.push(Span::styled(
+        cmd_args,
+        Style::default().fg(THEME.text_normal),
+    ));
+
+    // 7. Error Detail
+    if let Some(detail) = err_detail {
+        spans.push(Span::styled(
+            format!(" ({})", detail),
+            Style::default().fg(THEME.red),
+        ));
+    }
+
+    Line::from(spans)
+}
+
 pub fn render(f: &mut Frame, app: &mut App) {
     let render_fuzzy_cell = |text: &str,
                              query: &str,
@@ -432,12 +551,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     let size = f.area();
 
+    let bottom_height = if app.active_tab == Tab::Terminal { 0 } else { 6 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(2), // Top header bar
             Constraint::Min(0),    // Main workspace
-            Constraint::Length(6), // Under the Hood pane
+            Constraint::Length(bottom_height), // Under the Hood pane
         ])
         .split(size);
 
@@ -503,6 +623,15 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 Constraint::Length(0),
                 Constraint::Length(0),
                 Constraint::Min(0),
+            ])
+            .split(chunks[1])
+    } else if app.active_tab == Tab::Terminal {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(22),
+                Constraint::Min(0),
+                Constraint::Length(0),
             ])
             .split(chunks[1])
     } else {
@@ -2853,11 +2982,46 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     );
                 }
             }
+            }
+            Tab::Terminal => {
+                let num_cmds = app.terminal_commands.len();
+                let area = middle_chunks[1];
+                let inner_rect = main_block.inner(area);
+                let log_height = inner_rect.height as usize;
+
+                let max_scroll = num_cmds.saturating_sub(log_height);
+                app.terminal_scroll = app.terminal_scroll.min(max_scroll);
+
+                let block_title = if app.terminal_scroll > 0 {
+                    format!(" Terminal (Scroll: {}/{}) ", app.terminal_scroll, max_scroll)
+                } else {
+                    " Terminal ".to_string()
+                };
+                let custom_main_block = main_block.clone().title(block_title);
+
+                let end_idx = num_cmds.saturating_sub(app.terminal_scroll);
+                let start_idx = end_idx.saturating_sub(log_height);
+
+                let mut log_lines = Vec::new();
+                let visible_count = end_idx - start_idx;
+                if visible_count < log_height {
+                    for _ in 0..(log_height - visible_count) {
+                        log_lines.push(Line::from(""));
+                    }
+                }
+
+                for i in start_idx..end_idx {
+                    if let Some(cmd) = app.terminal_commands.get(i) {
+                        log_lines.push(build_log_line(cmd, inner_rect.width as usize));
+                    }
+                }
+
+                f.render_widget(Paragraph::new(log_lines).block(custom_main_block), area);
+            }
         }
-    }
 
     // Terminal bottom pane
-    {
+    if chunks[2].height > 0 {
         let bottom_block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(THEME.border))
@@ -2890,131 +3054,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
             for i in start_idx..num_cmds {
                 if let Some(cmd) = app.terminal_commands.get(i) {
-                    let time_str = if cmd.timestamp.len() >= 8 {
-                        let parts: Vec<&str> = cmd.timestamp.split('T').collect();
-                        if parts.len() > 1 {
-                            parts[1].chars().take(8).collect::<String>()
-                        } else {
-                            cmd.timestamp.chars().take(8).collect::<String>()
-                        }
-                    } else {
-                        cmd.timestamp.clone()
-                    };
-
-                    let (status_text, status_color) = match cmd.status.as_str() {
-                        "Success" => ("SUCCESS", THEME.green),
-                        "Running" => ("RUNNING", THEME.yellow),
-                        s if s.starts_with("Failed") => ("FAILED ", THEME.red),
-                        _ => ("PENDING", THEME.yellow),
-                    };
-
-                    let err_detail = if cmd.status.starts_with("Failed: ") {
-                        Some(&cmd.status[8..])
-                    } else if cmd.status.starts_with("Failed") && cmd.status.len() > 6 {
-                        Some(&cmd.status[6..])
-                    } else {
-                        None
-                    };
-
-                    let cmd_clean = cmd.command.trim();
-                    let mut desc = "";
-                    let mut cmd_to_run = cmd_clean;
-
-                    if let Some(pos) = cmd_clean.find(": ") {
-                        let prefix = &cmd_clean[..pos];
-                        let remainder = &cmd_clean[pos + 2..];
-                        if remainder.starts_with("glab") || remainder.starts_with("gh") {
-                            desc = prefix;
-                            cmd_to_run = remainder;
-                        }
-                    }
-
-                    let desc_str = if desc.is_empty() {
-                        if cmd_clean.starts_with("glab") || cmd_clean.starts_with("gh") {
-                            "RUNNING COMMAND".to_string()
-                        } else {
-                            "SYSTEM LOG".to_string()
-                        }
-                    } else {
-                        desc.to_uppercase()
-                    };
-
-                    let time_len = 11; // "[HH:MM:SS] "
-                    let action_len = 25; // "ACTION                   "
-                    let sep1_len = 3; // " • "
-                    let sep2_len = 3; // " $ "
-                    let sep3_len = 3; // " • "
-                    let status_len = 7; // "SUCCESS" etc.
-
-                    let api_col_width = 60; // Fixed width for API column
-                    let reserved_excluding_api = time_len + sep1_len + action_len + sep2_len + sep3_len + status_len;
-                    let max_available = (bottom_inner.width as usize).saturating_sub(reserved_excluding_api);
-                    let target_api_width = std::cmp::min(api_col_width, max_available);
-                    let truncate_limit = target_api_width.saturating_sub(3);
-                    let truncated_api = truncate(cmd_to_run, truncate_limit);
-
-                    let (cmd_bin, cmd_args) = if truncated_api.starts_with("glab") {
-                        ("glab", truncated_api[4..].to_string())
-                    } else if truncated_api.starts_with("gh") {
-                        ("gh", truncated_api[2..].to_string())
-                    } else {
-                        ("", truncated_api.clone())
-                    };
-
-                    let truncated_len = truncated_api.chars().count();
-                    let padding_spaces = " ".repeat(target_api_width.saturating_sub(truncated_len));
-                    let cmd_args_padded = format!("{}{}", cmd_args, padding_spaces);
-
-                    let mut cmd_spans = vec![
-                        // 1. Time
-                        Span::styled(
-                            format!("[{}] ", time_str),
-                            Style::default().fg(THEME.text_muted),
-                        ),
-                        // 2. Action Divider and Name
-                        Span::styled(" • ", Style::default().fg(THEME.text_muted)),
-                        Span::styled(
-                            format!("{: <25}", desc_str),
-                            Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
-                        ),
-                        // 3. API Divider
-                        Span::styled(" $ ", Style::default().fg(THEME.text_muted)),
-                    ];
-
-                    // 4. API (glab/gh + arguments padded)
-                    if !cmd_bin.is_empty() {
-                        cmd_spans.push(Span::styled(
-                            cmd_bin,
-                            Style::default()
-                                .fg(THEME.yellow)
-                                .add_modifier(Modifier::BOLD),
-                        ));
-                    }
-                    cmd_spans.push(Span::styled(
-                        cmd_args_padded,
-                        Style::default().fg(THEME.text_normal),
-                    ));
-
-                    // 5. Status Divider
-                    cmd_spans.push(Span::styled(" • ", Style::default().fg(THEME.text_muted)));
-
-                    // 6. Status
-                    cmd_spans.push(Span::styled(
-                        status_text,
-                        Style::default()
-                            .fg(status_color)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-
-                    // 7. Error Detail
-                    if let Some(detail) = err_detail {
-                        cmd_spans.push(Span::styled(
-                            format!(" ({})", detail),
-                            Style::default().fg(THEME.red),
-                        ));
-                    }
-
-                    log_lines.push(Line::from(cmd_spans));
+                    log_lines.push(build_log_line(cmd, bottom_inner.width as usize));
                 }
             }
 
@@ -3900,6 +3940,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 key: "Enter",
                 action: "Open notification target & mark read",
             },
+            // Terminal
+            Shortcut {
+                category: "Terminal",
+                key: "j / k / ↑ / ↓",
+                action: "Scroll terminal log",
+            },
             // Diff View
             Shortcut {
                 category: "Diff View",
@@ -3961,6 +4007,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 Tab::Runners => &["Global & Nav", "Runners"],
                 Tab::Releases => &["Global & Nav", "Releases"],
                 Tab::Notifications => &["Global & Nav", "Notifications"],
+                Tab::Terminal => &["Global & Nav", "Terminal"],
             }
         };
 
