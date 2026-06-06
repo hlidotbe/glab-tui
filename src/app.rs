@@ -109,6 +109,13 @@ pub struct EditMenu {
     pub state: ListState,
 }
 
+impl EditMenu {
+    pub fn is_new(&self) -> bool {
+        self.entity_type.starts_with("new_")
+    }
+}
+
+
 #[derive(Clone, Debug)]
 pub struct Selector {
     pub title: String,

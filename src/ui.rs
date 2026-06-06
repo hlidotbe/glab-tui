@@ -3134,7 +3134,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .border_style(Style::default().fg(THEME.border_focused))
             .style(Style::default().bg(Color::Reset));
 
-        let area = centered_rect(50, 45, size);
+        let area = centered_rect(52, 48, size);
 
         let items: Vec<ListItem> = menu
             .fields
@@ -3142,35 +3142,46 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .enumerate()
             .map(|(i, (label, val))| {
                 let is_selected = i == menu.selected_idx;
-                let bg_color = if is_selected {
+                let item_bg = if is_selected {
                     THEME.highlight_bg
                 } else {
                     Color::Reset
                 };
 
                 let label_style = if is_selected {
-                    Style::default().fg(THEME.purple).bg(bg_color).add_modifier(Modifier::BOLD)
+                    Style::default().fg(THEME.text_normal).bg(item_bg).add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(THEME.text_muted)
+                    Style::default().fg(THEME.text_muted).bg(item_bg)
                 };
 
                 let sep_style = if is_selected {
-                    Style::default().fg(THEME.purple).bg(bg_color).add_modifier(Modifier::BOLD)
+                    Style::default().fg(THEME.text_normal).bg(item_bg).add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(THEME.text_muted)
+                    Style::default().fg(THEME.text_muted).bg(item_bg)
                 };
 
                 let val_style = if is_selected {
-                    Style::default().fg(THEME.text_normal).bg(bg_color).add_modifier(Modifier::BOLD)
+                    Style::default().fg(THEME.text_normal).bg(item_bg).add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(THEME.text_normal)
+                    Style::default().fg(THEME.text_normal).bg(item_bg)
                 };
 
                 let (display_val, display_style) = if val.is_empty() {
                     if is_selected {
-                        (" <type or select> ▋".to_string(), Style::default().fg(THEME.text_muted).bg(bg_color).add_modifier(Modifier::ITALIC))
+                        let action_hint = match label.as_str() {
+                            "Labels" | "Assignees" | "Reviewers" | "Milestone" | "Confidential" | "Status (Draft/Ready)" | "Merge Request Pipeline" => {
+                                " <Enter to select>"
+                            }
+                            "Description" => {
+                                " <Enter to open editor>"
+                            }
+                            _ => {
+                                " <Enter to edit>"
+                            }
+                        };
+                        (format!("{} ▋", action_hint), Style::default().fg(THEME.text_muted).bg(item_bg).add_modifier(Modifier::ITALIC))
                     } else {
-                        (" <empty>".to_string(), Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC))
+                        (" <empty>".to_string(), Style::default().fg(THEME.border).bg(item_bg).add_modifier(Modifier::ITALIC))
                     }
                 } else {
                     (val.clone(), val_style)
@@ -3182,16 +3193,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Span::styled(display_val, display_style),
                 ]);
 
-                ListItem::new(line).style(Style::default().bg(bg_color))
+                ListItem::new(line).style(Style::default().bg(item_bg))
             })
             .collect();
 
-        let is_new_entity = menu.entity_iid == 0;
+        let is_new_entity = menu.is_new();
         let submit_idx = menu.fields.len() + 1;
         let all_items: Vec<ListItem> = if is_new_entity {
             let is_submit_selected = menu.selected_idx == submit_idx;
-            let submit_bg = if is_submit_selected { THEME.green } else { Color::Reset };
-            let submit_fg = if is_submit_selected { THEME.bg } else { THEME.green };
+            let submit_bg = if is_submit_selected { THEME.border_focused } else { Color::Reset };
+            let submit_fg = if is_submit_selected { THEME.bg } else { THEME.border_focused };
             let submit_line = Line::from(vec![
                 Span::styled(
                     "          [ Submit ]          ",
@@ -3202,7 +3213,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 ),
             ]);
             let mut v = items;
-            v.push(ListItem::new(Line::from("")));
+            v.push(ListItem::new(Line::from("").style(Style::default().bg(Color::Reset))));
             v.push(ListItem::new(submit_line));
             v
         } else {
@@ -3228,7 +3239,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .style(Style::default().bg(Color::Reset));
 
         let footer = Paragraph::new(footer_text)
-            .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC))
+            .style(Style::default().fg(THEME.text_muted).bg(Color::Reset).add_modifier(Modifier::ITALIC))
             .wrap(ratatui::widgets::Wrap { trim: true });
 
         f.render_widget(Clear, area);
@@ -3266,14 +3277,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
             )
             .split(area);
 
-        let border_color = if selector.is_filtering {
+        let border_color_search = if selector.is_filtering {
             THEME.border_focused
         } else {
-            THEME.text_muted
+            THEME.border
         };
         let search_block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
+            .border_style(Style::default().fg(border_color_search).bg(Color::Reset))
             .title(" Filter (press 'f' or '/' to focus) ");
 
         let search_text = if selector.is_filtering {
@@ -3287,9 +3298,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let search_style = if selector.search_query.is_empty() && !selector.is_filtering {
             Style::default()
                 .fg(THEME.text_muted)
+                .bg(Color::Reset)
                 .add_modifier(Modifier::ITALIC)
         } else {
-            Style::default().fg(THEME.text_normal)
+            Style::default().fg(THEME.text_normal).bg(Color::Reset)
         };
 
         let search_p = Paragraph::new(search_text)
@@ -3306,6 +3318,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .style(
                 Style::default()
                     .fg(THEME.text_muted)
+                    .bg(Color::Reset)
                     .add_modifier(Modifier::ITALIC),
             )
             .wrap(ratatui::widgets::Wrap { trim: true });
@@ -3319,6 +3332,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .style(
                     Style::default()
                         .fg(THEME.text_muted)
+                        .bg(Color::Reset)
                         .add_modifier(Modifier::ITALIC),
                 )
                 .wrap(ratatui::widgets::Wrap { trim: true });
@@ -3330,6 +3344,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .style(
                         Style::default()
                             .fg(THEME.text_muted)
+                            .bg(Color::Reset)
                             .add_modifier(Modifier::ITALIC),
                     )
                     .wrap(ratatui::widgets::Wrap { trim: true });
@@ -3348,28 +3363,35 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                         let marker = if is_selected { " ▣ " } else { " ☐ " };
                         let marker_color = if is_selected {
-                            THEME.border_focused
+                            THEME.green
                         } else {
                             THEME.text_muted
                         };
 
+                        let item_bg = if i == selector.cursor_idx {
+                            THEME.highlight_bg
+                        } else {
+                            Color::Reset
+                        };
+
                         let style = if i == selector.cursor_idx {
                             Style::default()
-                                .bg(THEME.highlight_bg)
+                                .bg(item_bg)
                                 .fg(THEME.text_normal)
                                 .add_modifier(Modifier::BOLD)
                         } else {
-                            Style::default().fg(THEME.text_normal)
+                            Style::default().fg(THEME.text_normal).bg(item_bg)
                         };
 
                         let highlight_style = if i == selector.cursor_idx {
                             Style::default()
-                                .bg(THEME.highlight_bg)
+                                .bg(item_bg)
                                 .fg(THEME.yellow)
                                 .add_modifier(Modifier::BOLD)
                         } else {
                             Style::default()
                                 .fg(THEME.yellow)
+                                .bg(item_bg)
                                 .add_modifier(Modifier::BOLD)
                         };
 
@@ -3377,6 +3399,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             marker,
                             Style::default()
                                 .fg(marker_color)
+                                .bg(item_bg)
                                 .add_modifier(Modifier::BOLD),
                         )];
 
@@ -3391,12 +3414,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             line_spans.push(Span::styled(item.clone(), style));
                         }
 
-                        let item_style = if i == selector.cursor_idx {
-                            Style::default().bg(THEME.highlight_bg)
-                        } else {
-                            Style::default()
-                        };
-                        ListItem::new(vec![Line::from(line_spans)]).style(item_style)
+                        ListItem::new(vec![Line::from(line_spans)]).style(Style::default().bg(item_bg))
                     })
                     .collect();
 
@@ -3443,13 +3461,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
 
         let value_p = Paragraph::new(display_val)
-            .style(Style::default().fg(THEME.text_normal))
-            .wrap(ratatui::widgets::Wrap { trim: false });
+            .style(Style::default().fg(THEME.text_normal).bg(Color::Reset))
+            .wrap(ratatui::widgets::Wrap { trim: true });
 
         let footer_p = Paragraph::new("  Enter: Confirm • Esc: Cancel  ")
             .style(
                 Style::default()
                     .fg(THEME.text_muted)
+                    .bg(Color::Reset)
                     .add_modifier(Modifier::ITALIC),
             )
             .wrap(ratatui::widgets::Wrap { trim: true });

@@ -418,12 +418,20 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
                             gh_args.push("--fill".to_string());
                         }
 
-                        if let Some(id) = issue_id {
+                        if let Some(b) = body {
+                            gh_args.push("--body".to_string());
+                            if let Some(id) = issue_id {
+                                if !b.contains(&format!("#{}", id)) {
+                                    gh_args.push(format!("Resolves #{}\n\n{}", id, b));
+                                } else {
+                                    gh_args.push(b.to_string());
+                                }
+                            } else {
+                                gh_args.push(b.to_string());
+                            }
+                        } else if let Some(id) = issue_id {
                             gh_args.push("--body".to_string());
                             gh_args.push(format!("Resolves #{}", id));
-                        } else if let Some(b) = body {
-                            gh_args.push("--body".to_string());
-                            gh_args.push(b.to_string());
                         } else if title.is_some() {
                             gh_args.push("--body".to_string());
                             gh_args.push("".to_string());
@@ -533,15 +541,6 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
                                     if i + 1 < args.len() {
                                         gh_args.push("--base".to_string());
                                         gh_args.push(args[i + 1].to_string());
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "-d" => {
-                                    if i + 1 < args.len() && args[i + 1] == "-" {
-                                        gh_args.push("--body-file".to_string());
-                                        gh_args.push("-".to_string());
                                         i += 2;
                                     } else {
                                         i += 1;
@@ -1265,7 +1264,33 @@ async fn handle_entity_update(
             }
         }
         KeyCode::Char('d') => {
-            run_glab_update(entity_type, iid, &["-d", "-"], terminal, tx.clone(), tab).await;
+            let is_github = app
+                .gitlab_client
+                .as_ref()
+                .map(|c| c.is_github)
+                .unwrap_or(false);
+            if is_github {
+                let current_desc = if entity_type == "issue" {
+                    app.issues
+                        .items
+                        .iter()
+                        .find(|i| i.iid == iid)
+                        .and_then(|i| i.description.clone())
+                        .unwrap_or_default()
+                } else {
+                    app.mrs
+                        .items
+                        .iter()
+                        .find(|m| m.iid == iid)
+                        .and_then(|m| m.description.clone())
+                        .unwrap_or_default()
+                };
+                if let Some(new_desc) = edit_in_editor(&current_desc, terminal) {
+                    run_glab_update(entity_type, iid, &["-d", &new_desc], terminal, tx.clone(), tab).await;
+                }
+            } else {
+                run_glab_update(entity_type, iid, &["-d", "-"], terminal, tx.clone(), tab).await;
+            }
             if let Some(client) = &app.gitlab_client {
                 if entity_type == "issue" {
                     if let Ok(updated) =
@@ -1287,6 +1312,59 @@ async fn handle_entity_update(
         }
         _ => {}
     }
+}
+
+fn get_default_template(template_type: &str) -> Option<String> {
+    let paths = if template_type == "issue" {
+        vec![
+            ".github/issue_template.md",
+            ".github/ISSUE_TEMPLATE.md",
+            ".gitlab/issue_template.md",
+        ]
+    } else {
+        vec![
+            ".github/pull_request_template.md",
+            ".github/PULL_REQUEST_TEMPLATE.md",
+            ".gitlab/merge_request_template.md",
+        ]
+    };
+
+    for path in &paths {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            return Some(content);
+        }
+    }
+
+    let dirs = if template_type == "issue" {
+        vec![".github/ISSUE_TEMPLATE", ".gitlab/issue_templates"]
+    } else {
+        vec![".github/PULL_REQUEST_TEMPLATE", ".gitlab/merge_request_templates"]
+    };
+
+    for dir in &dirs {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut md_files = Vec::new();
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().map(|ext| ext == "md").unwrap_or(false) {
+                    md_files.push(path);
+                }
+            }
+            md_files.sort();
+            if let Some(default_path) = md_files.iter().find(|p| p.file_name().map(|n| n == "default.md").unwrap_or(false)) {
+                if let Ok(content) = std::fs::read_to_string(default_path) {
+                    return Some(content);
+                }
+            }
+            if let Some(first_path) = md_files.first() {
+                if let Ok(content) = std::fs::read_to_string(first_path) {
+                    return Some(content);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 fn parse_key_value_pairs(input: &str) -> Vec<(String, String)> {
@@ -2787,40 +2865,89 @@ async fn main() -> Result<()> {
                                                 Some(filtered_items[selector.cursor_idx].clone());
                                         }
 
+                                        app.selector = None;
+
+                                        let is_github = app
+                                            .gitlab_client
+                                            .as_ref()
+                                            .map(|c| c.is_github)
+                                            .unwrap_or(false);
+                                        let pr_suffix = if is_github { "Pull Request" } else { "Merge Request" };
+
+                                        let mut title_val = String::new();
+                                        let mut labels_val = String::new();
+                                        let mut assignees_val = String::new();
+                                        let mut milestone_val = String::new();
+                                        let mut description_val = get_default_template("mr").unwrap_or_default();
+                                        let mut issue_iid = 0;
+
                                         if let Some(item) = selected_val {
-                                            let mut id_val = item.clone();
-                                            if id_val.starts_with("+ Create \"") {
-                                                id_val = selector.search_query.trim().to_string();
-                                            }
+                                            if item != "Create blank (No issue)" {
+                                                let id_val = item.clone();
+                                                let parsed_iid = if id_val.starts_with('#') {
+                                                    id_val
+                                                        .strip_prefix('#')
+                                                        .and_then(|s| s.split(':').next())
+                                                        .and_then(|s| s.trim().parse::<u64>().ok())
+                                                } else {
+                                                    id_val.trim().parse::<u64>().ok()
+                                                };
 
-                                            let parsed_iid = if id_val.starts_with('#') {
-                                                id_val
-                                                    .strip_prefix('#')
-                                                    .and_then(|s| s.split(':').next())
-                                                    .and_then(|s| s.trim().parse::<u64>().ok())
-                                            } else {
-                                                id_val.trim().parse::<u64>().ok()
-                                            };
-
-                                            if let Some(issue_iid) = parsed_iid {
-                                                app.selector = None;
-                                                run_glab_cmd(
-                                                    &[
-                                                        "mr",
-                                                        "create",
-                                                        "-i",
-                                                        &issue_iid.to_string(),
-                                                        "--copy-issue-labels",
-                                                        "--create-source-branch",
-                                                        "--squash-before-merge",
-                                                    ],
-                                                    &mut terminal,
-                                                    events.sender(),
-                                                    app.active_tab,
-                                                )
-                                                .await;
+                                                if let Some(iid) = parsed_iid {
+                                                    if let Some(issue) = app.issues.items.iter().find(|i| i.iid == iid) {
+                                                        issue_iid = issue.iid;
+                                                        title_val = issue.title.clone();
+                                                        if !issue.labels.is_empty() {
+                                                            labels_val = issue.labels.join(", ");
+                                                        }
+                                                        if !issue.assignees.is_empty() {
+                                                            assignees_val = issue
+                                                                .assignees
+                                                                .iter()
+                                                                .map(|a| format!("@{}", a.username))
+                                                                .collect::<Vec<_>>()
+                                                                .join(", ");
+                                                        }
+                                                        if let Some(ref m) = issue.milestone {
+                                                            milestone_val = m.title.clone();
+                                                        }
+                                                        if let Some(ref d) = issue.description {
+                                                            description_val = format!("Closes #{}\n\n{}", issue.iid, d);
+                                                        } else {
+                                                            let mr_tmpl = get_default_template("mr").unwrap_or_default();
+                                                            if mr_tmpl.is_empty() {
+                                                                description_val = format!("Closes #{}", issue.iid);
+                                                            } else {
+                                                                description_val = format!("Closes #{}\n\n{}", issue.iid, mr_tmpl);
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
+
+                                        app.edit_menu = Some(crate::app::EditMenu {
+                                            title: format!("Create {}", pr_suffix),
+                                            fields: vec![
+                                                ("Title".to_string(), title_val),
+                                                ("Source Branch".to_string(), get_current_branch().unwrap_or_default()),
+                                                ("Target Branch".to_string(), String::new()),
+                                                ("Labels".to_string(), labels_val),
+                                                ("Assignees".to_string(), assignees_val),
+                                                ("Reviewers".to_string(), String::new()),
+                                                ("Milestone".to_string(), milestone_val),
+                                                ("Status (Draft/Ready)".to_string(), "Ready".to_string()),
+                                                ("Description".to_string(), description_val),
+                                            ],
+                                            selected_idx: 0,
+                                            entity_iid: issue_iid,
+                                            entity_type: "new_mr".to_string(),
+                                            state: {
+                                                let mut s = ListState::default();
+                                                s.select(Some(0));
+                                                s
+                                            },
+                                        });
                                         continue;
                                     }
 
@@ -3753,7 +3880,7 @@ async fn main() -> Result<()> {
                                         ("Confidential".to_string(), "No".to_string()),
                                         ("Due Date".to_string(), String::new()),
                                         ("Weight".to_string(), "0".to_string()),
-                                        ("Description".to_string(), String::new()),
+                                        ("Description".to_string(), get_default_template("issue").unwrap_or_default()),
                                     ],
                                     selected_idx: 0,
                                     entity_iid: 0,
@@ -3841,34 +3968,53 @@ async fn main() -> Result<()> {
                         },
                         app::Tab::MergeRequests => {
                             if key_event.code == KeyCode::Char('n') {
-                                let is_github = app
-                                    .gitlab_client
-                                    .as_ref()
-                                    .map(|c| c.is_github)
-                                    .unwrap_or(false);
-                                let pr_suffix = if is_github { "Pull Request" } else { "Merge Request" };
-                                app.edit_menu = Some(crate::app::EditMenu {
-                                    title: format!("Create {}", pr_suffix),
-                                    fields: vec![
-                                        ("Title".to_string(), String::new()),
-                                        ("Source Branch".to_string(), get_current_branch().unwrap_or_default()),
-                                        ("Target Branch".to_string(), String::new()),
-                                        ("Labels".to_string(), String::new()),
-                                        ("Assignees".to_string(), String::new()),
-                                        ("Reviewers".to_string(), String::new()),
-                                        ("Milestone".to_string(), String::new()),
-                                        ("Status (Draft/Ready)".to_string(), "Ready".to_string()),
-                                        ("Description".to_string(), String::new()),
-                                    ],
-                                    selected_idx: 0,
-                                    entity_iid: 0,
-                                    entity_type: "new_mr".to_string(),
-                                    state: {
-                                        let mut s = ListState::default();
-                                        s.select(Some(0));
-                                        s
-                                    },
-                                });
+                                 let is_github = app
+                                     .gitlab_client
+                                     .as_ref()
+                                     .map(|c| c.is_github)
+                                     .unwrap_or(false);
+                                 let pr_suffix = if is_github { "Pull Request" } else { "Merge Request" };
+
+                                 let mut all_items = vec!["Create blank (No issue)".to_string()];
+                                 let is_loading = app.issues.items.is_empty();
+                                 if !is_loading {
+                                     for issue in &app.issues.items {
+                                         if issue.state == "opened" || issue.state == "open" {
+                                             all_items.push(format!("#{} {}", issue.iid, issue.title));
+                                         }
+                                     }
+                                 }
+
+                                 app.selector = Some(crate::app::Selector {
+                                     title: format!(" Select Issue to Base {} On ", pr_suffix),
+                                     all_items,
+                                     selected_items: std::collections::HashSet::new(),
+                                     cursor_idx: 0,
+                                     search_query: String::new(),
+                                     is_filtering: true,
+                                     is_loading,
+                                     entity_iid: 0,
+                                     entity_type: "new_mr_selector".to_string(),
+                                     field_type: "create_mr".to_string(),
+                                     multi_select: false,
+                                     state: {
+                                         let mut s = ListState::default();
+                                         s.select(Some(0));
+                                         s
+                                     },
+                                 });
+
+                                 if is_loading {
+                                     if let Some(client) = &app.gitlab_client {
+                                         spawn_refresh_active_tab(
+                                             client,
+                                             &app.project_context,
+                                             app::Tab::Issues,
+                                             events.sender(),
+                                             false,
+                                         );
+                                     }
+                                 }
                             } else if let Some(selected_idx) = app.mrs.state.selected() {
                                 let filtered = app.filtered_mrs();
                                 let mr_info = filtered
@@ -5091,6 +5237,28 @@ mod tests {
                 "--fill".to_string(),
                 "--body".to_string(),
                 "Resolves #123".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_translate_glab_to_gh_mr_create_with_issue_and_body() {
+        let glab_args = vec![
+            "mr", "create",
+            "-i", "123",
+            "--title", "Pre-filled title",
+            "--description", "This is the user edited description body."
+        ];
+        let gh_args = translate_glab_to_gh(&glab_args);
+        assert_eq!(
+            gh_args,
+            vec![
+                "pr".to_string(),
+                "create".to_string(),
+                "--title".to_string(),
+                "Pre-filled title".to_string(),
+                "--body".to_string(),
+                "Resolves #123\n\nThis is the user edited description body.".to_string()
             ]
         );
     }
