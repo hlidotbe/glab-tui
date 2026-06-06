@@ -218,17 +218,83 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
             if args.len() > 1 && args[1] == "create" {
                 gh_args.push("create".to_string());
                 let mut title = None;
-                for i in 2..args.len() {
-                    if args[i] == "--title" && i + 1 < args.len() {
-                        title = Some(args[i + 1]);
+                let mut body = None;
+                let mut labels = None;
+                let mut assignees = None;
+                let mut milestone = None;
+
+                let mut i = 2;
+                while i < args.len() {
+                    match args[i] {
+                        "--title" | "-t" => {
+                            if i + 1 < args.len() {
+                                title = Some(args[i + 1]);
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "-d" | "--description" => {
+                            if i + 1 < args.len() {
+                                body = Some(args[i + 1]);
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "--label" | "-l" => {
+                            if i + 1 < args.len() {
+                                labels = Some(args[i + 1]);
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "--assignee" | "-a" => {
+                            if i + 1 < args.len() {
+                                assignees = Some(args[i + 1]);
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "--milestone" | "-m" => {
+                            if i + 1 < args.len() {
+                                milestone = Some(args[i + 1]);
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        _ => {
+                            i += 1;
+                        }
                     }
                 }
+
                 if let Some(t) = title {
                     gh_args.push("--title".to_string());
                     gh_args.push(t.to_string());
                 }
-                gh_args.push("--body".to_string());
-                gh_args.push("".to_string());
+                if let Some(b) = body {
+                    gh_args.push("--body".to_string());
+                    gh_args.push(b.to_string());
+                } else {
+                    gh_args.push("--body".to_string());
+                    gh_args.push("".to_string());
+                }
+                if let Some(l) = labels {
+                    gh_args.push("--label".to_string());
+                    gh_args.push(l.to_string());
+                }
+                if let Some(a) = assignees {
+                    gh_args.push("--assignee".to_string());
+                    gh_args.push(a.to_string());
+                }
+                if let Some(m) = milestone {
+                    gh_args.push("--milestone".to_string());
+                    gh_args.push(m.to_string());
+                }
             } else if args.len() > 1 && args[1] == "update" {
                 gh_args.push("edit".to_string());
                 if args.len() > 2 {
@@ -1328,6 +1394,15 @@ async fn handle_entity_update(
                         .unwrap_or_default()
                 };
                 if let Some(new_desc) = edit_in_editor(&current_desc, terminal) {
+                    if entity_type == "issue" {
+                        if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
+                            item.description = Some(new_desc.clone());
+                        }
+                    } else if entity_type == "mr" {
+                        if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
+                            item.description = Some(new_desc.clone());
+                        }
+                    }
                     run_glab_update(
                         entity_type,
                         iid,
@@ -1340,21 +1415,22 @@ async fn handle_entity_update(
                 }
             } else {
                 run_glab_update(entity_type, iid, &["-d", "-"], terminal, tx.clone(), tab).await;
-            }
-            if let Some(client) = &app.gitlab_client {
-                if entity_type == "issue" {
-                    if let Ok(updated) =
-                        gitlab::issues::get_issue(client, &app.project_context, iid).await
-                    {
-                        if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
-                            *item = updated;
+                if let Some(client) = &app.gitlab_client {
+                    if entity_type == "issue" {
+                        if let Ok(updated) =
+                            gitlab::issues::get_issue(client, &app.project_context, iid).await
+                        {
+                            if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
+                                *item = updated;
+                            }
                         }
-                    }
-                } else if entity_type == "mr" {
-                    if let Ok(updated) = gitlab::mr::get_mr(client, &app.project_context, iid).await
-                    {
-                        if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
-                            *item = updated;
+                    } else if entity_type == "mr" {
+                        if let Ok(updated) =
+                            gitlab::mr::get_mr(client, &app.project_context, iid).await
+                        {
+                            if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
+                                *item = updated;
+                            }
                         }
                     }
                 }
@@ -5826,6 +5902,42 @@ mod tests {
                 "Bug report".to_string(),
                 "--body".to_string(),
                 "".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_translate_glab_to_gh_issue_create_with_details() {
+        let glab_args = vec![
+            "issue",
+            "create",
+            "--title",
+            "Bug report",
+            "--description",
+            "Detailed bug info",
+            "--label",
+            "bug,high",
+            "--assignee",
+            "octocat",
+            "--milestone",
+            "v1.0",
+        ];
+        let gh_args = translate_glab_to_gh(&glab_args);
+        assert_eq!(
+            gh_args,
+            vec![
+                "issue".to_string(),
+                "create".to_string(),
+                "--title".to_string(),
+                "Bug report".to_string(),
+                "--body".to_string(),
+                "Detailed bug info".to_string(),
+                "--label".to_string(),
+                "bug,high".to_string(),
+                "--assignee".to_string(),
+                "octocat".to_string(),
+                "--milestone".to_string(),
+                "v1.0".to_string(),
             ]
         );
     }
