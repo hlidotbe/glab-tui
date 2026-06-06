@@ -590,14 +590,65 @@ fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
             }
         }
         "ci" => {
-            gh_args.push("run".to_string());
             if args.len() > 1 && args[1] == "view" {
+                gh_args.push("run".to_string());
                 gh_args.push("view".to_string());
                 if args.len() > 2 {
                     gh_args.push(args[2].to_string());
                 }
                 gh_args.push("--web".to_string());
+            } else if args.len() > 1 && args[1] == "run" {
+                gh_args.push("workflow".to_string());
+                gh_args.push("run".to_string());
+                let mut workflow = None;
+                let mut branch = None;
+                let mut inputs = Vec::new();
+                let mut i = 2;
+                while i < args.len() {
+                    match args[i] {
+                        "-b" | "--branch" => {
+                            if i + 1 < args.len() {
+                                branch = Some(args[i + 1]);
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "--variables" | "--variables-env" | "-i" | "--input" => {
+                            if i + 1 < args.len() {
+                                let pair = args[i + 1];
+                                if let Some(pos) = pair.find(':').or_else(|| pair.find('=')) {
+                                    let k = &pair[..pos];
+                                    let v = &pair[pos+1..];
+                                    inputs.push(format!("{}={}", k, v));
+                                }
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "--mr" => {
+                            i += 1;
+                        }
+                        arg => {
+                            workflow = Some(arg);
+                            i += 1;
+                        }
+                    }
+                }
+                if let Some(wf) = workflow {
+                    gh_args.push(wf.to_string());
+                }
+                if let Some(b) = branch {
+                    gh_args.push("-r".to_string());
+                    gh_args.push(b.to_string());
+                }
+                for input in inputs {
+                    gh_args.push("-f".to_string());
+                    gh_args.push(input);
+                }
             } else {
+                gh_args.push("run".to_string());
                 for arg in &args[1..] {
                     gh_args.push(arg.to_string());
                 }
@@ -1236,6 +1287,49 @@ async fn handle_entity_update(
         }
         _ => {}
     }
+}
+
+fn parse_key_value_pairs(input: &str) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    let mut current = String::new();
+    let mut in_parens: i32 = 0;
+    for c in input.chars() {
+        match c {
+            '(' => {
+                in_parens += 1;
+                current.push(c);
+            }
+            ')' => {
+                in_parens = in_parens.saturating_sub(1);
+                current.push(c);
+            }
+            ',' if in_parens == 0 => {
+                if !current.trim().is_empty() {
+                    if let Some(pos) = current.find(':').or_else(|| current.find('=')) {
+                        let k = current[..pos].trim().to_string();
+                        let v = current[pos+1..].trim().to_string();
+                        if !k.is_empty() {
+                            pairs.push((k, v));
+                        }
+                    }
+                }
+                current.clear();
+            }
+            _ => {
+                current.push(c);
+            }
+        }
+    }
+    if !current.trim().is_empty() {
+        if let Some(pos) = current.find(':').or_else(|| current.find('=')) {
+            let k = current[..pos].trim().to_string();
+            let v = current[pos+1..].trim().to_string();
+            if !k.is_empty() {
+                pairs.push((k, v));
+            }
+        }
+    }
+    pairs
 }
 
 fn get_current_branch() -> Option<String> {
@@ -2779,6 +2873,7 @@ async fn main() -> Result<()> {
                                                 "milestone" => "Milestone",
                                                 "confidential" => "Confidential",
                                                 "draft_status" => "Status (Draft/Ready)",
+                                                "mr_pipeline" => "Merge Request Pipeline",
                                                 _ => "",
                                             };
                                             if !target_field_name.is_empty() {
@@ -2787,6 +2882,8 @@ async fn main() -> Result<()> {
                                                          selected_list.first().cloned().unwrap_or_else(|| "No".to_string())
                                                      } else if field_type == "draft_status" {
                                                          selected_list.first().cloned().unwrap_or_else(|| "Ready".to_string())
+                                                     } else if field_type == "mr_pipeline" {
+                                                         selected_list.first().cloned().unwrap_or_else(|| "No".to_string())
                                                      } else {
                                                          selected_list.join(", ")
                                                      };
@@ -2946,6 +3043,7 @@ async fn main() -> Result<()> {
                                             let milestone = menu.fields.iter().find(|(k, _)| k == "Milestone").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
                                             let status = menu.fields.iter().find(|(k, _)| k == "Status (Draft/Ready)").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
                                             let description = menu.fields.iter().find(|(k, _)| k == "Description").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let mr_pipeline = menu.fields.iter().find(|(k, _)| k == "Merge Request Pipeline").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
 
                                             let mut cmd_args = vec!["mr", "create", "-y"];
                                             if !title.is_empty() {
@@ -2991,9 +3089,65 @@ async fn main() -> Result<()> {
                                             if status.to_lowercase() == "draft" {
                                                 cmd_args.push("--draft");
                                             }
+                                            if mr_pipeline.to_lowercase() == "yes" {
+                                                cmd_args.push("--create-pipeline");
+                                            }
                                             if !description.is_empty() {
                                                 cmd_args.push("--description");
                                                 cmd_args.push(&description);
+                                            }
+
+                                            app.edit_menu = None;
+                                            run_glab_cmd(&cmd_args, &mut terminal, events.sender(), app.active_tab).await;
+                                            
+                                            if let Some(client) = &app.gitlab_client {
+                                                spawn_refresh_active_tab(
+                                                    client,
+                                                    &app.project_context,
+                                                    app.active_tab,
+                                                    events.sender(),
+                                                    app.is_column_visible(app.active_tab, "Show Closed Items"),
+                                                );
+                                            }
+                                            continue;
+                                        } else if entity_type == "new_pipeline" {
+                                            let branch = menu.fields.iter().find(|(k, _)| k == "Branch / Ref").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let mr = menu.fields.iter().find(|(k, _)| k == "Merge Request Pipeline").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let variables = menu.fields.iter().find(|(k, _)| k == "Variables").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let inputs = menu.fields.iter().find(|(k, _)| k == "Inputs").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+                                            let workflow = menu.fields.iter().find(|(k, _)| k == "Workflow / CI File (GitHub)").map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+
+                                            let var_pairs = parse_key_value_pairs(&variables);
+                                            let mut var_strs = Vec::new();
+                                            for (k, v) in var_pairs {
+                                                var_strs.push(format!("{}:{}", k, v));
+                                            }
+
+                                            let input_pairs = parse_key_value_pairs(&inputs);
+                                            let mut input_strs = Vec::new();
+                                            for (k, v) in input_pairs {
+                                                input_strs.push(format!("{}:{}", k, v));
+                                            }
+
+                                            let mut cmd_args = vec!["ci", "run"];
+                                            if !workflow.is_empty() {
+                                                cmd_args.push(&workflow);
+                                            }
+                                            if !branch.is_empty() {
+                                                cmd_args.push("-b");
+                                                cmd_args.push(&branch);
+                                            }
+                                            if mr.to_lowercase() == "yes" {
+                                                cmd_args.push("--mr");
+                                            }
+
+                                            for s in &var_strs {
+                                                cmd_args.push("--variables");
+                                                cmd_args.push(s);
+                                            }
+                                            for s in &input_strs {
+                                                cmd_args.push("-i");
+                                                cmd_args.push(s);
                                             }
 
                                             app.edit_menu = None;
@@ -3026,6 +3180,7 @@ async fn main() -> Result<()> {
                                     || field_name == "Milestone"
                                     || field_name == "Confidential"
                                     || field_name == "Status (Draft/Ready)"
+                                    || field_name == "Merge Request Pipeline"
                                 {
                                     let mut current_set = std::collections::HashSet::new();
                                     let field_type = match field_name.as_str() {
@@ -3035,6 +3190,7 @@ async fn main() -> Result<()> {
                                         "Milestone" => "milestone",
                                         "Confidential" => "confidential",
                                         "Status (Draft/Ready)" => "draft_status",
+                                        "Merge Request Pipeline" => "mr_pipeline",
                                         _ => "",
                                     };
                                     let multi_select = match field_type {
@@ -3068,11 +3224,22 @@ async fn main() -> Result<()> {
                                                 "Ready".to_string()
                                             });
                                         }
+                                    } else if field_type == "mr_pipeline" {
+                                        all_items = vec!["Yes".to_string(), "No".to_string()];
+                                        is_loading = false;
+                                        if entity_iid == 0 {
+                                            let current_val = menu.fields[menu.selected_idx].1.clone();
+                                            if !current_val.is_empty() {
+                                                current_set.insert(current_val);
+                                            } else {
+                                                current_set.insert("No".to_string());
+                                            }
+                                        }
                                     }
 
                                     if entity_iid == 0 {
                                         let current_val = menu.fields[menu.selected_idx].1.clone();
-                                        if !current_val.is_empty() && field_type != "draft_status" {
+                                        if !current_val.is_empty() && field_type != "draft_status" && field_type != "mr_pipeline" {
                                             if multi_select {
                                                 for item in current_val.split(',') {
                                                     let trimmed = item.trim().to_string();
@@ -3202,6 +3369,10 @@ async fn main() -> Result<()> {
                                     || field_name == "Due Date"
                                     || field_name == "Weight"
                                     || field_name == "Description"
+                                    || field_name == "Branch / Ref"
+                                    || field_name == "Variables"
+                                    || field_name == "Inputs"
+                                    || field_name == "Workflow / CI File (GitHub)"
                                 {
                                     let current_val = if entity_iid == 0 {
                                         menu.fields[menu.selected_idx].1.clone()
@@ -3572,11 +3743,26 @@ async fn main() -> Result<()> {
                     match app.active_tab {
                         app::Tab::Issues => match key_event.code {
                             KeyCode::Char('n') => {
-                                app.text_input = Some(crate::app::TextInput {
-                                    title: " Create New Issue Title ".to_string(),
-                                    value: String::new(),
-                                    cursor_idx: 0,
-                                    action: crate::app::TextInputAction::CreateIssue,
+                                app.edit_menu = Some(crate::app::EditMenu {
+                                    title: "Create Issue".to_string(),
+                                    fields: vec![
+                                        ("Title".to_string(), String::new()),
+                                        ("Labels".to_string(), String::new()),
+                                        ("Assignees".to_string(), String::new()),
+                                        ("Milestone".to_string(), String::new()),
+                                        ("Confidential".to_string(), "No".to_string()),
+                                        ("Due Date".to_string(), String::new()),
+                                        ("Weight".to_string(), "0".to_string()),
+                                        ("Description".to_string(), String::new()),
+                                    ],
+                                    selected_idx: 0,
+                                    entity_iid: 0,
+                                    entity_type: "new_issue".to_string(),
+                                    state: {
+                                        let mut s = ListState::default();
+                                        s.select(Some(0));
+                                        s
+                                    },
                                 });
                             }
                             KeyCode::Char('e') => {
@@ -3655,36 +3841,28 @@ async fn main() -> Result<()> {
                         },
                         app::Tab::MergeRequests => {
                             if key_event.code == KeyCode::Char('n') {
-                                let issue_options: Vec<String> = app
-                                    .issues
-                                    .items
-                                    .iter()
-                                    .map(|issue| format!("#{} : {}", issue.iid, issue.title))
-                                    .collect();
-
-                                let pr_suffix = if app
+                                let is_github = app
                                     .gitlab_client
                                     .as_ref()
                                     .map(|c| c.is_github)
-                                    .unwrap_or(false)
-                                {
-                                    "PR"
-                                } else {
-                                    "MR"
-                                };
-
-                                app.selector = Some(crate::app::Selector {
-                                    title: format!(" Select Issue for New {} ", pr_suffix),
-                                    all_items: issue_options,
-                                    selected_items: std::collections::HashSet::new(),
-                                    cursor_idx: 0,
-                                    search_query: String::new(),
-                                    is_filtering: true,
-                                    is_loading: false,
+                                    .unwrap_or(false);
+                                let pr_suffix = if is_github { "Pull Request" } else { "Merge Request" };
+                                app.edit_menu = Some(crate::app::EditMenu {
+                                    title: format!("Create {}", pr_suffix),
+                                    fields: vec![
+                                        ("Title".to_string(), String::new()),
+                                        ("Source Branch".to_string(), get_current_branch().unwrap_or_default()),
+                                        ("Target Branch".to_string(), String::new()),
+                                        ("Labels".to_string(), String::new()),
+                                        ("Assignees".to_string(), String::new()),
+                                        ("Reviewers".to_string(), String::new()),
+                                        ("Milestone".to_string(), String::new()),
+                                        ("Status (Draft/Ready)".to_string(), "Ready".to_string()),
+                                        ("Description".to_string(), String::new()),
+                                    ],
+                                    selected_idx: 0,
                                     entity_iid: 0,
-                                    entity_type: "mr".to_string(),
-                                    field_type: "create_mr".to_string(),
-                                    multi_select: false,
+                                    entity_type: "new_mr".to_string(),
                                     state: {
                                         let mut s = ListState::default();
                                         s.select(Some(0));
@@ -3895,7 +4073,26 @@ async fn main() -> Result<()> {
                             }
                         }
                         app::Tab::Pipelines => {
-                            if key_event.code == KeyCode::Char('p') {
+                            if key_event.code == KeyCode::Char('n') {
+                                app.edit_menu = Some(crate::app::EditMenu {
+                                    title: "Run Pipeline".to_string(),
+                                    fields: vec![
+                                        ("Branch / Ref".to_string(), get_current_branch().unwrap_or_else(|| "main".to_string())),
+                                        ("Merge Request Pipeline".to_string(), "No".to_string()),
+                                        ("Variables".to_string(), String::new()),
+                                        ("Inputs".to_string(), String::new()),
+                                        ("Workflow / CI File (GitHub)".to_string(), String::new()),
+                                    ],
+                                    selected_idx: 0,
+                                    entity_iid: 0,
+                                    entity_type: "new_pipeline".to_string(),
+                                    state: {
+                                        let mut s = ListState::default();
+                                        s.select(Some(0));
+                                        s
+                                    },
+                                });
+                            } else if key_event.code == KeyCode::Char('p') {
                                 run_glab_cmd(
                                     &["ci", "run", "--mr"],
                                     &mut terminal,
@@ -4910,6 +5107,41 @@ mod tests {
                 "v1.0.0".to_string(),
                 "-F".to_string(),
                 "changelog.md".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_key_value_pairs() {
+        let input = "key1:val1,key2:val2, replicas:int(3), debug:bool(false) ";
+        let pairs = parse_key_value_pairs(input);
+        assert_eq!(
+            pairs,
+            vec![
+                ("key1".to_string(), "val1".to_string()),
+                ("key2".to_string(), "val2".to_string()),
+                ("replicas".to_string(), "int(3)".to_string()),
+                ("debug".to_string(), "bool(false)".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_translate_glab_to_gh_ci_run() {
+        let glab_args = vec!["ci", "run", "my-workflow.yml", "-b", "my-branch", "--variables", "var1:val1", "-i", "inp1:val1"];
+        let gh_args = translate_glab_to_gh(&glab_args);
+        assert_eq!(
+            gh_args,
+            vec![
+                "workflow".to_string(),
+                "run".to_string(),
+                "my-workflow.yml".to_string(),
+                "-r".to_string(),
+                "my-branch".to_string(),
+                "-f".to_string(),
+                "var1=val1".to_string(),
+                "-f".to_string(),
+                "inp1=val1".to_string(),
             ]
         );
     }
