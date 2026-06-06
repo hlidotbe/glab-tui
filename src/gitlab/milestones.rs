@@ -1,9 +1,9 @@
 use super::client::GitlabClient;
 use super::issues::Issue;
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Milestone {
     pub id: u64,
     pub iid: u64,

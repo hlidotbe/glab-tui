@@ -7,6 +7,11 @@ pub struct ProjectCache {
     pub issues: Vec<crate::gitlab::issues::Issue>,
     pub mrs: Vec<crate::gitlab::mr::MergeRequest>,
     pub pipelines: Vec<crate::gitlab::pipelines::Pipeline>,
+    pub runners: Vec<crate::gitlab::runners::Runner>,
+    pub releases: Vec<crate::gitlab::releases::Release>,
+    pub notifications: Vec<crate::gitlab::notifications::Notification>,
+    pub milestones: Vec<crate::gitlab::milestones::Milestone>,
+    pub wiki_pages: Vec<crate::gitlab::wiki::WikiPage>,
 }
 
 fn get_cache_file_path(project_context: &str) -> PathBuf {

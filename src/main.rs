@@ -1728,6 +1728,12 @@ async fn main() -> Result<()> {
     app.issues.items = cache.issues;
     app.mrs.items = cache.mrs;
     app.pipelines.items = cache.pipelines;
+    app.runners.items = cache.runners;
+    app.releases.items = cache.releases;
+    app.notifications.items = cache.notifications;
+    app.milestones.items = cache.milestones;
+    app.wiki_pages.items = cache.wiki_pages;
+
     if !app.issues.items.is_empty() {
         app.loaded_tabs.insert(app::Tab::Issues);
     }
@@ -1736,6 +1742,21 @@ async fn main() -> Result<()> {
     }
     if !app.pipelines.items.is_empty() {
         app.loaded_tabs.insert(app::Tab::Pipelines);
+    }
+    if !app.runners.items.is_empty() {
+        app.loaded_tabs.insert(app::Tab::Runners);
+    }
+    if !app.releases.items.is_empty() {
+        app.loaded_tabs.insert(app::Tab::Releases);
+    }
+    if !app.notifications.items.is_empty() {
+        app.loaded_tabs.insert(app::Tab::Notifications);
+    }
+    if !app.milestones.items.is_empty() {
+        app.loaded_tabs.insert(app::Tab::Milestones);
+    }
+    if !app.wiki_pages.items.is_empty() {
+        app.loaded_tabs.insert(app::Tab::Wiki);
     }
     app.update_filter_selection();
 
@@ -1925,6 +1946,9 @@ async fn main() -> Result<()> {
                     app.status_message = None;
                     app.notifications.items = notifs;
                     app.update_filter_selection();
+                    let mut cache = crate::utils::cache::load_cache(&app.project_context);
+                    cache.notifications = app.notifications.items.clone();
+                    crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::RunnersFetched(runners) => {
                     app.complete_loading_tab(app::Tab::Runners, "Success");
@@ -1933,6 +1957,9 @@ async fn main() -> Result<()> {
                     app.status_message = None;
                     app.runners.items = runners;
                     app.update_filter_selection();
+                    let mut cache = crate::utils::cache::load_cache(&app.project_context);
+                    cache.runners = app.runners.items.clone();
+                    crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::ReleasesFetched(releases) => {
                     app.complete_loading_tab(app::Tab::Releases, "Success");
@@ -1941,6 +1968,9 @@ async fn main() -> Result<()> {
                     app.status_message = None;
                     app.releases.items = releases;
                     app.update_filter_selection();
+                    let mut cache = crate::utils::cache::load_cache(&app.project_context);
+                    cache.releases = app.releases.items.clone();
+                    crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::MilestonesFetched(milestones) => {
                     app.complete_loading_tab(app::Tab::Milestones, "Success");
@@ -1949,6 +1979,9 @@ async fn main() -> Result<()> {
                     app.status_message = None;
                     app.milestones.items = milestones;
                     app.update_filter_selection();
+                    let mut cache = crate::utils::cache::load_cache(&app.project_context);
+                    cache.milestones = app.milestones.items.clone();
+                    crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::MilestoneIssuesFetched(_, issues) => {
                     app.selected_milestone_issues = Some(issues);
@@ -1960,6 +1993,9 @@ async fn main() -> Result<()> {
                     app.status_message = None;
                     app.wiki_pages.items = pages;
                     app.update_filter_selection();
+                    let mut cache = crate::utils::cache::load_cache(&app.project_context);
+                    cache.wiki_pages = app.wiki_pages.items.clone();
+                    crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::SelectorItemsFetched(items) => {
                     if let Some(mut selector) = app.selector.take() {
@@ -2994,13 +3030,14 @@ async fn main() -> Result<()> {
                                                     app.loading_tabs.clear();
                                                     app.refreshed_tabs.clear();
                                                     app.status_message = None;
-
                                                     app.issues.items.clear();
                                                     app.mrs.items.clear();
                                                     app.pipelines.items.clear();
                                                     app.runners.items.clear();
                                                     app.releases.items.clear();
                                                     app.notifications.items.clear();
+                                                    app.milestones.items.clear();
+                                                    app.wiki_pages.items.clear();
                                                     app.pipeline_jobs.clear();
                                                     app.fetching_pipelines.clear();
 
@@ -3010,6 +3047,11 @@ async fn main() -> Result<()> {
                                                     app.issues.items = cache.issues;
                                                     app.mrs.items = cache.mrs;
                                                     app.pipelines.items = cache.pipelines;
+                                                    app.runners.items = cache.runners;
+                                                    app.releases.items = cache.releases;
+                                                    app.notifications.items = cache.notifications;
+                                                    app.milestones.items = cache.milestones;
+                                                    app.wiki_pages.items = cache.wiki_pages;
 
                                                     if !app.issues.items.is_empty() {
                                                         app.loaded_tabs.insert(app::Tab::Issues);
@@ -3020,6 +3062,21 @@ async fn main() -> Result<()> {
                                                     }
                                                     if !app.pipelines.items.is_empty() {
                                                         app.loaded_tabs.insert(app::Tab::Pipelines);
+                                                    }
+                                                    if !app.runners.items.is_empty() {
+                                                        app.loaded_tabs.insert(app::Tab::Runners);
+                                                    }
+                                                    if !app.releases.items.is_empty() {
+                                                        app.loaded_tabs.insert(app::Tab::Releases);
+                                                    }
+                                                    if !app.notifications.items.is_empty() {
+                                                        app.loaded_tabs.insert(app::Tab::Notifications);
+                                                    }
+                                                    if !app.milestones.items.is_empty() {
+                                                        app.loaded_tabs.insert(app::Tab::Milestones);
+                                                    }
+                                                    if !app.wiki_pages.items.is_empty() {
+                                                        app.loaded_tabs.insert(app::Tab::Wiki);
                                                     }
 
                                                     app.issues.state.select(
@@ -3055,6 +3112,21 @@ async fn main() -> Result<()> {
                                                             }
                                                             app::Tab::Pipelines => {
                                                                 !app.pipelines.items.is_empty()
+                                                            }
+                                                            app::Tab::Runners => {
+                                                                !app.runners.items.is_empty()
+                                                            }
+                                                            app::Tab::Releases => {
+                                                                !app.releases.items.is_empty()
+                                                            }
+                                                            app::Tab::Notifications => {
+                                                                !app.notifications.items.is_empty()
+                                                            }
+                                                            app::Tab::Milestones => {
+                                                                !app.milestones.items.is_empty()
+                                                            }
+                                                            app::Tab::Wiki => {
+                                                                !app.wiki_pages.items.is_empty()
                                                             }
                                                             _ => false,
                                                         };
