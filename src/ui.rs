@@ -2730,14 +2730,24 @@ pub fn render(f: &mut Frame, app: &mut App) {
             }
         }
         Tab::Wiki => {
-            if app.wiki_pages.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
-                f.render_widget(
-                    Paragraph::new("\n\n Loading wiki pages...")
-                        .alignment(Alignment::Center)
-                        .block(main_block.clone())
-                        .style(Style::default().fg(THEME.text_muted)),
-                    middle_chunks[1],
-                );
+            if app.wiki_pages.items.is_empty() {
+                if app.loading_tabs.contains(&app.active_tab) {
+                    f.render_widget(
+                        Paragraph::new("\n\n Loading wiki pages...")
+                            .alignment(Alignment::Center)
+                            .block(main_block.clone())
+                            .style(Style::default().fg(THEME.text_muted)),
+                        middle_chunks[1],
+                    );
+                } else {
+                    f.render_widget(
+                        Paragraph::new("\n\n No wiki pages found")
+                            .alignment(Alignment::Center)
+                            .block(main_block.clone())
+                            .style(Style::default().fg(THEME.text_muted)),
+                        middle_chunks[1],
+                    );
+                }
                 f.render_widget(
                     Paragraph::new("Select a wiki page...")
                         .block(
@@ -2789,7 +2799,22 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Row::new(cells).style(row_style)
                 });
 
-                let table = Table::new(rows, [Constraint::Percentage(100)])
+                let mut widths = Vec::new();
+                let cols = Tab::Wiki.columns();
+                for col in cols {
+                    if app.is_column_visible(Tab::Wiki, &col) {
+                        match col {
+                            "Title" => widths.push(Constraint::Percentage(40)),
+                            "Path" => widths.push(Constraint::Percentage(60)),
+                            _ => {}
+                        }
+                    }
+                }
+                if widths.is_empty() {
+                    widths.push(Constraint::Percentage(100));
+                }
+
+                let table = Table::new(rows, widths)
                     .header(header)
                     .block(main_block.clone())
                     .row_highlight_style(highlight_style)
