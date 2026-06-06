@@ -16,7 +16,7 @@ env:
 
 jobs:
   msrv:
-    name: Check MSRV (${{ env.MSRV }})
+    name: Check MSRV
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
