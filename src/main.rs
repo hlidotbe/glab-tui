@@ -3275,7 +3275,7 @@ async fn main() -> Result<()> {
                                         continue;
                                     }
 
-                                    if entity_iid == 0 {
+                                    if entity_iid == 0 || entity_type.starts_with("new_") {
                                         // Write the values directly to the active field of app.edit_menu
                                         if let Some(ref mut menu) = app.edit_menu {
                                             let target_field_name = match field_type.as_str() {
@@ -3359,7 +3359,9 @@ async fn main() -> Result<()> {
                                 // close menu
                             }
                             KeyCode::Char('j') | KeyCode::Down => {
-                                let max_idx = if menu.entity_iid == 0 {
+                                let is_new = menu.entity_iid == 0
+                                    || menu.entity_type.starts_with("new_");
+                                let max_idx = if is_new {
                                     menu.fields.len() + 1 // fields + spacer + submit
                                 } else {
                                     menu.fields.len() - 1
@@ -3370,14 +3372,16 @@ async fn main() -> Result<()> {
                                     menu.selected_idx + 1
                                 };
                                 // Skip the spacer row (index == fields.len())
-                                if menu.entity_iid == 0 && menu.selected_idx == menu.fields.len() {
+                                if is_new && menu.selected_idx == menu.fields.len() {
                                     menu.selected_idx += 1;
                                 }
                                 menu.state.select(Some(menu.selected_idx));
                                 app.edit_menu = Some(menu);
                             }
                             KeyCode::Char('k') | KeyCode::Up => {
-                                let max_idx = if menu.entity_iid == 0 {
+                                let is_new = menu.entity_iid == 0
+                                    || menu.entity_type.starts_with("new_");
+                                let max_idx = if is_new {
                                     menu.fields.len() + 1
                                 } else {
                                     menu.fields.len() - 1
@@ -3388,7 +3392,7 @@ async fn main() -> Result<()> {
                                     menu.selected_idx - 1
                                 };
                                 // Skip the spacer row (index == fields.len())
-                                if menu.entity_iid == 0 && menu.selected_idx == menu.fields.len() {
+                                if is_new && menu.selected_idx == menu.fields.len() {
                                     menu.selected_idx = menu.fields.len().saturating_sub(1);
                                 }
                                 menu.state.select(Some(menu.selected_idx));
@@ -3397,12 +3401,13 @@ async fn main() -> Result<()> {
                             KeyCode::Enter => {
                                 let entity_iid = menu.entity_iid;
                                 let entity_type = menu.entity_type.clone();
+                                let is_new_entity =
+                                    entity_iid == 0 || entity_type.starts_with("new_");
                                 let is_on_submit =
-                                    entity_iid == 0 && menu.selected_idx == menu.fields.len() + 1;
+                                    is_new_entity && menu.selected_idx == menu.fields.len() + 1;
 
                                 if is_on_submit {
-                                    if entity_iid == 0 {
-                                        if entity_type == "new_issue" {
+                                    if entity_type == "new_issue" {
                                             let cli = app_cli(&app);
                                             let title = menu
                                                 .fields
@@ -3797,7 +3802,6 @@ async fn main() -> Result<()> {
                                             }
                                             continue;
                                         }
-                                    }
                                 }
 
                                 // Not on submit — act on the currently selected field
