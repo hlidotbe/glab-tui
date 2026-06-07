@@ -3117,7 +3117,8 @@ async fn main() -> Result<()> {
                                         let mut labels_val = String::new();
                                         let mut assignees_val = String::new();
                                         let mut milestone_val = String::new();
-                                        let mut source_branch_val = String::new();
+                                        let mut source_branch_val =
+                                            get_current_branch().unwrap_or_default();
                                         let mut description_val =
                                             get_default_template("mr").unwrap_or_default();
                                         let mut issue_iid = 0;
@@ -3749,6 +3750,19 @@ async fn main() -> Result<()> {
                                             .find(|(k, _)| k == "Merge Request Pipeline")
                                             .map(|(_, v)| v.trim().to_string())
                                             .unwrap_or_default();
+
+                                        if !source.is_empty() {
+                                            let exists = std::process::Command::new("git")
+                                                .args(["rev-parse", "--verify", "--quiet", &source])
+                                                .output()
+                                                .ok()
+                                                .map_or(false, |o| o.status.success());
+                                            if !exists {
+                                                let _ = std::process::Command::new("git")
+                                                    .args(["branch", &source, "HEAD"])
+                                                    .output();
+                                            }
+                                        }
 
                                         let entity_iid_str = menu.entity_iid.to_string();
                                         let mut cmd_args: Vec<String> =
