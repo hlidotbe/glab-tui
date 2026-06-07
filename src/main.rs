@@ -22,916 +22,246 @@ use std::io;
 
 type AppTerminal = Terminal<CrosstermBackend<std::io::Stdout>>;
 
-fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<String> {
-    // Choose editor
-    let editor = std::env::var("EDITOR")
-        .or_else(|_| std::env::var("VISUAL"))
-        .unwrap_or_else(|_| "helix".to_string());
+struct Cli {
+    is_github: bool,
+}
 
-    // Create a unique temporary file
-    let mut tmp = match tempfile::NamedTempFile::new() {
-        Ok(f) => f,
-        Err(_) => return None,
-    };
-    // Write current description (or empty) to file
-    if std::io::Write::write_all(&mut tmp, current_val.as_bytes()).is_err() {
-        return None;
+impl Cli {
+    fn program(&self) -> &'static str {
+        if self.is_github { "gh" } else { "glab" }
     }
 
-    // Suspend TUI
-    crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    crossterm::terminal::disable_raw_mode().ok()?;
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::terminal::LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture,
-    )
-    .ok()?;
-
-    // Launch external editor
-    let mut cmd = if cfg!(target_os = "windows") {
-        let mut c = std::process::Command::new("cmd");
-        c.args(&[
-            "/c",
-            &format!("{} \"{}\"", editor, tmp.path().to_string_lossy()),
-        ]);
-        c
-    } else {
-        let mut c = std::process::Command::new(&editor);
-        c.arg(tmp.path());
-        c
-    };
-    cmd.stdin(std::process::Stdio::inherit())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit());
-    if let Ok(mut child) = cmd.spawn() {
-        child.wait().ok()?;
+    fn entity<'a>(&self, name: &'a str) -> &'a str {
+        if self.is_github && name == "mr" {
+            "pr"
+        } else {
+            name
+        }
     }
 
-    // Resume TUI
-    crossterm::terminal::enable_raw_mode().ok()?;
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::terminal::EnterAlternateScreen,
-        crossterm::event::EnableMouseCapture,
-    )
-    .ok()?;
-    while crossterm::event::poll(std::time::Duration::from_secs(0)).unwrap_or(false) {
-        let _ = crossterm::event::read();
+    fn sub_update(&self) -> &'static str {
+        if self.is_github { "edit" } else { "update" }
     }
-    let _ = terminal.clear();
-    crate::event::PAUSED.store(false, std::sync::atomic::Ordering::Relaxed);
 
-    // Read edited content
-    let content = match std::fs::read_to_string(tmp.path()) {
-        Ok(c) => c,
-        Err(_) => return None,
-    };
-    let trimmed = content.trim().to_string();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
+    fn flag_description(&self) -> &'static str {
+        if self.is_github {
+            "--body"
+        } else {
+            "--description"
+        }
+    }
+
+    fn flag_description_short(&self) -> &'static str {
+        if self.is_github { "--body" } else { "-d" }
+    }
+
+    fn flag_branch(&self) -> &'static str {
+        if self.is_github { "-r" } else { "-b" }
+    }
+
+    fn flag_input(&self) -> &'static str {
+        if self.is_github { "-f" } else { "-i" }
+    }
+
+    fn flag_variable(&self) -> &'static str {
+        if self.is_github { "-f" } else { "--variables" }
+    }
+
+    fn flag_web(&self) -> &'static str {
+        if self.is_github { "--web" } else { "-w" }
+    }
+
+    fn input_separator(&self) -> &str {
+        if self.is_github { "=" } else { ":" }
     }
 }
 
-// old edit_in_editor implementation removed
+struct UpdateCmd {
+    is_github: bool,
+    args: Vec<String>,
+}
 
-async fn apply_field_text_change(
-    app: &mut App,
-    entity_type: &str,
-    iid: u64,
-    field_type: &str,
-    value: String,
+impl UpdateCmd {
+    fn new(is_github: bool, entity: &str, iid: u64) -> Self {
+        let e = if is_github && entity == "mr" {
+            "pr"
+        } else {
+            entity
+        };
+        let cmd = if is_github { "edit" } else { "update" };
+        Self {
+            is_github,
+            args: vec![e.to_string(), cmd.to_string(), iid.to_string()],
+        }
+    }
+
+    fn flag(mut self, name: &str, value: &str) -> Self {
+        let (name, value) = match (self.is_github, name) {
+            (true, "-d" | "--description") => ("--body", value),
+            (true, "--unlabel") if value == "all" => ("--label", ""),
+            (true, "--unassign") => ("--assignee", ""),
+            (true, "--target-branch") => ("--base", value),
+            (true, "--milestone") if value == "0" => ("--milestone", ""),
+            _ => (name, value),
+        };
+        self.args.push(name.to_string());
+        self.args.push(value.to_string());
+        self
+    }
+
+    fn flag_bool(mut self, name: &str) -> Self {
+        self.args.push(name.to_string());
+        self
+    }
+
+    fn build(&self) -> Vec<String> {
+        self.args.clone()
+    }
+}
+
+fn app_cli(app: &App) -> Cli {
+    Cli {
+        is_github: app
+            .gitlab_client
+            .as_ref()
+            .map(|c| c.is_github)
+            .unwrap_or(false),
+    }
+}
+
+async fn run_cli(
+    cli: &Cli,
+    args: &[String],
     terminal: &mut AppTerminal,
     tx: tokio::sync::mpsc::UnboundedSender<Event>,
     tab: crate::app::Tab,
 ) {
-    match field_type {
-        "title" => {
-            run_glab_update(
-                entity_type,
-                iid,
-                &["--title", &value],
-                terminal,
-                tx.clone(),
-                tab,
-            )
-            .await;
-            if entity_type == "issue" {
-                if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
-                    item.title = value;
-                }
-            } else if entity_type == "mr" {
-                if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
-                    item.title = value;
-                }
-            }
-        }
-        "target_branch" => {
-            if entity_type == "mr" {
-                run_glab_update(
-                    entity_type,
-                    iid,
-                    &["--target-branch", &value],
-                    terminal,
-                    tx.clone(),
-                    tab,
-                )
-                .await;
-                if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
-                    item.target_branch = value;
-                }
-            }
-        }
-        "due_date" => {
-            if entity_type == "issue" {
-                if value == "YYYY-MM-DD" || value.trim().is_empty() {
-                    run_glab_update(
-                        entity_type,
-                        iid,
-                        &["--due-date", ""],
-                        terminal,
-                        tx.clone(),
-                        tab,
-                    )
-                    .await;
-                } else {
-                    run_glab_update(
-                        entity_type,
-                        iid,
-                        &["--due-date", &value],
-                        terminal,
-                        tx.clone(),
-                        tab,
-                    )
-                    .await;
-                }
-            }
-        }
-        "weight" => {
-            if entity_type == "issue" {
-                run_glab_update(
-                    entity_type,
-                    iid,
-                    &["--weight", &value],
-                    terminal,
-                    tx.clone(),
-                    tab,
-                )
-                .await;
-            }
-        }
-        "runner_description" => {
-            run_glab_cmd(
-                &[
-                    "api",
-                    "-X",
-                    "PUT",
-                    &format!("runners/{}", iid),
-                    "-f",
-                    &format!("description={}", value),
-                ],
-                terminal,
-                tx.clone(),
-                tab,
-            )
-            .await;
-            if let Some(runner) = app.runners.items.iter_mut().find(|r| r.id == iid) {
-                runner.description = Some(value);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn translate_glab_to_gh(args: &[&str]) -> Vec<String> {
-    if args.is_empty() {
-        return vec![];
-    }
-    let mut gh_args = vec![];
-    let cmd = args[0];
-    match cmd {
-        "issue" => {
-            gh_args.push("issue".to_string());
-            if args.len() > 1 && args[1] == "create" {
-                gh_args.push("create".to_string());
-                let mut title = None;
-                let mut body = None;
-                let mut labels = None;
-                let mut assignees = None;
-                let mut milestone = None;
-
-                let mut i = 2;
-                while i < args.len() {
-                    match args[i] {
-                        "--title" | "-t" => {
-                            if i + 1 < args.len() {
-                                title = Some(args[i + 1]);
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "-d" | "--description" => {
-                            if i + 1 < args.len() {
-                                body = Some(args[i + 1]);
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "--label" | "-l" => {
-                            if i + 1 < args.len() {
-                                labels = Some(args[i + 1]);
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "--assignee" | "-a" => {
-                            if i + 1 < args.len() {
-                                assignees = Some(args[i + 1]);
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "--milestone" | "-m" => {
-                            if i + 1 < args.len() {
-                                milestone = Some(args[i + 1]);
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        _ => {
-                            i += 1;
-                        }
-                    }
-                }
-
-                if let Some(t) = title {
-                    gh_args.push("--title".to_string());
-                    gh_args.push(t.to_string());
-                }
-                if let Some(b) = body {
-                    if b == "-" {
-                        gh_args.push("-e".to_string());
-                    } else {
-                        gh_args.push("--body".to_string());
-                        gh_args.push(b.to_string());
-                    }
-                } else {
-                    gh_args.push("--body".to_string());
-                    gh_args.push("".to_string());
-                }
-                if let Some(l) = labels {
-                    gh_args.push("--label".to_string());
-                    gh_args.push(l.to_string());
-                }
-                if let Some(a) = assignees {
-                    gh_args.push("--assignee".to_string());
-                    gh_args.push(a.to_string());
-                }
-                if let Some(m) = milestone {
-                    gh_args.push("--milestone".to_string());
-                    gh_args.push(m.to_string());
-                }
-            } else if args.len() > 1 && args[1] == "update" {
-                gh_args.push("edit".to_string());
-                if args.len() > 2 {
-                    gh_args.push(args[2].to_string());
-                }
-                let mut i = 3;
-                while i < args.len() {
-                    match args[i] {
-                        "--title" => {
-                            if i + 1 < args.len() {
-                                gh_args.push("--title".to_string());
-                                gh_args.push(args[i + 1].to_string());
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "--label" => {
-                            if i + 1 < args.len() {
-                                gh_args.push("--label".to_string());
-                                gh_args.push(args[i + 1].to_string());
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "--unlabel" => {
-                            if i + 1 < args.len() && args[i + 1] == "all" {
-                                if i + 2 < args.len() && args[i + 2] == "--label" {
-                                    // skip
-                                } else {
-                                    gh_args.push("--label".to_string());
-                                    gh_args.push("".to_string());
-                                }
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "--assignee" => {
-                            if i + 1 < args.len() {
-                                gh_args.push("--assignee".to_string());
-                                gh_args.push(args[i + 1].to_string());
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "--unassign" => {
-                            gh_args.push("--assignee".to_string());
-                            gh_args.push("".to_string());
-                            i += 1;
-                        }
-                        "--milestone" => {
-                            if i + 1 < args.len() {
-                                gh_args.push("--milestone".to_string());
-                                let ms = if args[i + 1] == "0" { "" } else { args[i + 1] };
-                                gh_args.push(ms.to_string());
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "-d" | "--description" => {
-                            if i + 1 < args.len() {
-                                if args[i + 1] == "-" {
-                                    gh_args.push("-e".to_string());
-                                } else {
-                                    gh_args.push("--body".to_string());
-                                    gh_args.push(args[i + 1].to_string());
-                                }
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        _ => {
-                            i += 1;
-                        }
-                    }
-                }
-            } else {
-                for arg in &args[1..] {
-                    gh_args.push(arg.to_string());
-                }
-            }
-        }
-        "mr" => {
-            gh_args.push("pr".to_string());
-            if args.len() > 1 {
-                match args[1] {
-                    "create" => {
-                        gh_args.push("create".to_string());
-                        let mut title = None;
-                        let mut body = None;
-                        let mut label = None;
-                        let mut assignee = None;
-                        let mut milestone = None;
-                        let mut reviewer = None;
-                        let mut head = None;
-                        let mut base = None;
-                        let mut draft = false;
-                        let mut issue_id = None;
-
-                        let mut i = 2;
-                        while i < args.len() {
-                            match args[i] {
-                                "--title" => {
-                                    if i + 1 < args.len() {
-                                        title = Some(args[i + 1]);
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--description" => {
-                                    if i + 1 < args.len() {
-                                        body = Some(args[i + 1]);
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--label" => {
-                                    if i + 1 < args.len() {
-                                        label = Some(args[i + 1]);
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--assignee" => {
-                                    if i + 1 < args.len() {
-                                        assignee = Some(args[i + 1]);
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--milestone" => {
-                                    if i + 1 < args.len() {
-                                        milestone = Some(args[i + 1]);
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--reviewer" => {
-                                    if i + 1 < args.len() {
-                                        reviewer = Some(args[i + 1]);
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--source-branch" => {
-                                    if i + 1 < args.len() {
-                                        head = Some(args[i + 1]);
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--target-branch" => {
-                                    if i + 1 < args.len() {
-                                        base = Some(args[i + 1]);
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--draft" => {
-                                    draft = true;
-                                    i += 1;
-                                }
-                                "-i" | "--related-issue" => {
-                                    if i + 1 < args.len() {
-                                        issue_id = Some(args[i + 1]);
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                _ => {
-                                    i += 1;
-                                }
-                            }
-                        }
-
-                        if let Some(t) = title {
-                            gh_args.push("--title".to_string());
-                            gh_args.push(t.to_string());
-                        }
-
-                        if title.is_none() {
-                            gh_args.push("--fill".to_string());
-                        }
-
-                        if let Some(b) = body {
-                            if b == "-" {
-                                gh_args.push("-e".to_string());
-                            } else {
-                                gh_args.push("--body".to_string());
-                                if let Some(id) = issue_id {
-                                    if !b.contains(&format!("#{}", id)) {
-                                        gh_args.push(format!("Resolves #{}\n\n{}", id, b));
-                                    } else {
-                                        gh_args.push(b.to_string());
-                                    }
-                                } else {
-                                    gh_args.push(b.to_string());
-                                }
-                            }
-                        } else if let Some(id) = issue_id {
-                            gh_args.push("--body".to_string());
-                            gh_args.push(format!("Resolves #{}", id));
-                        } else if title.is_some() {
-                            gh_args.push("--body".to_string());
-                            gh_args.push("".to_string());
-                        }
-
-                        if let Some(l) = label {
-                            gh_args.push("--label".to_string());
-                            gh_args.push(l.to_string());
-                        }
-                        if let Some(a) = assignee {
-                            gh_args.push("--assignee".to_string());
-                            gh_args.push(a.to_string());
-                        }
-                        if let Some(m) = milestone {
-                            gh_args.push("--milestone".to_string());
-                            gh_args.push(m.to_string());
-                        }
-                        if let Some(r) = reviewer {
-                            gh_args.push("--reviewer".to_string());
-                            gh_args.push(r.to_string());
-                        }
-                        if let Some(h) = head {
-                            gh_args.push("--head".to_string());
-                            gh_args.push(h.to_string());
-                        }
-                        if let Some(b) = base {
-                            gh_args.push("--base".to_string());
-                            gh_args.push(b.to_string());
-                        }
-                        if draft {
-                            gh_args.push("--draft".to_string());
-                        }
-                    }
-                    "update" => {
-                        gh_args.push("edit".to_string());
-                        if args.len() > 2 {
-                            gh_args.push(args[2].to_string());
-                        }
-                        let mut i = 3;
-                        while i < args.len() {
-                            match args[i] {
-                                "--title" => {
-                                    if i + 1 < args.len() {
-                                        gh_args.push("--title".to_string());
-                                        gh_args.push(args[i + 1].to_string());
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--label" => {
-                                    if i + 1 < args.len() {
-                                        gh_args.push("--label".to_string());
-                                        gh_args.push(args[i + 1].to_string());
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--unlabel" => {
-                                    if i + 1 < args.len() && args[i + 1] == "all" {
-                                        if i + 2 < args.len() && args[i + 2] == "--label" {
-                                            // skip
-                                        } else {
-                                            gh_args.push("--label".to_string());
-                                            gh_args.push("".to_string());
-                                        }
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--assignee" => {
-                                    if i + 1 < args.len() {
-                                        gh_args.push("--assignee".to_string());
-                                        gh_args.push(args[i + 1].to_string());
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--unassign" => {
-                                    gh_args.push("--assignee".to_string());
-                                    gh_args.push("".to_string());
-                                    i += 1;
-                                }
-                                "--reviewer" => {
-                                    if i + 1 < args.len() {
-                                        gh_args.push("--reviewer".to_string());
-                                        gh_args.push(args[i + 1].to_string());
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--milestone" => {
-                                    if i + 1 < args.len() {
-                                        gh_args.push("--milestone".to_string());
-                                        let ms = if args[i + 1] == "0" { "" } else { args[i + 1] };
-                                        gh_args.push(ms.to_string());
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "--target-branch" => {
-                                    if i + 1 < args.len() {
-                                        gh_args.push("--base".to_string());
-                                        gh_args.push(args[i + 1].to_string());
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                "-d" | "--description" => {
-                                    if i + 1 < args.len() {
-                                        if args[i + 1] == "-" {
-                                            gh_args.push("--body-file".to_string());
-                                            gh_args.push("-".to_string());
-                                        } else {
-                                            gh_args.push("--body".to_string());
-                                            gh_args.push(args[i + 1].to_string());
-                                        }
-                                        i += 2;
-                                    } else {
-                                        i += 1;
-                                    }
-                                }
-                                _ => {
-                                    i += 1;
-                                }
-                            }
-                        }
-                    }
-                    "approve" => {
-                        gh_args.push("review".to_string());
-                        if args.len() > 2 {
-                            gh_args.push(args[2].to_string());
-                        }
-                        gh_args.push("--approve".to_string());
-                    }
-                    "merge" => {
-                        gh_args.push("merge".to_string());
-                        if args.len() > 2 {
-                            gh_args.push(args[2].to_string());
-                        }
-                        gh_args.push("--delete-branch".to_string());
-                        gh_args.push("--squash".to_string());
-                    }
-                    "diff" => {
-                        gh_args.push("diff".to_string());
-                        if args.len() > 2 {
-                            gh_args.push(args[2].to_string());
-                        }
-                    }
-                    "view" => {
-                        gh_args.push("view".to_string());
-                        if args.len() > 2 {
-                            gh_args.push(args[2].to_string());
-                        }
-                        gh_args.push("--web".to_string());
-                    }
-                    _ => {
-                        for arg in &args[1..] {
-                            gh_args.push(arg.to_string());
-                        }
-                    }
-                }
-            }
-        }
-        "ci" => {
-            if args.len() > 1 && args[1] == "view" {
-                gh_args.push("run".to_string());
-                gh_args.push("view".to_string());
-                if args.len() > 2 {
-                    gh_args.push(args[2].to_string());
-                }
-                gh_args.push("--web".to_string());
-            } else if args.len() > 1 && args[1] == "run" {
-                gh_args.push("workflow".to_string());
-                gh_args.push("run".to_string());
-                let mut workflow = None;
-                let mut branch = None;
-                let mut inputs = Vec::new();
-                let mut i = 2;
-                while i < args.len() {
-                    match args[i] {
-                        "-b" | "--branch" => {
-                            if i + 1 < args.len() {
-                                branch = Some(args[i + 1]);
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "--variables" | "--variables-env" | "-i" | "--input" => {
-                            if i + 1 < args.len() {
-                                let pair = args[i + 1];
-                                if let Some(pos) = pair.find(':').or_else(|| pair.find('=')) {
-                                    let k = &pair[..pos];
-                                    let v = &pair[pos + 1..];
-                                    inputs.push(format!("{}={}", k, v));
-                                }
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
-                        }
-                        "--mr" => {
-                            i += 1;
-                        }
-                        arg => {
-                            workflow = Some(arg);
-                            i += 1;
-                        }
-                    }
-                }
-                if let Some(wf) = workflow {
-                    gh_args.push(wf.to_string());
-                }
-                if let Some(b) = branch {
-                    gh_args.push("-r".to_string());
-                    gh_args.push(b.to_string());
-                }
-                for input in inputs {
-                    gh_args.push("-f".to_string());
-                    gh_args.push(input);
-                }
-            } else {
-                gh_args.push("run".to_string());
-                for arg in &args[1..] {
-                    gh_args.push(arg.to_string());
-                }
-            }
-        }
-        "job" => {
-            gh_args.push("run".to_string());
-            if args.len() > 1 {
-                if args[1] == "view" {
-                    gh_args.push("view".to_string());
-                    if args.len() > 2 {
-                        gh_args.push(args[2].to_string());
-                    }
-                    gh_args.push("--web".to_string());
-                } else if args[1] == "artifact" {
-                    gh_args.push("download".to_string());
-                }
-            }
-        }
-        "release" => {
-            gh_args.push("release".to_string());
-            if args.len() > 1 && args[1] == "view" {
-                gh_args.push("view".to_string());
-                if args.len() > 2 {
-                    gh_args.push(args[2].to_string());
-                }
-                gh_args.push("--web".to_string());
-            } else {
-                for arg in &args[1..] {
-                    gh_args.push(arg.to_string());
-                }
-            }
-        }
-        _ => {
-            for arg in args {
-                gh_args.push(arg.to_string());
-            }
-        }
-    }
-    gh_args
-}
-
-fn is_command_interactive(args: &[&str]) -> bool {
-    args.iter().any(|&arg| arg == "-d" || arg == "--desc" || arg == "--description") && args.iter().any(|&arg| arg == "-")
-}
-
-fn get_command_description(args: &[&str], is_github: bool) -> String {
-    let pr_suffix = if is_github { "PR" } else { "MR" };
-    if args.len() >= 2 {
-        match (args[0], args[1]) {
-            ("issue", "create") => "Creating Issue".to_string(),
-            ("issue", "close") => "Closing Issue".to_string(),
-            ("mr", "create") => format!("Creating {}", pr_suffix),
-            ("mr", "merge") => format!("Merging {}", pr_suffix),
-            ("mr", "diff") => "Fetching Diff".to_string(),
-            ("ci", "run") | ("workflow", "run") => "Running Pipeline".to_string(),
-            _ => "Running Command".to_string(),
-        }
+    let program = cli.program();
+    let is_interactive = if cli.is_github {
+        args.iter().any(|a| a == "-e")
     } else {
-        "Running Command".to_string()
-    }
-}
-
-async fn run_glab_cmd(
-    args: &[&str],
-    terminal: &mut AppTerminal,
-    tx: tokio::sync::mpsc::UnboundedSender<Event>,
-    tab: crate::app::Tab,
-) {
-    let is_github = std::process::Command::new("git")
-        .args(["remote", "get-url", "origin"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains("github.com"))
-        .unwrap_or(false);
-
-    let program = if is_github { "gh" } else { "glab" };
-    let actual_args = if is_github {
-        translate_glab_to_gh(args)
-    } else {
-        args.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        args.windows(2)
+            .any(|w| (w[0] == "-d" || w[0] == "--description") && w[1] == "-")
     };
 
-    if is_command_interactive(args) {
+    if is_interactive {
         crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
         let _ = tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        disable_raw_mode().unwrap();
-        execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
 
-        let mut actual_args = actual_args;
-        let mut cancel = false;
+        let cancelled = (|| -> Option<bool> {
+            disable_raw_mode().ok()?;
+            execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture).ok()?;
 
-        if is_github && actual_args.iter().any(|arg| arg == "-e") {
-            actual_args.retain(|arg| arg != "-e");
+            let mut actual_args = args.to_vec();
+            let mut cancel = false;
 
-            let is_pr = actual_args.iter().any(|arg| arg == "pr");
-            let is_edit = actual_args.iter().any(|arg| arg == "edit");
-            let entity_type = if is_pr { "pr" } else { "issue" };
-            let mut initial_body = String::new();
+            if cli.is_github && actual_args.iter().any(|arg| arg == "-e") {
+                actual_args.retain(|arg| arg != "-e");
 
-            if is_edit {
-                if let Some(pos) = actual_args.iter().position(|arg| arg == "edit") {
-                    if pos + 1 < actual_args.len() {
-                        let id = &actual_args[pos + 1];
-                        let output = std::process::Command::new("gh")
-                            .args([entity_type, "view", id, "--json", "body", "--jq", ".body"])
-                            .output();
-                        if let Ok(out) = output {
-                            if out.status.success() {
-                                initial_body = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                let is_pr = actual_args.iter().any(|arg| arg == "pr");
+                let is_edit = actual_args.iter().any(|arg| arg == "edit");
+                let entity_type = if is_pr { "pr" } else { "issue" };
+                let mut initial_body = String::new();
+
+                if is_edit {
+                    if let Some(pos) = actual_args.iter().position(|arg| arg == "edit") {
+                        if pos + 1 < actual_args.len() {
+                            let id = &actual_args[pos + 1];
+                            let output = std::process::Command::new("gh")
+                                .args([entity_type, "view", id, "--json", "body", "--jq", ".body"])
+                                .output();
+                            if let Ok(out) = output {
+                                if out.status.success() {
+                                    initial_body =
+                                        String::from_utf8_lossy(&out.stdout).trim().to_string();
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            if initial_body.is_empty() {
-                let template_type = if is_pr { "mr" } else { "issue" };
-                initial_body = get_default_template(template_type).unwrap_or_default();
-            }
-
-            let edited_body = (|| {
-                let editor = std::env::var("EDITOR")
-                    .or_else(|_| std::env::var("VISUAL"))
-                    .unwrap_or_else(|_| "helix".to_string());
-                let mut tmp = tempfile::NamedTempFile::new().ok()?;
-                std::io::Write::write_all(&mut tmp, initial_body.as_bytes()).ok()?;
-                
-                let mut cmd = if cfg!(target_os = "windows") {
-                    let mut c = std::process::Command::new("cmd");
-                    c.args(&["/c", &format!("{} \"{}\"", editor, tmp.path().to_string_lossy())]);
-                    c
-                } else {
-                    let mut c = std::process::Command::new(&editor);
-                    c.arg(tmp.path());
-                    c
-                };
-                cmd.stdin(std::process::Stdio::inherit())
-                    .stdout(std::process::Stdio::inherit())
-                    .stderr(std::process::Stdio::inherit());
-                if let Ok(mut child) = cmd.spawn() {
-                    child.wait().ok()?;
+                if initial_body.is_empty() {
+                    let template_type = if is_pr { "mr" } else { "issue" };
+                    initial_body = get_default_template(template_type).unwrap_or_default();
                 }
 
-                let content = std::fs::read_to_string(tmp.path()).ok()?;
-                Some(content.trim().to_string())
-            })();
+                let edited_body = (|| {
+                    let editor = std::env::var("EDITOR")
+                        .or_else(|_| std::env::var("VISUAL"))
+                        .unwrap_or_else(|_| "helix".to_string());
+                    let mut tmp = tempfile::NamedTempFile::new().ok()?;
+                    std::io::Write::write_all(&mut tmp, initial_body.as_bytes()).ok()?;
 
-            if let Some(body) = edited_body {
-                actual_args.push("--body".to_string());
-                actual_args.push(body);
-            } else {
-                cancel = true;
+                    let mut cmd = if cfg!(target_os = "windows") {
+                        let mut c = std::process::Command::new("cmd");
+                        c.args(&[
+                            "/c",
+                            &format!("{} \"{}\"", editor, tmp.path().to_string_lossy()),
+                        ]);
+                        c
+                    } else {
+                        let mut c = std::process::Command::new(&editor);
+                        c.arg(tmp.path());
+                        c
+                    };
+                    cmd.stdin(std::process::Stdio::inherit())
+                        .stdout(std::process::Stdio::inherit())
+                        .stderr(std::process::Stdio::inherit());
+                    if let Ok(mut child) = cmd.spawn() {
+                        child.wait().ok()?;
+                    }
+
+                    let content = std::fs::read_to_string(tmp.path()).ok()?;
+                    Some(content.trim().to_string())
+                })();
+
+                if let Some(body) = edited_body {
+                    actual_args.push("--body".to_string());
+                    actual_args.push(body);
+                } else {
+                    cancel = true;
+                }
             }
-        }
 
-        if !cancel {
-            let mut cmd = std::process::Command::new(program);
-            cmd.args(&actual_args);
-            cmd.stdin(std::process::Stdio::inherit());
-            cmd.stdout(std::process::Stdio::inherit());
-            cmd.stderr(std::process::Stdio::inherit());
+            if !cancel {
+                let mut cmd = std::process::Command::new(program);
+                cmd.args(&actual_args);
+                cmd.stdin(std::process::Stdio::inherit());
+                cmd.stdout(std::process::Stdio::inherit());
+                cmd.stderr(std::process::Stdio::inherit());
 
-            if let Ok(mut child) = cmd.spawn() {
-                let _ = child.wait();
+                if let Ok(mut child) = cmd.spawn() {
+                    let _ = child.wait();
+                }
             }
-        }
 
-        enable_raw_mode().unwrap();
-        execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).unwrap();
+            Some(cancel)
+        })();
+
+        // Always restore terminal and reset PAUSED
+        let _ = enable_raw_mode();
+        let _ = execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture);
         while crossterm::event::poll(std::time::Duration::from_secs(0)).unwrap_or(false) {
             let _ = crossterm::event::read();
         }
         let _ = terminal.clear();
         crate::event::PAUSED.store(false, std::sync::atomic::Ordering::Relaxed);
 
-        if cancel {
-            let _ = tx.send(Event::CommandCompleted(tab, Err("Edit cancelled".to_string())));
+        if cancelled.unwrap_or(true) {
+            let _ = tx.send(Event::CommandCompleted(
+                tab,
+                Err("Edit cancelled".to_string()),
+            ));
         } else {
             let _ = tx.send(Event::CommandCompleted(tab, Ok(())));
         }
     } else {
-        let desc = get_command_description(args, is_github);
-        let status_msg = format!("{}: {} {}", desc, program, args.join(" "));
+        let status_msg = format!("{} {}", program, args.join(" "));
         let _ = tx.send(Event::CommandStarted(status_msg));
 
         let tx_clone = tx.clone();
         let program = program.to_string();
+        let actual_args = args.to_vec();
 
         tokio::spawn(async move {
             let mut cmd = tokio::process::Command::new(&program);
@@ -960,18 +290,173 @@ async fn run_glab_cmd(
     }
 }
 
-async fn run_glab_update(
+fn editor_name() -> String {
+    std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "helix".to_string())
+}
+
+fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<String> {
+    let editor = editor_name();
+
+    // Create a unique temporary file
+    let mut tmp = match tempfile::NamedTempFile::new() {
+        Ok(f) => f,
+        Err(_) => return None,
+    };
+    // Write current description (or empty) to file
+    if std::io::Write::write_all(&mut tmp, current_val.as_bytes()).is_err() {
+        return None;
+    }
+
+    // Suspend TUI
+    crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    let result = (|| {
+        crossterm::terminal::disable_raw_mode().ok()?;
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::event::DisableMouseCapture,
+        )
+        .ok()?;
+
+        // Launch external editor
+        let mut cmd = if cfg!(target_os = "windows") {
+            let mut c = std::process::Command::new("cmd");
+            c.args(&[
+                "/c",
+                &format!("{} \"{}\"", editor, tmp.path().to_string_lossy()),
+            ]);
+            c
+        } else {
+            let mut c = std::process::Command::new(&editor);
+            c.arg(tmp.path());
+            c
+        };
+        cmd.stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit());
+        if let Ok(mut child) = cmd.spawn() {
+            child.wait().ok()?;
+        }
+
+        let content = std::fs::read_to_string(tmp.path()).ok()?;
+        let trimmed = content.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    })();
+
+    // Always resume TUI — PAUSED is reset even if the closure returned None
+    let _ = crossterm::terminal::enable_raw_mode();
+    let _ = crossterm::execute!(
+        std::io::stdout(),
+        crossterm::terminal::EnterAlternateScreen,
+        crossterm::event::EnableMouseCapture,
+    );
+    while crossterm::event::poll(std::time::Duration::from_secs(0)).unwrap_or(false) {
+        let _ = crossterm::event::read();
+    }
+    let _ = terminal.clear();
+    crate::event::PAUSED.store(false, std::sync::atomic::Ordering::Relaxed);
+
+    result
+}
+
+async fn apply_field_text_change(
+    app: &mut App,
     entity_type: &str,
-    id: u64,
-    args: &[&str],
+    iid: u64,
+    field_type: &str,
+    value: String,
     terminal: &mut AppTerminal,
     tx: tokio::sync::mpsc::UnboundedSender<Event>,
     tab: crate::app::Tab,
 ) {
-    let id_str = id.to_string();
-    let mut cmd_args = vec![entity_type, "update", &id_str];
-    cmd_args.extend_from_slice(args);
-    run_glab_cmd(&cmd_args, terminal, tx, tab).await;
+    let cli = app_cli(app);
+    match field_type {
+        "title" => {
+            let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                .flag("--title", &value)
+                .build();
+            run_cli(&cli, &args, terminal, tx.clone(), tab).await;
+            if entity_type == "issue" {
+                if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
+                    item.title = value;
+                }
+            } else if entity_type == "mr" {
+                if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
+                    item.title = value;
+                }
+            }
+        }
+        "target_branch" => {
+            if entity_type == "mr" {
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("--target-branch", &value)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
+                if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
+                    item.target_branch = value;
+                }
+            }
+        }
+        "due_date" => {
+            if entity_type == "issue" {
+                let flag_value = if value == "YYYY-MM-DD" || value.trim().is_empty() {
+                    ""
+                } else {
+                    &value
+                };
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("--due-date", flag_value)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
+            }
+        }
+        "weight" => {
+            if entity_type == "issue" {
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("--weight", &value)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
+            }
+        }
+        "runner_description" => {
+            let args: Vec<String> = vec![
+                "api".into(),
+                "-X".into(),
+                "PUT".into(),
+                format!("runners/{}", iid),
+                "-f".into(),
+                format!("description={}", value),
+            ];
+            run_cli(&cli, &args, terminal, tx.clone(), tab).await;
+            if let Some(runner) = app.runners.items.iter_mut().find(|r| r.id == iid) {
+                runner.description = Some(value);
+            }
+        }
+        "description" => {
+            let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                .flag("-d", &value)
+                .build();
+            run_cli(&cli, &args, terminal, tx.clone(), tab).await;
+            if entity_type == "issue" {
+                if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
+                    item.description = Some(value);
+                }
+            } else if entity_type == "mr" {
+                if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
+                    item.description = Some(value);
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 async fn apply_selector_changes(
@@ -982,31 +467,25 @@ async fn apply_selector_changes(
     values: Vec<String>,
     terminal: &mut AppTerminal,
 ) {
+    let cli = app_cli(app);
     let tx = app.tx.clone().unwrap();
     let tab = app.active_tab;
     match field_type {
         "labels" => {
             let labels_comma = values.join(",");
             if labels_comma.is_empty() {
-                run_glab_update(
-                    entity_type,
-                    iid,
-                    &["--unlabel", "all"],
-                    terminal,
-                    tx.clone(),
-                    tab,
-                )
-                .await;
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("--unlabel", "all")
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
             } else {
-                run_glab_update(
-                    entity_type,
-                    iid,
-                    &["--unlabel", "all", "--label", &labels_comma],
-                    terminal,
-                    tx.clone(),
-                    tab,
-                )
-                .await;
+                let mut cmd = UpdateCmd::new(cli.is_github, entity_type, iid);
+                // gh: --label replaces all labels, so skip --unlabel all
+                if !cli.is_github {
+                    cmd = cmd.flag("--unlabel", "all");
+                }
+                let args = cmd.flag("--label", &labels_comma).build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
             }
 
             if entity_type == "issue" {
@@ -1027,17 +506,15 @@ async fn apply_selector_changes(
             let assignees_comma = clean_values.join(",");
 
             if assignees_comma.is_empty() {
-                run_glab_update(entity_type, iid, &["--unassign"], terminal, tx.clone(), tab).await;
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("--unassign", "")
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
             } else {
-                run_glab_update(
-                    entity_type,
-                    iid,
-                    &["--assignee", &assignees_comma],
-                    terminal,
-                    tx.clone(),
-                    tab,
-                )
-                .await;
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("--assignee", &assignees_comma)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
             }
 
             let new_assignees: Vec<crate::gitlab::issues::Assignee> = clean_values
@@ -1071,15 +548,10 @@ async fn apply_selector_changes(
                     .collect();
                 let reviewers_comma = clean_values.join(",");
 
-                run_glab_update(
-                    entity_type,
-                    iid,
-                    &["--reviewer", &reviewers_comma],
-                    terminal,
-                    tx.clone(),
-                    tab,
-                )
-                .await;
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("--reviewer", &reviewers_comma)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
 
                 let new_reviewers: Vec<crate::gitlab::mr::Reviewer> = clean_values
                     .into_iter()
@@ -1093,15 +565,10 @@ async fn apply_selector_changes(
         }
         "milestone" => {
             if let Some(milestone_title) = values.first() {
-                run_glab_update(
-                    entity_type,
-                    iid,
-                    &["--milestone", milestone_title],
-                    terminal,
-                    tx.clone(),
-                    tab,
-                )
-                .await;
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("--milestone", milestone_title)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
 
                 let new_milestone = Some(crate::gitlab::issues::Milestone {
                     title: milestone_title.clone(),
@@ -1119,15 +586,10 @@ async fn apply_selector_changes(
                     }
                 }
             } else {
-                run_glab_update(
-                    entity_type,
-                    iid,
-                    &["--milestone", "0"],
-                    terminal,
-                    tx.clone(),
-                    tab,
-                )
-                .await;
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("--milestone", "0")
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
 
                 if entity_type == "issue" {
                     if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
@@ -1142,20 +604,15 @@ async fn apply_selector_changes(
         }
         "confidential" => {
             if let Some(val) = values.first() {
-                if val.to_lowercase() == "confidential" {
-                    run_glab_update(
-                        entity_type,
-                        iid,
-                        &["--confidential"],
-                        terminal,
-                        tx.clone(),
-                        tab,
-                    )
-                    .await;
+                let flag = if val.to_lowercase() == "confidential" {
+                    "--confidential"
                 } else {
-                    run_glab_update(entity_type, iid, &["--public"], terminal, tx.clone(), tab)
-                        .await;
-                }
+                    "--public"
+                };
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag_bool(flag)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
             }
         }
         "draft_status" => {
@@ -1165,7 +622,10 @@ async fn apply_selector_changes(
                 } else {
                     "--ready"
                 };
-                run_glab_update(entity_type, iid, &[action], terminal, tx.clone(), tab).await;
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag_bool(action)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
                 if entity_type == "mr" {
                     if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                         item.draft = val.to_lowercase() == "draft";
@@ -1176,18 +636,32 @@ async fn apply_selector_changes(
         "description_edit_choice" => {
             app.selector = None;
             let choice = values.first().cloned().unwrap_or_default();
-            let is_github = app
-                .gitlab_client
-                .as_ref()
-                .map(|c| c.is_github)
-                .unwrap_or(false);
 
             if iid == 0 {
                 if let Some(ref mut menu) = app.edit_menu {
                     if let Some(f) = menu.fields.iter_mut().find(|f| f.0 == "Description") {
-                        if choice.starts_with("Basic Text Editor") {
+                        if choice == "Edit (basic)" {
+                            // Inline text input for new entity Description field
+                            app.text_input = Some(crate::app::TextInput {
+                                title: " Edit Description ".to_string(),
+                                value: f.1.clone(),
+                                cursor_idx: f.1.len(),
+                                action: crate::app::TextInputAction::EditNewField {
+                                    field_idx: menu
+                                        .fields
+                                        .iter()
+                                        .position(|f| f.0 == "Description")
+                                        .unwrap_or(0),
+                                },
+                            });
+                        } else {
+                            // Edit ($EDITOR) — external editor
                             let current_val = if f.1.trim().is_empty() {
-                                let template_type = if entity_type == "new_mr" { "mr" } else { "issue" };
+                                let template_type = if entity_type == "new_mr" {
+                                    "mr"
+                                } else {
+                                    "issue"
+                                };
                                 get_default_template(template_type).unwrap_or_default()
                             } else {
                                 f.1.clone()
@@ -1195,8 +669,6 @@ async fn apply_selector_changes(
                             if let Some(new_desc) = edit_in_editor(&current_val, terminal) {
                                 f.1 = new_desc;
                             }
-                        } else {
-                            f.1 = "-".to_string();
                         }
                     }
                 }
@@ -1207,19 +679,28 @@ async fn apply_selector_changes(
                         .iter()
                         .find(|i| i.iid == iid)
                         .and_then(|i| i.description.clone())
-                        .filter(|d| !d.trim().is_empty())
-                        .unwrap_or_else(|| get_default_template("issue").unwrap_or_default())
+                        .unwrap_or_default()
                 } else {
                     app.mrs
                         .items
                         .iter()
                         .find(|m| m.iid == iid)
                         .and_then(|m| m.description.clone())
-                        .filter(|d| !d.trim().is_empty())
-                        .unwrap_or_else(|| get_default_template("mr").unwrap_or_default())
+                        .unwrap_or_default()
                 };
 
-                if choice.starts_with("Basic Text Editor") {
+                if choice == "Edit (basic)" {
+                    app.text_input = Some(crate::app::TextInput {
+                        title: " Edit Description ".to_string(),
+                        value: current_desc.clone(),
+                        cursor_idx: current_desc.len(),
+                        action: crate::app::TextInputAction::EditField {
+                            entity_iid: iid,
+                            entity_type: entity_type.to_string(),
+                            field_type: "description".to_string(),
+                        },
+                    });
+                } else {
                     if let Some(new_desc) = edit_in_editor(&current_desc, terminal) {
                         if entity_type == "issue" {
                             if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
@@ -1230,44 +711,19 @@ async fn apply_selector_changes(
                                 item.description = Some(new_desc.clone());
                             }
                         }
-                        run_glab_update(
-                            entity_type,
-                            iid,
-                            &["-d", &new_desc],
-                            terminal,
-                            tx.clone(),
-                            tab,
-                        )
-                        .await;
-                    }
-                } else {
-                    if is_github {
-                        run_glab_update(
-                            entity_type,
-                            iid,
-                            &["-e"],
-                            terminal,
-                            tx.clone(),
-                            tab,
-                        )
-                        .await;
-                    } else {
-                        run_glab_update(
-                            entity_type,
-                            iid,
-                            &["-d", "-"],
-                            terminal,
-                            tx.clone(),
-                            tab,
-                        )
-                        .await;
+                        let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                            .flag("-d", &new_desc)
+                            .build();
+                        run_cli(&cli, &args, terminal, tx.clone(), tab).await;
                     }
                     if let Some(client) = &app.gitlab_client {
                         if entity_type == "issue" {
                             if let Ok(updated) =
                                 gitlab::issues::get_issue(client, &app.project_context, iid).await
                             {
-                                if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
+                                if let Some(item) =
+                                    app.issues.items.iter_mut().find(|i| i.iid == iid)
+                                {
                                     *item = updated;
                                 }
                             }
@@ -1275,7 +731,8 @@ async fn apply_selector_changes(
                             if let Ok(updated) =
                                 gitlab::mr::get_mr(client, &app.project_context, iid).await
                             {
-                                if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
+                                if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid)
+                                {
                                     *item = updated;
                                 }
                             }
@@ -1327,6 +784,10 @@ fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
                     (
                         "Description".to_string(),
                         issue.description.clone().unwrap_or_default(),
+                    ),
+                    (
+                        "Description ($EDITOR)".to_string(),
+                        format!("Open in {}", editor_name()),
                     ),
                 ],
                 selected_idx,
@@ -1397,6 +858,10 @@ fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
                         "Description".to_string(),
                         mr.description.clone().unwrap_or_default(),
                     ),
+                    (
+                        "Description ($EDITOR)".to_string(),
+                        format!("Open in {}", editor_name()),
+                    ),
                 ],
                 selected_idx,
                 entity_iid: mr.iid,
@@ -1420,6 +885,7 @@ async fn handle_entity_update(
     tx: tokio::sync::mpsc::UnboundedSender<Event>,
     tab: crate::app::Tab,
 ) {
+    let cli = app_cli(app);
     match code {
         KeyCode::Char('t') => {
             let current_title = if entity_type == "issue" {
@@ -1439,15 +905,10 @@ async fn handle_entity_update(
             };
 
             if let Some(new_title) = edit_in_editor(&current_title, terminal) {
-                run_glab_update(
-                    entity_type,
-                    iid,
-                    &["--title", &new_title],
-                    terminal,
-                    tx.clone(),
-                    tab,
-                )
-                .await;
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("--title", &new_title)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
                 if entity_type == "issue" {
                     if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
                         item.title = new_title;
@@ -1469,7 +930,10 @@ async fn handle_entity_update(
                     .map(|m| m.draft)
                     .unwrap_or(false);
                 let action = if is_draft { "--ready" } else { "--draft" };
-                run_glab_update(entity_type, iid, &[action], terminal, tx.clone(), tab).await;
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag_bool(action)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
                 if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                     item.draft = !is_draft;
                 }
@@ -1485,15 +949,10 @@ async fn handle_entity_update(
                     .map(|m| m.target_branch.clone())
                     .unwrap_or_default();
                 if let Some(target) = edit_in_editor(&current_branch, terminal) {
-                    run_glab_update(
-                        entity_type,
-                        iid,
-                        &["--target-branch", &target],
-                        terminal,
-                        tx.clone(),
-                        tab,
-                    )
-                    .await;
+                    let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                        .flag("--target-branch", &target)
+                        .build();
+                    run_cli(&cli, &args, terminal, tx.clone(), tab).await;
                     if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
                         item.target_branch = target;
                     }
@@ -1503,97 +962,101 @@ async fn handle_entity_update(
         KeyCode::Char('c') => {
             if entity_type == "issue" {
                 if let Some(res) = edit_in_editor("public", terminal) {
-                    if res.to_lowercase().contains("confidential") {
-                        run_glab_update(
-                            entity_type,
-                            iid,
-                            &["--confidential"],
-                            terminal,
-                            tx.clone(),
-                            tab,
-                        )
-                        .await;
+                    let flag = if res.to_lowercase().contains("confidential") {
+                        "--confidential"
                     } else {
-                        run_glab_update(entity_type, iid, &["--public"], terminal, tx.clone(), tab)
-                            .await;
-                    }
+                        "--public"
+                    };
+                    let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                        .flag_bool(flag)
+                        .build();
+                    run_cli(&cli, &args, terminal, tx.clone(), tab).await;
                 }
             }
         }
         KeyCode::Char('u') => {
             if entity_type == "issue" {
                 if let Some(due_date) = edit_in_editor("YYYY-MM-DD", terminal) {
-                    if due_date == "YYYY-MM-DD" || due_date.is_empty() {
-                        run_glab_update(
-                            entity_type,
-                            iid,
-                            &["--due-date", ""],
-                            terminal,
-                            tx.clone(),
-                            tab,
-                        )
-                        .await;
+                    let flag_value = if due_date == "YYYY-MM-DD" || due_date.is_empty() {
+                        ""
                     } else {
-                        run_glab_update(
-                            entity_type,
-                            iid,
-                            &["--due-date", &due_date],
-                            terminal,
-                            tx.clone(),
-                            tab,
-                        )
-                        .await;
-                    }
+                        &due_date
+                    };
+                    let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                        .flag("--due-date", flag_value)
+                        .build();
+                    run_cli(&cli, &args, terminal, tx.clone(), tab).await;
                 }
             }
         }
         KeyCode::Char('w') => {
             if entity_type == "issue" {
                 if let Some(weight) = edit_in_editor("0", terminal) {
-                    run_glab_update(
-                        entity_type,
-                        iid,
-                        &["--weight", &weight],
-                        terminal,
-                        tx.clone(),
-                        tab,
-                    )
-                    .await;
+                    let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                        .flag("--weight", &weight)
+                        .build();
+                    run_cli(&cli, &args, terminal, tx.clone(), tab).await;
                 }
             }
         }
         KeyCode::Char('d') => {
-            let is_github = app
-                .gitlab_client
-                .as_ref()
-                .map(|c| c.is_github)
-                .unwrap_or(false);
-            let choices = vec![
-                "Basic Text Editor ($EDITOR)".to_string(),
-                if is_github {
-                    "CLI Native Editor (gh -e)".to_string()
-                } else {
-                    "CLI Native Editor (glab -d -)".to_string()
-                }
-            ];
-            app.selector = Some(crate::app::Selector {
-                title: "Edit Description using:".to_string(),
-                all_items: choices,
-                selected_items: std::collections::HashSet::new(),
-                cursor_idx: 0,
-                search_query: String::new(),
-                is_filtering: false,
-                is_loading: false,
-                entity_iid: iid,
-                entity_type: entity_type.to_string(),
-                field_type: "description_edit_choice".to_string(),
-                multi_select: false,
-                state: {
-                    let mut s = ListState::default();
-                    s.select(Some(0));
-                    s
+            let current_desc = if entity_type == "issue" {
+                app.issues
+                    .items
+                    .iter()
+                    .find(|i| i.iid == iid)
+                    .and_then(|i| i.description.clone())
+                    .unwrap_or_default()
+            } else {
+                app.mrs
+                    .items
+                    .iter()
+                    .find(|m| m.iid == iid)
+                    .and_then(|m| m.description.clone())
+                    .unwrap_or_default()
+            };
+            app.text_input = Some(crate::app::TextInput {
+                title: " Edit Description ".to_string(),
+                value: current_desc.clone(),
+                cursor_idx: current_desc.len(),
+                action: crate::app::TextInputAction::EditField {
+                    entity_iid: iid,
+                    entity_type: entity_type.to_string(),
+                    field_type: "description".to_string(),
                 },
             });
+        }
+        KeyCode::Char('D') => {
+            let current_desc = if entity_type == "issue" {
+                app.issues
+                    .items
+                    .iter()
+                    .find(|i| i.iid == iid)
+                    .and_then(|i| i.description.clone())
+                    .unwrap_or_default()
+            } else {
+                app.mrs
+                    .items
+                    .iter()
+                    .find(|m| m.iid == iid)
+                    .and_then(|m| m.description.clone())
+                    .unwrap_or_default()
+            };
+            if let Some(new_desc) = edit_in_editor(&current_desc, terminal) {
+                if entity_type == "issue" {
+                    if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
+                        item.description = Some(new_desc.clone());
+                    }
+                } else if entity_type == "mr" {
+                    if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == iid) {
+                        item.description = Some(new_desc.clone());
+                    }
+                }
+                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
+                    .flag("-d", &new_desc)
+                    .build();
+                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
+            }
         }
         _ => {}
     }
@@ -2561,8 +2024,17 @@ async fn main() -> Result<()> {
                                     }
                                     crate::app::TextInputAction::CreateIssue => {
                                         if !value.trim().is_empty() {
-                                            run_glab_cmd(
-                                                &["issue", "create", "-y", "--title", &value],
+                                            let cli = app_cli(&app);
+                                            let mut args: Vec<String> =
+                                                vec!["issue".into(), "create".into()];
+                                            if !cli.is_github {
+                                                args.push("-y".into());
+                                            }
+                                            args.push("--title".into());
+                                            args.push(value.clone());
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
@@ -2589,27 +2061,39 @@ async fn main() -> Result<()> {
                                                     app.draft_comments.len()
                                                 ));
                                             } else {
-                                                let mut args = vec![
-                                                    "mr".to_string(),
-                                                    "note".to_string(),
-                                                    "create".to_string(),
-                                                    mr_iid.to_string(),
-                                                    "--file".to_string(),
-                                                    file_path,
-                                                    "-m".to_string(),
-                                                    value,
-                                                ];
-                                                if let Some(line) = line_num {
-                                                    args.push("--line".to_string());
-                                                    args.push(line.to_string());
-                                                } else if let Some(old_line) = old_line_num {
-                                                    args.push("--old-line".to_string());
-                                                    args.push(old_line.to_string());
+                                                let cli = app_cli(&app);
+                                                let mut args = if cli.is_github {
+                                                    vec![
+                                                        "pr".to_string(),
+                                                        "comment".to_string(),
+                                                        mr_iid.to_string(),
+                                                        "--body".to_string(),
+                                                        value,
+                                                    ]
+                                                } else {
+                                                    vec![
+                                                        "mr".to_string(),
+                                                        "note".to_string(),
+                                                        "create".to_string(),
+                                                        mr_iid.to_string(),
+                                                        "--file".to_string(),
+                                                        file_path,
+                                                        "-m".to_string(),
+                                                        value,
+                                                    ]
+                                                };
+                                                if !cli.is_github {
+                                                    if let Some(line) = line_num {
+                                                        args.push("--line".to_string());
+                                                        args.push(line.to_string());
+                                                    } else if let Some(old_line) = old_line_num {
+                                                        args.push("--old-line".to_string());
+                                                        args.push(old_line.to_string());
+                                                    }
                                                 }
-                                                let args_ref: Vec<&str> =
-                                                    args.iter().map(|s| s.as_str()).collect();
-                                                run_glab_cmd(
-                                                    &args_ref,
+                                                run_cli(
+                                                    &cli,
+                                                    &args,
                                                     &mut terminal,
                                                     events.sender(),
                                                     app.active_tab,
@@ -3563,6 +3047,10 @@ async fn main() -> Result<()> {
                                                     "Ready".to_string(),
                                                 ),
                                                 ("Description".to_string(), description_val),
+                                                (
+                                                    "Description ($EDITOR)".to_string(),
+                                                    format!("Open in {}", editor_name()),
+                                                ),
                                             ],
                                             selected_idx: 0,
                                             entity_iid: issue_iid,
@@ -3622,28 +3110,54 @@ async fn main() -> Result<()> {
 
                                     if field_type == "description_edit_choice" {
                                         app.selector = None;
-                                        let choice = selected_list.first().cloned().unwrap_or_default();
-                                        let is_github = app
-                                            .gitlab_client
-                                            .as_ref()
-                                            .map(|c| c.is_github)
-                                            .unwrap_or(false);
+                                        let choice =
+                                            selected_list.first().cloned().unwrap_or_default();
 
                                         if entity_iid == 0 {
                                             if let Some(ref mut menu) = app.edit_menu {
-                                                if let Some(f) = menu.fields.iter_mut().find(|f| f.0 == "Description") {
-                                                    if choice.starts_with("Basic Text Editor") {
+                                                let field_idx = menu
+                                                    .fields
+                                                    .iter()
+                                                    .position(|f| f.0 == "Description")
+                                                    .unwrap_or(0);
+                                                if let Some(f) = menu
+                                                    .fields
+                                                    .iter_mut()
+                                                    .find(|f| f.0 == "Description")
+                                                {
+                                                    if choice == "Edit (basic)" {
+                                                        app.text_input = Some(
+                                                            crate::app::TextInput {
+                                                                title:
+                                                                    " Edit Description "
+                                                                        .to_string(),
+                                                                value: f.1.clone(),
+                                                                cursor_idx: f.1.len(),
+                                                                action:
+                                                                    crate::app::TextInputAction::EditNewField {
+                                                                        field_idx,
+                                                                    },
+                                                            },
+                                                        );
+                                                    } else {
                                                         let current_val = if f.1.trim().is_empty() {
-                                                            let template_type = if entity_type == "new_mr" { "mr" } else { "issue" };
-                                                            get_default_template(template_type).unwrap_or_default()
+                                                            let template_type =
+                                                                if entity_type == "new_mr" {
+                                                                    "mr"
+                                                                } else {
+                                                                    "issue"
+                                                                };
+                                                            get_default_template(template_type)
+                                                                .unwrap_or_default()
                                                         } else {
                                                             f.1.clone()
                                                         };
-                                                        if let Some(new_desc) = edit_in_editor(&current_val, &mut terminal) {
+                                                        if let Some(new_desc) = edit_in_editor(
+                                                            &current_val,
+                                                            &mut terminal,
+                                                        ) {
                                                             f.1 = new_desc;
                                                         }
-                                                    } else {
-                                                        f.1 = "-".to_string();
                                                     }
                                                 }
                                             }
@@ -3654,79 +3168,103 @@ async fn main() -> Result<()> {
                                                     .iter()
                                                     .find(|i| i.iid == entity_iid)
                                                     .and_then(|i| i.description.clone())
-                                                    .filter(|d| !d.trim().is_empty())
-                                                    .unwrap_or_else(|| get_default_template("issue").unwrap_or_default())
+                                                    .unwrap_or_default()
                                             } else {
                                                 app.mrs
                                                     .items
                                                     .iter()
                                                     .find(|m| m.iid == entity_iid)
                                                     .and_then(|m| m.description.clone())
-                                                    .filter(|d| !d.trim().is_empty())
-                                                    .unwrap_or_else(|| get_default_template("mr").unwrap_or_default())
+                                                    .unwrap_or_default()
                                             };
 
-                                            if choice.starts_with("Basic Text Editor") {
-                                                if let Some(new_desc) = edit_in_editor(&current_desc, &mut terminal) {
+                                            if choice == "Edit (basic)" {
+                                                app.text_input = Some(crate::app::TextInput {
+                                                    title: " Edit Description ".to_string(),
+                                                    value: current_desc.clone(),
+                                                    cursor_idx: current_desc.len(),
+                                                    action:
+                                                        crate::app::TextInputAction::EditField {
+                                                            entity_iid,
+                                                            entity_type: entity_type.clone(),
+                                                            field_type: "description".to_string(),
+                                                        },
+                                                });
+                                            } else {
+                                                if let Some(new_desc) =
+                                                    edit_in_editor(&current_desc, &mut terminal)
+                                                {
                                                     if entity_type == "issue" {
-                                                        if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == entity_iid) {
-                                                            item.description = Some(new_desc.clone());
+                                                        if let Some(item) = app
+                                                            .issues
+                                                            .items
+                                                            .iter_mut()
+                                                            .find(|i| i.iid == entity_iid)
+                                                        {
+                                                            item.description =
+                                                                Some(new_desc.clone());
                                                         }
                                                     } else if entity_type == "mr" {
-                                                        if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == entity_iid) {
-                                                            item.description = Some(new_desc.clone());
+                                                        if let Some(item) = app
+                                                            .mrs
+                                                            .items
+                                                            .iter_mut()
+                                                            .find(|m| m.iid == entity_iid)
+                                                        {
+                                                            item.description =
+                                                                Some(new_desc.clone());
                                                         }
                                                     }
-                                                    let tx = events.sender();
-                                                    let tab = app.active_tab;
-                                                    run_glab_update(
+                                                    let cli = app_cli(&app);
+                                                    let args = UpdateCmd::new(
+                                                        cli.is_github,
                                                         &entity_type,
                                                         entity_iid,
-                                                        &["-d", &new_desc],
-                                                        &mut terminal,
-                                                        tx,
-                                                        tab,
                                                     )
-                                                    .await;
-                                                }
-                                            } else {
-                                                let tx = events.sender();
-                                                let tab = app.active_tab;
-                                                if is_github {
-                                                    run_glab_update(
-                                                        &entity_type,
-                                                        entity_iid,
-                                                        &["-e"],
+                                                    .flag("-d", &new_desc)
+                                                    .build();
+                                                    run_cli(
+                                                        &cli,
+                                                        &args,
                                                         &mut terminal,
-                                                        tx.clone(),
-                                                        tab,
-                                                    )
-                                                    .await;
-                                                } else {
-                                                    run_glab_update(
-                                                        &entity_type,
-                                                        entity_iid,
-                                                        &["-d", "-"],
-                                                        &mut terminal,
-                                                        tx.clone(),
-                                                        tab,
+                                                        events.sender(),
+                                                        app.active_tab,
                                                     )
                                                     .await;
                                                 }
                                                 if let Some(client) = &app.gitlab_client {
                                                     if entity_type == "issue" {
                                                         if let Ok(updated) =
-                                                            gitlab::issues::get_issue(client, &app.project_context, entity_iid).await
+                                                            gitlab::issues::get_issue(
+                                                                client,
+                                                                &app.project_context,
+                                                                entity_iid,
+                                                            )
+                                                            .await
                                                         {
-                                                            if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == entity_iid) {
+                                                            if let Some(item) = app
+                                                                .issues
+                                                                .items
+                                                                .iter_mut()
+                                                                .find(|i| i.iid == entity_iid)
+                                                            {
                                                                 *item = updated;
                                                             }
                                                         }
                                                     } else if entity_type == "mr" {
-                                                        if let Ok(updated) =
-                                                            gitlab::mr::get_mr(client, &app.project_context, entity_iid).await
+                                                        if let Ok(updated) = gitlab::mr::get_mr(
+                                                            client,
+                                                            &app.project_context,
+                                                            entity_iid,
+                                                        )
+                                                        .await
                                                         {
-                                                            if let Some(item) = app.mrs.items.iter_mut().find(|m| m.iid == entity_iid) {
+                                                            if let Some(item) = app
+                                                                .mrs
+                                                                .items
+                                                                .iter_mut()
+                                                                .find(|m| m.iid == entity_iid)
+                                                            {
                                                                 *item = updated;
                                                             }
                                                         }
@@ -3865,6 +3403,7 @@ async fn main() -> Result<()> {
                                 if is_on_submit {
                                     if entity_iid == 0 {
                                         if entity_type == "new_issue" {
+                                            let cli = app_cli(&app);
                                             let title = menu
                                                 .fields
                                                 .iter()
@@ -3914,49 +3453,50 @@ async fn main() -> Result<()> {
                                                 .map(|(_, v)| v.trim().to_string())
                                                 .unwrap_or_default();
 
-                                            let mut cmd_args = vec!["issue", "create"];
+                                            let mut cmd_args: Vec<String> =
+                                                vec!["issue".into(), "create".into()];
                                             if !title.is_empty() {
-                                                cmd_args.push("--title");
-                                                cmd_args.push(&title);
+                                                cmd_args.push("--title".into());
+                                                cmd_args.push(title);
                                             }
                                             if !description.is_empty() {
-                                                cmd_args.push("--description");
-                                                cmd_args.push(&description);
+                                                cmd_args.push(cli.flag_description().to_string());
+                                                cmd_args.push(description);
                                             }
                                             if !labels.is_empty() {
-                                                cmd_args.push("--label");
-                                                cmd_args.push(&labels);
+                                                cmd_args.push("--label".into());
+                                                cmd_args.push(labels);
                                             }
-                                            let clean_assignees;
                                             if !assignees.is_empty() {
-                                                clean_assignees = assignees
+                                                let clean = assignees
                                                     .split(',')
                                                     .map(|a| {
                                                         a.trim().trim_start_matches('@').to_string()
                                                     })
                                                     .collect::<Vec<_>>()
                                                     .join(",");
-                                                cmd_args.push("--assignee");
-                                                cmd_args.push(&clean_assignees);
+                                                cmd_args.push("--assignee".into());
+                                                cmd_args.push(clean);
                                             }
                                             if !milestone.is_empty() {
-                                                cmd_args.push("--milestone");
-                                                cmd_args.push(&milestone);
+                                                cmd_args.push("--milestone".into());
+                                                cmd_args.push(milestone);
                                             }
                                             if confidential.to_lowercase() == "yes" {
-                                                cmd_args.push("--confidential");
+                                                cmd_args.push("--confidential".into());
                                             }
                                             if !due_date.is_empty() {
-                                                cmd_args.push("--due-date");
-                                                cmd_args.push(&due_date);
+                                                cmd_args.push("--due-date".into());
+                                                cmd_args.push(due_date);
                                             }
                                             if !weight.is_empty() && weight != "0" {
-                                                cmd_args.push("--weight");
-                                                cmd_args.push(&weight);
+                                                cmd_args.push("--weight".into());
+                                                cmd_args.push(weight);
                                             }
 
                                             app.edit_menu = None;
-                                            run_glab_cmd(
+                                            run_cli(
+                                                &cli,
                                                 &cmd_args,
                                                 &mut terminal,
                                                 events.sender(),
@@ -3978,6 +3518,7 @@ async fn main() -> Result<()> {
                                             }
                                             continue;
                                         } else if entity_type == "new_mr" {
+                                            let cli = app_cli(&app);
                                             let title = menu
                                                 .fields
                                                 .iter()
@@ -4040,68 +3581,93 @@ async fn main() -> Result<()> {
                                                 .unwrap_or_default();
 
                                             let entity_iid_str = menu.entity_iid.to_string();
-                                            let mut cmd_args = vec!["mr", "create", "-y"];
+                                            let mut cmd_args: Vec<String> =
+                                                vec![cli.entity("mr").into(), "create".into()];
+                                            if !cli.is_github {
+                                                cmd_args.push("-y".into());
+                                            }
                                             if menu.entity_iid > 0 {
-                                                cmd_args.push("--related-issue");
-                                                cmd_args.push(&entity_iid_str);
+                                                if cli.is_github {
+                                                    cmd_args.push("--body".into());
+                                                    cmd_args.push(format!(
+                                                        "Resolves #{}",
+                                                        entity_iid_str
+                                                    ));
+                                                } else {
+                                                    cmd_args.push("--related-issue".into());
+                                                    cmd_args.push(entity_iid_str);
+                                                }
                                             }
                                             if !title.is_empty() {
-                                                cmd_args.push("--title");
-                                                cmd_args.push(&title);
+                                                cmd_args.push("--title".into());
+                                                cmd_args.push(title);
                                             }
                                             if !source.is_empty() {
-                                                cmd_args.push("--source-branch");
-                                                cmd_args.push(&source);
+                                                let flag = if cli.is_github {
+                                                    "--head"
+                                                } else {
+                                                    "--source-branch"
+                                                };
+                                                cmd_args.push(flag.to_string());
+                                                cmd_args.push(source);
                                             }
                                             if !target.is_empty() {
-                                                cmd_args.push("--target-branch");
-                                                cmd_args.push(&target);
+                                                let flag = if cli.is_github {
+                                                    "--base"
+                                                } else {
+                                                    "--target-branch"
+                                                };
+                                                cmd_args.push(flag.to_string());
+                                                cmd_args.push(target);
                                             }
                                             if !labels.is_empty() {
-                                                cmd_args.push("--label");
-                                                cmd_args.push(&labels);
+                                                cmd_args.push("--label".into());
+                                                cmd_args.push(labels);
                                             }
-                                            let clean_assignees;
                                             if !assignees.is_empty() {
-                                                clean_assignees = assignees
+                                                let clean = assignees
                                                     .split(',')
                                                     .map(|a| {
                                                         a.trim().trim_start_matches('@').to_string()
                                                     })
                                                     .collect::<Vec<_>>()
                                                     .join(",");
-                                                cmd_args.push("--assignee");
-                                                cmd_args.push(&clean_assignees);
+                                                cmd_args.push("--assignee".into());
+                                                cmd_args.push(clean);
                                             }
-                                            let clean_reviewers;
                                             if !reviewers.is_empty() {
-                                                clean_reviewers = reviewers
+                                                let clean = reviewers
                                                     .split(',')
                                                     .map(|r| {
                                                         r.trim().trim_start_matches('@').to_string()
                                                     })
                                                     .collect::<Vec<_>>()
                                                     .join(",");
-                                                cmd_args.push("--reviewer");
-                                                cmd_args.push(&clean_reviewers);
+                                                cmd_args.push("--reviewer".into());
+                                                cmd_args.push(clean);
                                             }
                                             if !milestone.is_empty() {
-                                                cmd_args.push("--milestone");
-                                                cmd_args.push(&milestone);
+                                                cmd_args.push("--milestone".into());
+                                                cmd_args.push(milestone);
                                             }
                                             if status.to_lowercase() == "draft" {
-                                                cmd_args.push("--draft");
+                                                cmd_args.push("--draft".into());
                                             }
                                             if mr_pipeline.to_lowercase() == "yes" {
-                                                cmd_args.push("--create-pipeline");
+                                                if cli.is_github {
+                                                    // gh pr create doesn't have --create-pipeline
+                                                } else {
+                                                    cmd_args.push("--create-pipeline".into());
+                                                }
                                             }
                                             if !description.is_empty() {
-                                                cmd_args.push("--description");
-                                                cmd_args.push(&description);
+                                                cmd_args.push(cli.flag_description().to_string());
+                                                cmd_args.push(description);
                                             }
 
                                             app.edit_menu = None;
-                                            run_glab_cmd(
+                                            run_cli(
+                                                &cli,
                                                 &cmd_args,
                                                 &mut terminal,
                                                 events.sender(),
@@ -4123,6 +3689,7 @@ async fn main() -> Result<()> {
                                             }
                                             continue;
                                         } else if entity_type == "new_pipeline" {
+                                            let cli = app_cli(&app);
                                             let branch = menu
                                                 .fields
                                                 .iter()
@@ -4156,39 +3723,59 @@ async fn main() -> Result<()> {
 
                                             let var_pairs = parse_key_value_pairs(&variables);
                                             let mut var_strs = Vec::new();
-                                            for (k, v) in var_pairs {
-                                                var_strs.push(format!("{}:{}", k, v));
+                                            for (k, v) in &var_pairs {
+                                                var_strs.push(format!(
+                                                    "{}{}{}",
+                                                    k,
+                                                    cli.input_separator(),
+                                                    v
+                                                ));
                                             }
 
                                             let input_pairs = parse_key_value_pairs(&inputs);
                                             let mut input_strs = Vec::new();
-                                            for (k, v) in input_pairs {
-                                                input_strs.push(format!("{}:{}", k, v));
+                                            for (k, v) in &input_pairs {
+                                                input_strs.push(format!(
+                                                    "{}{}{}",
+                                                    k,
+                                                    cli.input_separator(),
+                                                    v
+                                                ));
                                             }
 
-                                            let mut cmd_args = vec!["ci", "run"];
+                                            let mut cmd_args: Vec<String> = vec![
+                                                if cli.is_github {
+                                                    "workflow".into()
+                                                } else {
+                                                    "ci".into()
+                                                },
+                                                "run".into(),
+                                            ];
                                             if !workflow.is_empty() {
-                                                cmd_args.push(&workflow);
+                                                cmd_args.push(workflow);
                                             }
                                             if !branch.is_empty() {
-                                                cmd_args.push("-b");
-                                                cmd_args.push(&branch);
+                                                cmd_args.push(cli.flag_branch().to_string());
+                                                cmd_args.push(branch);
                                             }
-                                            if mr.to_lowercase() == "yes" {
-                                                cmd_args.push("--mr");
+                                            if mr.to_lowercase() == "yes" && !cli.is_github {
+                                                cmd_args.push("--mr".into());
                                             }
 
+                                            let var_flag = cli.flag_variable();
                                             for s in &var_strs {
-                                                cmd_args.push("--variables");
-                                                cmd_args.push(s);
+                                                cmd_args.push(var_flag.to_string());
+                                                cmd_args.push(s.clone());
                                             }
+                                            let input_flag = cli.flag_input();
                                             for s in &input_strs {
-                                                cmd_args.push("-i");
-                                                cmd_args.push(s);
+                                                cmd_args.push(input_flag.to_string());
+                                                cmd_args.push(s.clone());
                                             }
 
                                             app.edit_menu = None;
-                                            run_glab_cmd(
+                                            run_cli(
+                                                &cli,
                                                 &cmd_args,
                                                 &mut terminal,
                                                 events.sender(),
@@ -4415,38 +4002,65 @@ async fn main() -> Result<()> {
                                 }
 
                                 if field_name == "Description" {
-                                    let is_github = app
-                                        .gitlab_client
-                                        .as_ref()
-                                        .map(|c| c.is_github)
-                                        .unwrap_or(false);
-                                    let choices = vec![
-                                        "Basic Text Editor ($EDITOR)".to_string(),
-                                        if is_github {
-                                            "CLI Native Editor (gh -e)".to_string()
+                                    if entity_iid == 0 || entity_type.starts_with("new_") {
+                                        let action = crate::app::TextInputAction::EditNewField {
+                                            field_idx: menu.selected_idx,
+                                        };
+                                        let current_val = menu.fields[menu.selected_idx].1.clone();
+                                        app.text_input = Some(crate::app::TextInput {
+                                            title: " Edit Description ".to_string(),
+                                            value: current_val.clone(),
+                                            cursor_idx: current_val.len(),
+                                            action,
+                                        });
+                                        app.edit_menu = Some(menu);
+                                    } else {
+                                        let active_tab = app.active_tab;
+                                        handle_entity_update(
+                                            &mut app,
+                                            &entity_type,
+                                            entity_iid,
+                                            KeyCode::Char('d'),
+                                            &mut terminal,
+                                            events.sender(),
+                                            active_tab,
+                                        )
+                                        .await;
+                                        rebuild_edit_menu(&mut app, &entity_type, entity_iid);
+                                    }
+                                    continue;
+                                }
+
+                                if field_name == "Description ($EDITOR)" {
+                                    if entity_iid == 0 || entity_type.starts_with("new_") {
+                                        let desc_idx = menu
+                                            .fields
+                                            .iter()
+                                            .position(|(k, _)| k == "Description")
+                                            .unwrap_or(menu.selected_idx);
+                                        let current_val = menu.fields[desc_idx].1.clone();
+                                        if let Some(new_val) =
+                                            edit_in_editor(&current_val, &mut terminal)
+                                        {
+                                            menu.fields[desc_idx].1 = new_val;
+                                            app.edit_menu = Some(menu);
                                         } else {
-                                            "CLI Native Editor (glab -d -)".to_string()
+                                            app.edit_menu = Some(menu);
                                         }
-                                    ];
-                                    app.selector = Some(crate::app::Selector {
-                                        title: "Edit Description using:".to_string(),
-                                        all_items: choices,
-                                        selected_items: std::collections::HashSet::new(),
-                                        cursor_idx: 0,
-                                        search_query: String::new(),
-                                        is_filtering: false,
-                                        is_loading: false,
-                                        entity_iid,
-                                        entity_type: entity_type.clone(),
-                                        field_type: "description_edit_choice".to_string(),
-                                        multi_select: false,
-                                        state: {
-                                            let mut s = ListState::default();
-                                            s.select(Some(0));
-                                            s
-                                        },
-                                    });
-                                    app.edit_menu = Some(menu);
+                                    } else {
+                                        let active_tab = app.active_tab;
+                                        handle_entity_update(
+                                            &mut app,
+                                            &entity_type,
+                                            entity_iid,
+                                            KeyCode::Char('D'),
+                                            &mut terminal,
+                                            events.sender(),
+                                            active_tab,
+                                        )
+                                        .await;
+                                        rebuild_edit_menu(&mut app, &entity_type, entity_iid);
+                                    }
                                     continue;
                                 }
 
@@ -4528,22 +4142,6 @@ async fn main() -> Result<()> {
                                     });
 
                                     app.edit_menu = Some(menu);
-                                    continue;
-                                }
-
-                                if field_name == "Description" && entity_iid > 0 {
-                                    let active_tab = app.active_tab;
-                                    handle_entity_update(
-                                        &mut app,
-                                        &entity_type,
-                                        entity_iid,
-                                        KeyCode::Char('d'),
-                                        &mut terminal,
-                                        events.sender(),
-                                        active_tab,
-                                    )
-                                    .await;
-                                    rebuild_edit_menu(&mut app, &entity_type, entity_iid);
                                     continue;
                                 }
                             }
@@ -4843,6 +4441,10 @@ async fn main() -> Result<()> {
                                             "Description".to_string(),
                                             get_default_template("issue").unwrap_or_default(),
                                         ),
+                                        (
+                                            "Description ($EDITOR)".to_string(),
+                                            format!("Open in {}", editor_name()),
+                                        ),
                                     ],
                                     selected_idx: 0,
                                     entity_iid: 0,
@@ -4891,7 +4493,14 @@ async fn main() -> Result<()> {
                                                 ),
                                                 ("Due Date".to_string(), "Set".to_string()),
                                                 ("Weight".to_string(), "Set".to_string()),
-                                                ("Description".to_string(), "(Helix)".to_string()),
+                                                (
+                                                    "Description".to_string(),
+                                                    issue.description.clone().unwrap_or_default(),
+                                                ),
+                                                (
+                                                    "Description ($EDITOR)".to_string(),
+                                                    format!("Open in {}", editor_name()),
+                                                ),
                                             ],
                                             selected_idx: 0,
                                             entity_iid: issue.iid,
@@ -4910,8 +4519,15 @@ async fn main() -> Result<()> {
                                     let filtered = app.filtered_issues();
                                     if let Some(issue) = filtered.get(selected_idx) {
                                         let issue_iid = issue.iid;
-                                        run_glab_cmd(
-                                            &["issue", "close", &issue_iid.to_string()],
+                                        let cli = app_cli(&app);
+                                        let args = vec![
+                                            "issue".to_string(),
+                                            "close".to_string(),
+                                            issue_iid.to_string(),
+                                        ];
+                                        run_cli(
+                                            &cli,
+                                            &args,
                                             &mut terminal,
                                             events.sender(),
                                             app.active_tab,
@@ -5051,6 +4667,10 @@ async fn main() -> Result<()> {
                                                         "Description".to_string(),
                                                         mr.description.clone().unwrap_or_default(),
                                                     ),
+                                                    (
+                                                        "Description ($EDITOR)".to_string(),
+                                                        format!("Open in {}", editor_name()),
+                                                    ),
                                                 ],
                                                 selected_idx: 0,
                                                 entity_iid: mr.iid,
@@ -5063,8 +4683,24 @@ async fn main() -> Result<()> {
                                             });
                                         }
                                         KeyCode::Char('a') => {
-                                            run_glab_cmd(
-                                                &["mr", "approve", &mr_iid.to_string()],
+                                            let cli = app_cli(&app);
+                                            let args = if cli.is_github {
+                                                vec![
+                                                    "pr".to_string(),
+                                                    "review".to_string(),
+                                                    mr_iid.to_string(),
+                                                    "--approve".to_string(),
+                                                ]
+                                            } else {
+                                                vec![
+                                                    "mr".to_string(),
+                                                    "approve".to_string(),
+                                                    mr_iid.to_string(),
+                                                ]
+                                            };
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
@@ -5072,14 +4708,27 @@ async fn main() -> Result<()> {
                                             .await;
                                         }
                                         KeyCode::Char('m') => {
-                                            run_glab_cmd(
-                                                &[
-                                                    "mr",
-                                                    "merge",
-                                                    &mr_iid.to_string(),
-                                                    "--remove-source-branch",
-                                                    "--squash",
-                                                ],
+                                            let cli = app_cli(&app);
+                                            let args = if cli.is_github {
+                                                vec![
+                                                    "pr".to_string(),
+                                                    "merge".to_string(),
+                                                    mr_iid.to_string(),
+                                                    "--delete-branch".to_string(),
+                                                    "--squash".to_string(),
+                                                ]
+                                            } else {
+                                                vec![
+                                                    "mr".to_string(),
+                                                    "merge".to_string(),
+                                                    mr_iid.to_string(),
+                                                    "--remove-source-branch".to_string(),
+                                                    "--squash".to_string(),
+                                                ]
+                                            };
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
@@ -5111,8 +4760,17 @@ async fn main() -> Result<()> {
                                                         _ => false,
                                                     };
 
-                                                let cmd_args = vec!["mr", "diff", &mr_iid_str];
                                                 let program = if is_github { "gh" } else { "glab" };
+                                                let (entity, sub) = if is_github {
+                                                    ("pr", "diff")
+                                                } else {
+                                                    ("mr", "diff")
+                                                };
+                                                let cmd_args = vec![
+                                                    entity.to_string(),
+                                                    sub.to_string(),
+                                                    mr_iid_str.clone(),
+                                                ];
                                                 let status_msg = format!(
                                                     "Fetching Diff: {} {}",
                                                     program,
@@ -5120,17 +4778,8 @@ async fn main() -> Result<()> {
                                                 );
                                                 let _ = tx.send(Event::CommandStarted(status_msg));
 
-                                                let mut cmd = if is_github {
-                                                    let gh_args = translate_glab_to_gh(&cmd_args);
-                                                    let mut c = tokio::process::Command::new("gh");
-                                                    c.args(gh_args);
-                                                    c
-                                                } else {
-                                                    let mut c =
-                                                        tokio::process::Command::new("glab");
-                                                    c.args(&cmd_args);
-                                                    c
-                                                };
+                                                let mut cmd = tokio::process::Command::new(program);
+                                                cmd.args(&cmd_args);
 
                                                 match cmd.output().await {
                                                     Ok(output) => {
@@ -5161,8 +4810,16 @@ async fn main() -> Result<()> {
                                             });
                                         }
                                         KeyCode::Char('o') => {
-                                            run_glab_cmd(
-                                                &["mr", "view", &mr_iid.to_string(), "-w"],
+                                            let cli = app_cli(&app);
+                                            let args = vec![
+                                                cli.entity("mr").to_string(),
+                                                "view".to_string(),
+                                                mr_iid.to_string(),
+                                                cli.flag_web().to_string(),
+                                            ];
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
@@ -5170,14 +4827,17 @@ async fn main() -> Result<()> {
                                             .await;
                                         }
                                         KeyCode::Char('s') => {
+                                            let cli = app_cli(&app);
                                             let is_draft = mr_title.starts_with("Draft:")
                                                 || mr_title.starts_with("WIP:");
                                             let action =
                                                 if is_draft { "--ready" } else { "--draft" };
-                                            run_glab_update(
-                                                "mr",
-                                                mr_iid,
-                                                &[action],
+                                            let args = UpdateCmd::new(cli.is_github, "mr", mr_iid)
+                                                .flag_bool(action)
+                                                .build();
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
@@ -5218,8 +4878,15 @@ async fn main() -> Result<()> {
                                     },
                                 });
                             } else if key_event.code == KeyCode::Char('p') {
-                                run_glab_cmd(
-                                    &["ci", "run", "--mr"],
+                                let cli = app_cli(&app);
+                                let args = if cli.is_github {
+                                    vec!["workflow".to_string(), "run".to_string()]
+                                } else {
+                                    vec!["ci".to_string(), "run".to_string(), "--mr".to_string()]
+                                };
+                                run_cli(
+                                    &cli,
+                                    &args,
                                     &mut terminal,
                                     events.sender(),
                                     app.active_tab,
@@ -5352,13 +5019,26 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                         KeyCode::Char('o') => {
-                                            run_glab_cmd(
-                                                &["ci", "view", &pipe_id.to_string(), "-w"],
+                                            let cli = app_cli(&app);
+                                            let (entity, sub) = if cli.is_github {
+                                                ("run", "view")
+                                            } else {
+                                                ("ci", "view")
+                                            };
+                                            let args = vec![
+                                                entity.to_string(),
+                                                sub.to_string(),
+                                                pipe_id.to_string(),
+                                                cli.flag_web().to_string(),
+                                            ];
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
                                             )
-                                            .await
+                                            .await;
                                         }
                                         _ => handled = false,
                                     }
@@ -5576,8 +5256,25 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                         KeyCode::Char('d') => {
-                                            run_glab_cmd(
-                                                &["job", "artifact", "master", &job_name],
+                                            let cli = app_cli(&app);
+                                            let args = if cli.is_github {
+                                                vec![
+                                                    "run".to_string(),
+                                                    "download".to_string(),
+                                                    "--pattern".to_string(),
+                                                    job_name,
+                                                ]
+                                            } else {
+                                                vec![
+                                                    "job".to_string(),
+                                                    "artifact".to_string(),
+                                                    "master".to_string(),
+                                                    job_name,
+                                                ]
+                                            };
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
@@ -5585,8 +5282,21 @@ async fn main() -> Result<()> {
                                             .await;
                                         }
                                         KeyCode::Char('o') => {
-                                            run_glab_cmd(
-                                                &["job", "view", &job_id.to_string(), "-w"],
+                                            let cli = app_cli(&app);
+                                            let (entity, sub) = if cli.is_github {
+                                                ("run", "view")
+                                            } else {
+                                                ("job", "view")
+                                            };
+                                            let args = vec![
+                                                entity.to_string(),
+                                                sub.to_string(),
+                                                job_id.to_string(),
+                                                cli.flag_web().to_string(),
+                                            ];
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
@@ -5685,15 +5395,18 @@ async fn main() -> Result<()> {
                                     let runner_id = item.id;
                                     match key_event.code {
                                         KeyCode::Char('p') => {
-                                            run_glab_cmd(
-                                                &[
-                                                    "api",
-                                                    "-X",
-                                                    "PUT",
-                                                    &format!("runners/{}", runner_id),
-                                                    "-f",
-                                                    "paused=true",
-                                                ],
+                                            let cli = app_cli(&app);
+                                            let args: Vec<String> = vec![
+                                                "api".into(),
+                                                "-X".into(),
+                                                "PUT".into(),
+                                                format!("runners/{}", runner_id),
+                                                "-f".into(),
+                                                "paused=true".into(),
+                                            ];
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
@@ -5710,15 +5423,18 @@ async fn main() -> Result<()> {
                                             }
                                         }
                                         KeyCode::Char('r') => {
-                                            run_glab_cmd(
-                                                &[
-                                                    "api",
-                                                    "-X",
-                                                    "PUT",
-                                                    &format!("runners/{}", runner_id),
-                                                    "-f",
-                                                    "paused=false",
-                                                ],
+                                            let cli = app_cli(&app);
+                                            let args: Vec<String> = vec![
+                                                "api".into(),
+                                                "-X".into(),
+                                                "PUT".into(),
+                                                format!("runners/{}", runner_id),
+                                                "-f".into(),
+                                                "paused=false".into(),
+                                            ];
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
@@ -5762,8 +5478,16 @@ async fn main() -> Result<()> {
                                 if let Some(item) = app.filtered_releases().get(selected_idx) {
                                     match key_event.code {
                                         KeyCode::Char('o') => {
-                                            run_glab_cmd(
-                                                &["release", "view", &item.tag_name, "-w"],
+                                            let cli = app_cli(&app);
+                                            let args = vec![
+                                                "release".to_string(),
+                                                "view".to_string(),
+                                                item.tag_name.clone(),
+                                                cli.flag_web().to_string(),
+                                            ];
+                                            run_cli(
+                                                &cli,
+                                                &args,
                                                 &mut terminal,
                                                 events.sender(),
                                                 app.active_tab,
@@ -5881,6 +5605,7 @@ async fn main() -> Result<()> {
                                     app.quit();
                                 }
                             }
+
                             KeyCode::Char('J') => match app.active_tab {
                                 app::Tab::Issues => {
                                     app.issues_scroll = app.issues_scroll.saturating_add(1);
@@ -6191,127 +5916,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_translate_glab_to_gh_issue_close() {
-        let glab_args = vec!["issue", "close", "123"];
-        let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(
-            gh_args,
-            vec!["issue".to_string(), "close".to_string(), "123".to_string()]
-        );
-    }
-
-    #[test]
-    fn test_translate_glab_to_gh_issue_create() {
-        let glab_args = vec!["issue", "create", "--title", "Bug report"];
-        let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(
-            gh_args,
-            vec![
-                "issue".to_string(),
-                "create".to_string(),
-                "--title".to_string(),
-                "Bug report".to_string(),
-                "--body".to_string(),
-                "".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn test_translate_glab_to_gh_issue_create_with_details() {
-        let glab_args = vec![
-            "issue",
-            "create",
-            "--title",
-            "Bug report",
-            "--description",
-            "Detailed bug info",
-            "--label",
-            "bug,high",
-            "--assignee",
-            "octocat",
-            "--milestone",
-            "v1.0",
-        ];
-        let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(
-            gh_args,
-            vec![
-                "issue".to_string(),
-                "create".to_string(),
-                "--title".to_string(),
-                "Bug report".to_string(),
-                "--body".to_string(),
-                "Detailed bug info".to_string(),
-                "--label".to_string(),
-                "bug,high".to_string(),
-                "--assignee".to_string(),
-                "octocat".to_string(),
-                "--milestone".to_string(),
-                "v1.0".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_translate_glab_to_gh_mr_create_with_issue() {
-        let glab_args = vec!["mr", "create", "-i", "123", "--copy-issue-labels"];
-        let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(
-            gh_args,
-            vec![
-                "pr".to_string(),
-                "create".to_string(),
-                "--fill".to_string(),
-                "--body".to_string(),
-                "Resolves #123".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn test_translate_glab_to_gh_mr_create_with_issue_and_body() {
-        let glab_args = vec![
-            "mr",
-            "create",
-            "-i",
-            "123",
-            "--title",
-            "Pre-filled title",
-            "--description",
-            "This is the user edited description body.",
-        ];
-        let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(
-            gh_args,
-            vec![
-                "pr".to_string(),
-                "create".to_string(),
-                "--title".to_string(),
-                "Pre-filled title".to_string(),
-                "--body".to_string(),
-                "Resolves #123\n\nThis is the user edited description body.".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn test_translate_glab_to_gh_release_create() {
-        let glab_args = vec!["release", "create", "v1.0.0", "-F", "changelog.md"];
-        let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(
-            gh_args,
-            vec![
-                "release".to_string(),
-                "create".to_string(),
-                "v1.0.0".to_string(),
-                "-F".to_string(),
-                "changelog.md".to_string()
-            ]
-        );
-    }
-
-    #[test]
     fn test_parse_key_value_pairs() {
         let input = "key1:val1,key2:val2, replicas:int(3), debug:bool(false) ";
         let pairs = parse_key_value_pairs(input);
@@ -6322,68 +5926,6 @@ mod tests {
                 ("key2".to_string(), "val2".to_string()),
                 ("replicas".to_string(), "int(3)".to_string()),
                 ("debug".to_string(), "bool(false)".to_string())
-            ]
-        );
-    }
-
-    #[test]
-    fn test_translate_glab_to_gh_ci_run() {
-        let glab_args = vec![
-            "ci",
-            "run",
-            "my-workflow.yml",
-            "-b",
-            "my-branch",
-            "--variables",
-            "var1:val1",
-            "-i",
-            "inp1:val1",
-        ];
-        let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(
-            gh_args,
-            vec![
-                "workflow".to_string(),
-                "run".to_string(),
-                "my-workflow.yml".to_string(),
-                "-r".to_string(),
-                "my-branch".to_string(),
-                "-f".to_string(),
-                "var1=val1".to_string(),
-                "-f".to_string(),
-                "inp1=val1".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_translate_glab_to_gh_mr_update_description() {
-        let glab_args = vec!["mr", "update", "123", "-d", "new description text"];
-        let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(
-            gh_args,
-            vec![
-                "pr".to_string(),
-                "edit".to_string(),
-                "123".to_string(),
-                "--body".to_string(),
-                "new description text".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn test_translate_glab_to_gh_issue_update_description() {
-        let glab_args = vec!["issue", "update", "123", "-d", "new description text"];
-        let gh_args = translate_glab_to_gh(&glab_args);
-        assert_eq!(
-            gh_args,
-            vec![
-                "issue".to_string(),
-                "edit".to_string(),
-                "123".to_string(),
-                "--body".to_string(),
-                "new description text".to_string()
             ]
         );
     }

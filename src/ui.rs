@@ -3328,6 +3328,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let area = centered_rect(52, 48, size);
 
+        let label_width = menu
+            .fields
+            .iter()
+            .map(|(l, _)| l.len())
+            .max()
+            .unwrap_or(18)
+            .max(18);
+
         let items: Vec<ListItem> = menu
             .fields
             .iter()
@@ -3377,7 +3385,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             | "Confidential"
                             | "Status (Draft/Ready)"
                             | "Merge Request Pipeline" => " <Enter to select>",
-                            "Description" => " <Enter to open editor>",
+                            "Description" => " <Enter to edit>",
+                            "Description ($EDITOR)" => " <Enter to open editor>",
                             _ => " <Enter to edit>",
                         };
                         (
@@ -3397,11 +3406,21 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         )
                     }
                 } else {
-                    (val.clone(), val_style)
+                    let truncated = if val.len() > 50 {
+                        let mut s = val[..47].to_string();
+                        s.push_str("...");
+                        s
+                    } else {
+                        val.clone()
+                    };
+                    (truncated, val_style)
                 };
 
                 let line = Line::from(vec![
-                    Span::styled(format!("  {:18} ", label), label_style),
+                    Span::styled(
+                        format!("  {:label_width$} ", label, label_width = label_width),
+                        label_style,
+                    ),
                     Span::styled(" ❯ ", sep_style),
                     Span::styled(display_val, display_style),
                 ]);
