@@ -4733,6 +4733,28 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             }
+                            KeyCode::Char('r') => {
+                                if let Some(selected_idx) = app.issues.state.selected() {
+                                    let filtered = app.filtered_issues();
+                                    if let Some(issue) = filtered.get(selected_idx) {
+                                        let issue_iid = issue.iid;
+                                        let cli = app_cli(&app);
+                                        let args = vec![
+                                            "issue".to_string(),
+                                            "reopen".to_string(),
+                                            issue_iid.to_string(),
+                                        ];
+                                        run_cli(
+                                            &cli,
+                                            &args,
+                                            &mut terminal,
+                                            events.sender(),
+                                            app.active_tab,
+                                        )
+                                        .await;
+                                    }
+                                }
+                            }
                             _ => handled = false,
                         },
                         app::Tab::MergeRequests => {
@@ -5026,6 +5048,44 @@ async fn main() -> Result<()> {
                                             let args = UpdateCmd::new(cli.is_github, "mr", mr_iid)
                                                 .flag_bool(action)
                                                 .build();
+                                            run_cli(
+                                                &cli,
+                                                &args,
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
+                                        }
+                                        KeyCode::Char('c') => {
+                                            let cli = app_cli(&app);
+                                            let args = vec![
+                                                cli.entity("mr").to_string(),
+                                                "close".to_string(),
+                                                mr_iid.to_string(),
+                                            ];
+                                            run_cli(
+                                                &cli,
+                                                &args,
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
+                                            if let Some(pos) =
+                                                app.mrs.items.iter().position(|m| m.iid == mr_iid)
+                                            {
+                                                app.mrs.items.remove(pos);
+                                            }
+                                            app.update_filter_selection();
+                                        }
+                                        KeyCode::Char('r') => {
+                                            let cli = app_cli(&app);
+                                            let args = vec![
+                                                cli.entity("mr").to_string(),
+                                                "reopen".to_string(),
+                                                mr_iid.to_string(),
+                                            ];
                                             run_cli(
                                                 &cli,
                                                 &args,

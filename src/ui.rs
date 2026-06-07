@@ -3690,6 +3690,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             },
             Shortcut {
                 category: "Issues",
+                key: "r",
+                action: "Reopen selected Issue",
+            },
+            Shortcut {
+                category: "Issues",
                 key: "o",
                 action: "Open selected Issue in browser",
             },
@@ -3723,6 +3728,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 category: "Merge Requests",
                 key: "v",
                 action: "View Merge Request diff changes",
+            },
+            Shortcut {
+                category: "Merge Requests",
+                key: "c",
+                action: "Close selected MR",
+            },
+            Shortcut {
+                category: "Merge Requests",
+                key: "r",
+                action: "Reopen selected MR",
             },
             Shortcut {
                 category: "Merge Requests",
