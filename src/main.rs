@@ -1420,19 +1420,17 @@ fn spawn_refresh_active_tab(
                     }
                 }
             }
-            app::Tab::Notifications => {
-                match gitlab::notifications::list_notifications(&client).await {
-                    Ok(notifs) => {
-                        let _ = tx.send(Event::NotificationsFetched(notifs));
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Event::FetchFailed(
-                            tab,
-                            format!("Failed to fetch notifications: {}", e),
-                        ));
-                    }
+            app::Tab::Todos => match gitlab::notifications::list_notifications(&client).await {
+                Ok(notifs) => {
+                    let _ = tx.send(Event::TodosFetched(notifs));
                 }
-            }
+                Err(e) => {
+                    let _ = tx.send(Event::FetchFailed(
+                        tab,
+                        format!("Failed to fetch notifications: {}", e),
+                    ));
+                }
+            },
             app::Tab::Jobs => {
                 let branch_name = get_current_branch();
                 let mut found_pipeline_id = None;
@@ -1499,17 +1497,6 @@ fn spawn_refresh_active_tab(
                     }
                 }
             }
-            app::Tab::Wiki => match gitlab::wiki::load_wiki_pages(&project_context).await {
-                Ok(pages) => {
-                    let _ = tx.send(Event::WikiFetched(pages));
-                }
-                Err(e) => {
-                    let _ = tx.send(Event::FetchFailed(
-                        tab,
-                        format!("Failed to fetch wiki pages: {}", e),
-                    ));
-                }
-            },
             app::Tab::Terminal => {}
         }
     });
@@ -1627,9 +1614,8 @@ async fn main() -> Result<()> {
     app.pipelines.items = cache.pipelines;
     app.runners.items = cache.runners;
     app.releases.items = cache.releases;
-    app.notifications.items = cache.notifications;
+    app.todos.items = cache.todos;
     app.milestones.items = cache.milestones;
-    app.wiki_pages.items = cache.wiki_pages;
 
     if !app.issues.items.is_empty() {
         app.loaded_tabs.insert(app::Tab::Issues);
@@ -1646,14 +1632,11 @@ async fn main() -> Result<()> {
     if !app.releases.items.is_empty() {
         app.loaded_tabs.insert(app::Tab::Releases);
     }
-    if !app.notifications.items.is_empty() {
-        app.loaded_tabs.insert(app::Tab::Notifications);
+    if !app.todos.items.is_empty() {
+        app.loaded_tabs.insert(app::Tab::Todos);
     }
     if !app.milestones.items.is_empty() {
         app.loaded_tabs.insert(app::Tab::Milestones);
-    }
-    if !app.wiki_pages.items.is_empty() {
-        app.loaded_tabs.insert(app::Tab::Wiki);
     }
     app.update_filter_selection();
 
@@ -1842,15 +1825,15 @@ async fn main() -> Result<()> {
                     cache.pipelines = app.pipelines.items.clone();
                     crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
-                Event::NotificationsFetched(notifs) => {
-                    app.complete_loading_tab(app::Tab::Notifications, "Success");
-                    app.loaded_tabs.insert(app::Tab::Notifications);
-                    app.refreshed_tabs.insert(app::Tab::Notifications);
+                Event::TodosFetched(notifs) => {
+                    app.complete_loading_tab(app::Tab::Todos, "Success");
+                    app.loaded_tabs.insert(app::Tab::Todos);
+                    app.refreshed_tabs.insert(app::Tab::Todos);
                     app.status_message = None;
-                    app.notifications.items = notifs;
+                    app.todos.items = notifs;
                     app.update_filter_selection();
                     let mut cache = crate::utils::cache::load_cache(&app.project_context);
-                    cache.notifications = app.notifications.items.clone();
+                    cache.todos = app.todos.items.clone();
                     crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::RunnersFetched(runners) => {
@@ -1889,17 +1872,6 @@ async fn main() -> Result<()> {
                 Event::MilestoneIssuesFetched(_, issues) => {
                     app.selected_milestone_issues = Some(issues);
                 }
-                Event::WikiFetched(pages) => {
-                    app.complete_loading_tab(app::Tab::Wiki, "Success");
-                    app.loaded_tabs.insert(app::Tab::Wiki);
-                    app.refreshed_tabs.insert(app::Tab::Wiki);
-                    app.status_message = None;
-                    app.wiki_pages.items = pages;
-                    app.update_filter_selection();
-                    let mut cache = crate::utils::cache::load_cache(&app.project_context);
-                    cache.wiki_pages = app.wiki_pages.items.clone();
-                    crate::utils::cache::save_cache(&app.project_context, &cache);
-                }
                 Event::SelectorItemsFetched(items) => {
                     if let Some(mut selector) = app.selector.take() {
                         selector.all_items = items;
@@ -1915,9 +1887,8 @@ async fn main() -> Result<()> {
                         app::Tab::Pipelines => !app.pipelines.items.is_empty(),
                         app::Tab::Runners => !app.runners.items.is_empty(),
                         app::Tab::Releases => !app.releases.items.is_empty(),
-                        app::Tab::Notifications => !app.notifications.items.is_empty(),
+                        app::Tab::Todos => !app.todos.items.is_empty(),
                         app::Tab::Milestones => !app.milestones.items.is_empty(),
-                        app::Tab::Wiki => !app.wiki_pages.items.is_empty(),
                         _ => false,
                     };
                     if has_cached_items {
@@ -2964,9 +2935,8 @@ async fn main() -> Result<()> {
                                                     app.pipelines.items.clear();
                                                     app.runners.items.clear();
                                                     app.releases.items.clear();
-                                                    app.notifications.items.clear();
+                                                    app.todos.items.clear();
                                                     app.milestones.items.clear();
-                                                    app.wiki_pages.items.clear();
                                                     app.pipeline_jobs.clear();
                                                     app.fetching_pipelines.clear();
 
@@ -2978,9 +2948,8 @@ async fn main() -> Result<()> {
                                                     app.pipelines.items = cache.pipelines;
                                                     app.runners.items = cache.runners;
                                                     app.releases.items = cache.releases;
-                                                    app.notifications.items = cache.notifications;
+                                                    app.todos.items = cache.todos;
                                                     app.milestones.items = cache.milestones;
-                                                    app.wiki_pages.items = cache.wiki_pages;
 
                                                     if !app.issues.items.is_empty() {
                                                         app.loaded_tabs.insert(app::Tab::Issues);
@@ -2998,16 +2967,12 @@ async fn main() -> Result<()> {
                                                     if !app.releases.items.is_empty() {
                                                         app.loaded_tabs.insert(app::Tab::Releases);
                                                     }
-                                                    if !app.notifications.items.is_empty() {
-                                                        app.loaded_tabs
-                                                            .insert(app::Tab::Notifications);
+                                                    if !app.todos.items.is_empty() {
+                                                        app.loaded_tabs.insert(app::Tab::Todos);
                                                     }
                                                     if !app.milestones.items.is_empty() {
                                                         app.loaded_tabs
                                                             .insert(app::Tab::Milestones);
-                                                    }
-                                                    if !app.wiki_pages.items.is_empty() {
-                                                        app.loaded_tabs.insert(app::Tab::Wiki);
                                                     }
 
                                                     app.issues.state.select(
@@ -3050,14 +3015,11 @@ async fn main() -> Result<()> {
                                                             app::Tab::Releases => {
                                                                 !app.releases.items.is_empty()
                                                             }
-                                                            app::Tab::Notifications => {
-                                                                !app.notifications.items.is_empty()
+                                                            app::Tab::Todos => {
+                                                                !app.todos.items.is_empty()
                                                             }
                                                             app::Tab::Milestones => {
                                                                 !app.milestones.items.is_empty()
-                                                            }
-                                                            app::Tab::Wiki => {
-                                                                !app.wiki_pages.items.is_empty()
                                                             }
                                                             _ => false,
                                                         };
@@ -4750,6 +4712,27 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             }
+                            KeyCode::Char('o') => {
+                                if let Some(selected_idx) = app.issues.state.selected() {
+                                    if let Some(issue) = app.filtered_issues().get(selected_idx) {
+                                        let cli = app_cli(&app);
+                                        let args = vec![
+                                            "issue".to_string(),
+                                            "view".to_string(),
+                                            issue.iid.to_string(),
+                                            cli.flag_web().to_string(),
+                                        ];
+                                        run_cli(
+                                            &cli,
+                                            &args,
+                                            &mut terminal,
+                                            events.sender(),
+                                            app.active_tab,
+                                        )
+                                        .await;
+                                    }
+                                }
+                            }
                             _ => handled = false,
                         },
                         app::Tab::MergeRequests => {
@@ -5491,17 +5474,30 @@ async fn main() -> Result<()> {
                                         }
                                         KeyCode::Char('o') => {
                                             let cli = app_cli(&app);
-                                            let (entity, sub) = if cli.is_github {
-                                                ("run", "view")
+                                            let args = if cli.is_github {
+                                                if let Some(pipe_id) = app.active_pipeline_id {
+                                                    vec![
+                                                        "run".to_string(),
+                                                        "view".to_string(),
+                                                        pipe_id.to_string(),
+                                                        cli.flag_web().to_string(),
+                                                    ]
+                                                } else {
+                                                    vec![
+                                                        "run".to_string(),
+                                                        "view".to_string(),
+                                                        job_id.to_string(),
+                                                        cli.flag_web().to_string(),
+                                                    ]
+                                                }
                                             } else {
-                                                ("job", "view")
+                                                vec![
+                                                    "job".to_string(),
+                                                    "view".to_string(),
+                                                    job_id.to_string(),
+                                                    cli.flag_web().to_string(),
+                                                ]
                                             };
-                                            let args = vec![
-                                                entity.to_string(),
-                                                sub.to_string(),
-                                                job_id.to_string(),
-                                                cli.flag_web().to_string(),
-                                            ];
                                             run_cli(
                                                 &cli,
                                                 &args,
@@ -5711,9 +5707,9 @@ async fn main() -> Result<()> {
                                 handled = false;
                             }
                         }
-                        app::Tab::Notifications => {
-                            if let Some(selected_idx) = app.notifications.state.selected() {
-                                if let Some(item) = app.filtered_notifications().get(selected_idx) {
+                        app::Tab::Todos => {
+                            if let Some(selected_idx) = app.todos.state.selected() {
+                                if let Some(item) = app.filtered_todos().get(selected_idx) {
                                     match key_event.code {
                                         KeyCode::Enter => {
                                             let n_id = item.id.clone();
@@ -5754,6 +5750,29 @@ async fn main() -> Result<()> {
                                                 _ => {}
                                             }
                                         }
+                                        KeyCode::Char('o') => {
+                                            let cli = app_cli(&app);
+                                            let entity =
+                                                if item.target_type.contains("MergeRequest") {
+                                                    cli.entity("mr")
+                                                } else {
+                                                    "issue"
+                                                };
+                                            let args = vec![
+                                                entity.to_string(),
+                                                "view".to_string(),
+                                                item.target_iid.to_string(),
+                                                cli.flag_web().to_string(),
+                                            ];
+                                            run_cli(
+                                                &cli,
+                                                &args,
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
+                                        }
                                         _ => handled = false,
                                     }
                                 } else {
@@ -5764,9 +5783,6 @@ async fn main() -> Result<()> {
                             }
                         }
                         app::Tab::Milestones => {
-                            handled = false;
-                        }
-                        app::Tab::Wiki => {
                             handled = false;
                         }
                         app::Tab::Terminal => {
@@ -5786,20 +5802,20 @@ async fn main() -> Result<()> {
                                     match crate::utils::update::perform_self_update().await {
                                         Ok(true) => {
                                             let _ = tx.send(Event::FetchFailed(
-                                                app::Tab::Notifications,
+                                                app::Tab::Todos,
                                                 "Update complete! Please restart glab-tui."
                                                     .to_string(),
                                             ));
                                         }
                                         Ok(false) => {
                                             let _ = tx.send(Event::FetchFailed(
-                                                app::Tab::Notifications,
+                                                app::Tab::Todos,
                                                 "Already up to date.".to_string(),
                                             ));
                                         }
                                         Err(e) => {
                                             let _ = tx.send(Event::FetchFailed(
-                                                app::Tab::Notifications,
+                                                app::Tab::Todos,
                                                 format!("Update failed: {}", e),
                                             ));
                                         }
@@ -5857,9 +5873,9 @@ async fn main() -> Result<()> {
                                 app.is_typing_search = true;
                             }
                             KeyCode::Enter => match app.active_tab {
-                                app::Tab::Notifications => {
-                                    if let Some(idx) = app.notifications.state.selected() {
-                                        if let Some(n) = app.filtered_notifications().get(idx) {
+                                app::Tab::Todos => {
+                                    if let Some(idx) = app.todos.state.selected() {
+                                        if let Some(n) = app.filtered_todos().get(idx) {
                                             let n_id = n.id.clone();
                                             let target_iid = n.target_iid;
                                             let target_type = n.target_type.clone();
@@ -6042,13 +6058,10 @@ async fn main() -> Result<()> {
                                 app::Tab::Releases => {
                                     app.releases.next(app.filtered_releases().len())
                                 }
-                                app::Tab::Notifications => {
-                                    app.notifications.next(app.filtered_notifications().len())
-                                }
+                                app::Tab::Todos => app.todos.next(app.filtered_todos().len()),
                                 app::Tab::Milestones => {
                                     app.milestones.next(app.filtered_milestones().len())
                                 }
-                                app::Tab::Wiki => app.wiki_pages.next(app.filtered_wiki().len()),
                                 app::Tab::Terminal => {
                                     app.terminal_scroll = app.terminal_scroll.saturating_sub(1);
                                 }
@@ -6085,14 +6098,9 @@ async fn main() -> Result<()> {
                                 app::Tab::Releases => {
                                     app.releases.previous(app.filtered_releases().len())
                                 }
-                                app::Tab::Notifications => app
-                                    .notifications
-                                    .previous(app.filtered_notifications().len()),
+                                app::Tab::Todos => app.todos.next(app.filtered_todos().len()),
                                 app::Tab::Milestones => {
                                     app.milestones.previous(app.filtered_milestones().len())
-                                }
-                                app::Tab::Wiki => {
-                                    app.wiki_pages.previous(app.filtered_wiki().len())
                                 }
                                 app::Tab::Terminal => {
                                     app.terminal_scroll = app.terminal_scroll.saturating_add(1);

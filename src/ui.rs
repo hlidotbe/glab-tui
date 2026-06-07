@@ -554,17 +554,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     let size = f.area();
 
-    let bottom_height = if app.active_tab == Tab::Terminal {
-        0
-    } else {
-        6
-    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),             // Top header bar
-            Constraint::Min(0),                // Main workspace
-            Constraint::Length(bottom_height), // Under the Hood pane
+            Constraint::Length(2), // Top header bar
+            Constraint::Min(0),    // Main workspace
+            Constraint::Length(0), // Reserved
         ])
         .split(size);
 
@@ -2453,17 +2448,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 }
             }
         }
-        Tab::Notifications => {
-            if app.notifications.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
+        Tab::Todos => {
+            if app.todos.items.is_empty() && app.loading_tabs.contains(&app.active_tab) {
                 f.render_widget(
-                    Paragraph::new("\n\n Loading notifications...")
+                    Paragraph::new("\n\n Loading todos...")
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
                         .style(Style::default().fg(THEME.text_muted)),
                     middle_chunks[1],
                 );
                 f.render_widget(
-                    Paragraph::new("Select a notification...")
+                    Paragraph::new("Select a todo...")
                         .block(
                             Block::default()
                                 .borders(Borders::ALL)
@@ -2475,18 +2470,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 );
             } else {
                 let default_set = std::collections::HashSet::new();
-                let enabled_cols = app
-                    .enabled_columns
-                    .get(&Tab::Notifications)
-                    .unwrap_or(&default_set);
-                let filtered_notifications = App::filter_notifications_list(
-                    &app.notifications.items,
-                    &app.search_query,
-                    enabled_cols,
-                );
+                let enabled_cols = app.enabled_columns.get(&Tab::Todos).unwrap_or(&default_set);
+                let filtered_todos =
+                    App::filter_todos_list(&app.todos.items, &app.search_query, enabled_cols);
 
-                let rows = filtered_notifications.iter().enumerate().map(|(idx, n)| {
-                    let is_row_highlighted = app.notifications.state.selected() == Some(idx);
+                let rows = filtered_todos.iter().enumerate().map(|(idx, n)| {
+                    let is_row_highlighted = app.todos.state.selected() == Some(idx);
 
                     let state_str = if n.state == "unread" || n.state == "pending" {
                         "•"
@@ -2506,7 +2495,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     };
 
                     let mut row_cells = Vec::new();
-                    if app.is_column_visible(Tab::Notifications, "State") {
+                    if app.is_column_visible(Tab::Todos, "State") {
                         row_cells.push(render_fuzzy_cell(
                             state_str,
                             &app.search_query,
@@ -2516,7 +2505,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    if app.is_column_visible(Tab::Notifications, "Project") {
+                    if app.is_column_visible(Tab::Todos, "Project") {
                         row_cells.push(render_fuzzy_cell(
                             &n.project_path,
                             &app.search_query,
@@ -2526,7 +2515,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    if app.is_column_visible(Tab::Notifications, "Type") {
+                    if app.is_column_visible(Tab::Todos, "Type") {
                         row_cells.push(render_fuzzy_cell(
                             n.target_type.as_str(),
                             &app.search_query,
@@ -2536,7 +2525,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    if app.is_column_visible(Tab::Notifications, "ID") {
+                    if app.is_column_visible(Tab::Todos, "ID") {
                         row_cells.push(render_fuzzy_cell(
                             &format!("#{}", n.target_iid),
                             &app.search_query,
@@ -2546,7 +2535,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
-                    if app.is_column_visible(Tab::Notifications, "Title") {
+                    if app.is_column_visible(Tab::Todos, "Title") {
                         row_cells.push(render_fuzzy_cell(
                             &truncate(&n.title, 80),
                             &app.search_query,
@@ -2567,23 +2556,23 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let mut header_cells = Vec::new();
                 let mut widths = Vec::new();
 
-                if app.is_column_visible(Tab::Notifications, "State") {
+                if app.is_column_visible(Tab::Todos, "State") {
                     header_cells.push(Cell::from(""));
                     widths.push(Constraint::Length(2));
                 }
-                if app.is_column_visible(Tab::Notifications, "Project") {
+                if app.is_column_visible(Tab::Todos, "Project") {
                     header_cells.push(Cell::from("Project"));
                     widths.push(Constraint::Length(25));
                 }
-                if app.is_column_visible(Tab::Notifications, "Type") {
+                if app.is_column_visible(Tab::Todos, "Type") {
                     header_cells.push(Cell::from("Type"));
                     widths.push(Constraint::Length(14));
                 }
-                if app.is_column_visible(Tab::Notifications, "ID") {
+                if app.is_column_visible(Tab::Todos, "ID") {
                     header_cells.push(Cell::from("ID"));
                     widths.push(Constraint::Length(8));
                 }
-                if app.is_column_visible(Tab::Notifications, "Title") {
+                if app.is_column_visible(Tab::Todos, "Title") {
                     header_cells.push(Cell::from("Title"));
                     widths.push(Constraint::Fill(1));
                 }
@@ -2598,7 +2587,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
 
-                f.render_stateful_widget(table, middle_chunks[1], &mut app.notifications.state);
+                f.render_stateful_widget(table, middle_chunks[1], &mut app.todos.state);
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
@@ -2609,8 +2598,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .add_modifier(Modifier::BOLD),
                     )
                     .border_style(Style::default().fg(THEME.border));
-                if let Some(selected) = app.notifications.state.selected() {
-                    if let Some(n) = filtered_notifications.get(selected) {
+                if let Some(selected) = app.todos.state.selected() {
+                    if let Some(n) = filtered_todos.get(selected) {
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
                             Span::styled("Title:    ", Style::default().fg(THEME.text_muted)),
@@ -2865,135 +2854,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 }
             }
         }
-        Tab::Wiki => {
-            if app.wiki_pages.items.is_empty() {
-                if app.loading_tabs.contains(&app.active_tab) {
-                    f.render_widget(
-                        Paragraph::new("\n\n Loading wiki pages...")
-                            .alignment(Alignment::Center)
-                            .block(main_block.clone())
-                            .style(Style::default().fg(THEME.text_muted)),
-                        middle_chunks[1],
-                    );
-                } else {
-                    f.render_widget(
-                        Paragraph::new("\n\n No wiki pages found")
-                            .alignment(Alignment::Center)
-                            .block(main_block.clone())
-                            .style(Style::default().fg(THEME.text_muted)),
-                        middle_chunks[1],
-                    );
-                }
-                f.render_widget(
-                    Paragraph::new("Select a wiki page...")
-                        .block(
-                            Block::default()
-                                .borders(Borders::ALL)
-                                .title(" Content ")
-                                .border_style(Style::default().fg(THEME.border)),
-                        )
-                        .style(Style::default().fg(THEME.text_muted)),
-                    middle_chunks[2],
-                );
-            } else {
-                let default_set = std::collections::HashSet::new();
-                let filtered_wiki = App::filter_wiki_list(
-                    &app.wiki_pages.items,
-                    &app.search_query,
-                    app.enabled_columns.get(&Tab::Wiki).unwrap_or(&default_set),
-                );
-
-                let header_cells = Tab::Wiki
-                    .columns()
-                    .into_iter()
-                    .filter(|col| app.is_column_visible(Tab::Wiki, col))
-                    .map(|h| Cell::from(h).style(Style::default().add_modifier(Modifier::BOLD)));
-                let header = Row::new(header_cells)
-                    .style(header_style)
-                    .height(1)
-                    .bottom_margin(1);
-
-                let rows = filtered_wiki.iter().enumerate().map(|(idx, p)| {
-                    let mut cells = Vec::new();
-                    let cols = Tab::Wiki.columns();
-                    for col in cols {
-                        if app.is_column_visible(Tab::Wiki, &col) {
-                            let val = match col {
-                                "Title" => p.title.clone(),
-                                "Path" => p.path.clone(),
-                                _ => "".to_string(),
-                            };
-                            cells.push(Cell::from(val));
-                        }
-                    }
-                    let is_selected = app.wiki_pages.state.selected() == Some(idx);
-                    let row_style = if is_selected {
-                        Style::default().bg(THEME.highlight_bg)
-                    } else {
-                        Style::default().fg(THEME.text_normal)
-                    };
-                    Row::new(cells).style(row_style)
-                });
-
-                let mut widths = Vec::new();
-                let cols = Tab::Wiki.columns();
-                for col in cols {
-                    if app.is_column_visible(Tab::Wiki, &col) {
-                        match col {
-                            "Title" => widths.push(Constraint::Percentage(40)),
-                            "Path" => widths.push(Constraint::Percentage(60)),
-                            _ => {}
-                        }
-                    }
-                }
-                if widths.is_empty() {
-                    widths.push(Constraint::Percentage(100));
-                }
-
-                let table = Table::new(rows, widths)
-                    .header(header)
-                    .block(main_block.clone())
-                    .row_highlight_style(highlight_style)
-                    .highlight_symbol(" ❯ ");
-
-                f.render_stateful_widget(table, middle_chunks[1], &mut app.wiki_pages.state);
-
-                let content_block = Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Wiki Page Content ")
-                    .title_style(
-                        Style::default()
-                            .fg(THEME.text_muted)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                    .border_style(Style::default().fg(THEME.border));
-
-                if let Some(selected_idx) = app.wiki_pages.state.selected() {
-                    if let Some(p) = filtered_wiki.get(selected_idx) {
-                        let lines = render_markdown(&p.content);
-                        f.render_widget(
-                            Paragraph::new(lines)
-                                .block(content_block)
-                                .wrap(ratatui::widgets::Wrap { trim: true }),
-                            middle_chunks[2],
-                        );
-                    } else {
-                        f.render_widget(Paragraph::new("").block(content_block), middle_chunks[2]);
-                    }
-                } else {
-                    f.render_widget(
-                        Paragraph::new("Select a page to view content...")
-                            .block(content_block)
-                            .style(Style::default().fg(THEME.text_muted)),
-                        middle_chunks[2],
-                    );
-                }
-            }
-        }
         Tab::Terminal => {
             let num_cmds = app.terminal_commands.len();
             let area = middle_chunks[1];
-            let inner_rect = main_block.inner(area);
+            let base_block =
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(if app.focus_column_checklist {
+                        THEME.border
+                    } else {
+                        THEME.border_focused
+                    }));
+            let inner_rect = base_block.inner(area);
             let log_height = inner_rect.height as usize;
 
             let max_scroll = num_cmds.saturating_sub(log_height);
@@ -3002,12 +2874,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
             let block_title = if app.terminal_scroll > 0 {
                 format!(
                     " Terminal (Scroll: {}/{}) ",
-                    app.terminal_scroll, max_scroll
+                    app.terminal_scroll, max_scroll,
                 )
             } else {
                 " Terminal ".to_string()
             };
-            let custom_main_block = main_block.clone().title(block_title);
+            let custom_main_block = base_block.clone().title(block_title).title_style(
+                Style::default()
+                    .fg(THEME.header_fg)
+                    .add_modifier(Modifier::BOLD),
+            );
 
             let end_idx = num_cmds.saturating_sub(app.terminal_scroll);
             let start_idx = end_idx.saturating_sub(log_height);
@@ -3030,45 +2906,49 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
     }
 
-    // Terminal bottom pane
-    if chunks[2].height > 0 {
-        let bottom_block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border))
-            .title(" Terminal ")
-            .title_style(
-                Style::default()
-                    .fg(THEME.purple)
-                    .add_modifier(Modifier::BOLD),
-            );
+    // Compact terminal pane at bottom of the middle column
+    if app.active_tab != Tab::Terminal {
+        let middle_col = middle_chunks[1];
+        let term_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(6)])
+            .split(middle_col);
+        let term_area = term_chunks[1];
+        if term_area.height > 0 {
+            let bottom_block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(THEME.border))
+                .title(" Terminal ")
+                .title_style(
+                    Style::default()
+                        .fg(THEME.purple)
+                        .add_modifier(Modifier::BOLD),
+                );
+            f.render_widget(bottom_block.clone(), term_area);
 
-        let bottom_area = chunks[2];
-        f.render_widget(bottom_block.clone(), bottom_area);
+            let bottom_inner = bottom_block.inner(term_area);
+            if bottom_inner.height > 0 {
+                let mut log_lines = Vec::new();
+                let log_height = bottom_inner.height as usize;
 
-        let bottom_inner = bottom_block.inner(bottom_area);
-        if bottom_inner.height > 0 {
-            let mut log_lines = Vec::new();
-            let log_height = bottom_inner.height as usize;
+                let num_cmds = app.terminal_commands.len();
+                let display_count = std::cmp::min(num_cmds, log_height);
+                let start_idx = num_cmds.saturating_sub(display_count);
 
-            // Get the last N commands where N is the height of the pane
-            let num_cmds = app.terminal_commands.len();
-            let display_count = std::cmp::min(num_cmds, log_height);
-            let start_idx = num_cmds.saturating_sub(display_count);
-
-            // Add padding empty lines if we have fewer commands than the log height
-            if display_count < log_height {
-                for _ in 0..(log_height - display_count) {
-                    log_lines.push(Line::from(""));
+                if display_count < log_height {
+                    for _ in 0..(log_height - display_count) {
+                        log_lines.push(Line::from(""));
+                    }
                 }
-            }
 
-            for i in start_idx..num_cmds {
-                if let Some(cmd) = app.terminal_commands.get(i) {
-                    log_lines.push(build_log_line(cmd, bottom_inner.width as usize));
+                for i in start_idx..num_cmds {
+                    if let Some(cmd) = app.terminal_commands.get(i) {
+                        log_lines.push(build_log_line(cmd, bottom_inner.width as usize));
+                    }
                 }
-            }
 
-            f.render_widget(Paragraph::new(log_lines), bottom_inner);
+                f.render_widget(Paragraph::new(log_lines), bottom_inner);
+            }
         }
     }
 
@@ -3926,12 +3806,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 key: "o",
                 action: "Open selected job in browser",
             },
-            // Wiki
-            Shortcut {
-                category: "Wiki",
-                key: "J / K",
-                action: "Scroll wiki page content",
-            },
             // Milestones
             Shortcut {
                 category: "Milestones",
@@ -3965,11 +3839,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 key: "o",
                 action: "Open release in browser",
             },
-            // Notifications
+            // TODOs
             Shortcut {
-                category: "Notifications",
-                key: "Enter",
-                action: "Open notification target & mark read",
+                category: "TODOs",
+                key: "Enter / o",
+                action: "Open todo target & mark read",
             },
             // Terminal
             Shortcut {
@@ -4033,11 +3907,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 Tab::MergeRequests => &["Global & Nav", "Merge Requests"],
                 Tab::Pipelines => &["Global & Nav", "Pipelines"],
                 Tab::Jobs => &["Global & Nav", "Jobs"],
-                Tab::Wiki => &["Global & Nav", "Wiki"],
                 Tab::Milestones => &["Global & Nav", "Milestones"],
                 Tab::Runners => &["Global & Nav", "Runners"],
                 Tab::Releases => &["Global & Nav", "Releases"],
-                Tab::Notifications => &["Global & Nav", "Notifications"],
+                Tab::Todos => &["Global & Nav", "TODOs"],
                 Tab::Terminal => &["Global & Nav", "Terminal"],
             }
         };

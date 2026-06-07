@@ -14,23 +14,21 @@ pub enum Tab {
     Jobs,
     Runners,
     Releases,
-    Notifications,
+    Todos,
     Milestones,
-    Wiki,
     Terminal,
 }
 
 impl Tab {
-    pub const ALL: [Tab; 10] = [
+    pub const ALL: [Tab; 9] = [
         Tab::Issues,
         Tab::MergeRequests,
         Tab::Pipelines,
         Tab::Jobs,
         Tab::Runners,
         Tab::Releases,
-        Tab::Notifications,
+        Tab::Todos,
         Tab::Milestones,
-        Tab::Wiki,
         Tab::Terminal,
     ];
 
@@ -48,9 +46,8 @@ impl Tab {
             Tab::Jobs => "Jobs",
             Tab::Runners => "Runners",
             Tab::Releases => "Releases",
-            Tab::Notifications => "Notifications",
+            Tab::Todos => "Todos",
             Tab::Milestones => "Milestones",
-            Tab::Wiki => "Wiki",
             Tab::Terminal => "Terminal",
         }
     }
@@ -83,9 +80,8 @@ impl Tab {
             Tab::Jobs => vec!["ID", "Stage", "Status", "Name", "Matrix"],
             Tab::Runners => vec!["ID", "Description", "Status", "Active"],
             Tab::Releases => vec!["Tag", "Release Name", "Date"],
-            Tab::Notifications => vec!["State", "Project", "Type", "ID", "Title"],
+            Tab::Todos => vec!["State", "Project", "Type", "ID", "Title"],
             Tab::Milestones => vec!["IID", "Title", "State", "Start Date", "Due Date"],
-            Tab::Wiki => vec!["Title", "Path"],
             Tab::Terminal => vec![],
         }
     }
@@ -98,9 +94,8 @@ impl Tab {
             Tab::Jobs => vec!["ID", "Stage", "Status", "Name", "Matrix"],
             Tab::Runners => vec!["ID", "Description", "Status", "Active"],
             Tab::Releases => vec!["Tag", "Release Name", "Date"],
-            Tab::Notifications => vec!["State", "Project", "Type", "ID", "Title"],
+            Tab::Todos => vec!["State", "Project", "Type", "ID", "Title"],
             Tab::Milestones => vec!["IID", "Title", "State", "Due Date"],
-            Tab::Wiki => vec!["Title"],
             Tab::Terminal => vec![],
         }
     }
@@ -737,7 +732,7 @@ pub struct App {
     pub help_search_query: String,
     pub diff_view: Option<DiffView>,
     pub diff_loading: bool,
-    pub notifications: StatefulTable<crate::gitlab::notifications::Notification>,
+    pub todos: StatefulTable<crate::gitlab::notifications::Notification>,
     pub status_message: Option<String>,
     pub refreshed_tabs: std::collections::HashSet<Tab>,
     pub tx: Option<tokio::sync::mpsc::UnboundedSender<crate::event::Event>>,
@@ -749,7 +744,6 @@ pub struct App {
     pub milestones: StatefulTable<crate::gitlab::milestones::Milestone>,
     pub selected_milestone_issues: Option<Vec<crate::gitlab::issues::Issue>>,
     pub selected_milestone_iid: Option<u64>,
-    pub wiki_pages: StatefulTable<crate::gitlab::wiki::WikiPage>,
     pub terminal_scroll: usize,
 }
 
@@ -792,7 +786,7 @@ impl Default for App {
             help_search_query: String::new(),
             diff_view: None,
             diff_loading: false,
-            notifications: StatefulTable::with_items(vec![]),
+            todos: StatefulTable::with_items(vec![]),
             status_message: None,
             refreshed_tabs: std::collections::HashSet::new(),
             tx: None,
@@ -815,7 +809,6 @@ impl Default for App {
             milestones: StatefulTable::with_items(vec![]),
             selected_milestone_issues: None,
             selected_milestone_iid: None,
-            wiki_pages: StatefulTable::with_items(vec![]),
             terminal_scroll: 0,
         }
     }
@@ -1236,7 +1229,7 @@ impl App {
         Self::filter_releases_list(&self.releases.items, &self.search_query, enabled_cols)
     }
 
-    pub fn filter_notifications_list<'a>(
+    pub fn filter_todos_list<'a>(
         items: &'a [crate::gitlab::notifications::Notification],
         query: &str,
         enabled_cols: &std::collections::HashSet<String>,
@@ -1275,13 +1268,13 @@ impl App {
             .collect()
     }
 
-    pub fn filtered_notifications(&self) -> Vec<&crate::gitlab::notifications::Notification> {
+    pub fn filtered_todos(&self) -> Vec<&crate::gitlab::notifications::Notification> {
         let default_set = std::collections::HashSet::new();
         let enabled_cols = self
             .enabled_columns
-            .get(&Tab::Notifications)
+            .get(&Tab::Todos)
             .unwrap_or(&default_set);
-        Self::filter_notifications_list(&self.notifications.items, &self.search_query, enabled_cols)
+        Self::filter_todos_list(&self.todos.items, &self.search_query, enabled_cols)
     }
 
     pub fn filter_milestones_list<'a>(
@@ -1334,41 +1327,6 @@ impl App {
             .get(&Tab::Milestones)
             .unwrap_or(&default_set);
         Self::filter_milestones_list(&self.milestones.items, &self.search_query, enabled_cols)
-    }
-
-    pub fn filter_wiki_list<'a>(
-        items: &'a [crate::gitlab::wiki::WikiPage],
-        query: &str,
-        enabled_cols: &std::collections::HashSet<String>,
-    ) -> Vec<&'a crate::gitlab::wiki::WikiPage> {
-        if query.trim().is_empty() {
-            return items.iter().collect();
-        }
-        let q = query.trim().to_lowercase();
-        items
-            .iter()
-            .filter(|item| {
-                let mut matches = false;
-                let mut check_match = |text: &str| {
-                    if text.to_lowercase().contains(&q) {
-                        matches = true;
-                    }
-                };
-                if enabled_cols.contains("Title") {
-                    check_match(&item.title);
-                }
-                if enabled_cols.contains("Path") {
-                    check_match(&item.path);
-                }
-                matches
-            })
-            .collect()
-    }
-
-    pub fn filtered_wiki(&self) -> Vec<&crate::gitlab::wiki::WikiPage> {
-        let default_set = std::collections::HashSet::new();
-        let enabled_cols = self.enabled_columns.get(&Tab::Wiki).unwrap_or(&default_set);
-        Self::filter_wiki_list(&self.wiki_pages.items, &self.search_query, enabled_cols)
     }
 
     pub fn update_filter_selection(&mut self) {
@@ -1463,20 +1421,20 @@ impl App {
                     }
                 }
             }
-            Tab::Notifications => {
-                let len = self.filtered_notifications().len();
-                let sel = self.notifications.state.selected();
+            Tab::Todos => {
+                let len = self.filtered_todos().len();
+                let sel = self.todos.state.selected();
                 if len == 0 {
-                    self.notifications.state.select(None);
+                    self.todos.state.select(None);
                 } else {
                     match sel {
                         Some(idx) => {
                             if idx >= len {
-                                self.notifications.state.select(Some(len - 1));
+                                self.todos.state.select(Some(len - 1));
                             }
                         }
                         None => {
-                            self.notifications.state.select(Some(0));
+                            self.todos.state.select(Some(0));
                         }
                     }
                 }
@@ -1506,24 +1464,6 @@ impl App {
                         }
                         None => {
                             self.milestones.state.select(Some(0));
-                        }
-                    }
-                }
-            }
-            Tab::Wiki => {
-                let len = self.filtered_wiki().len();
-                let sel = self.wiki_pages.state.selected();
-                if len == 0 {
-                    self.wiki_pages.state.select(None);
-                } else {
-                    match sel {
-                        Some(idx) => {
-                            if idx >= len {
-                                self.wiki_pages.state.select(Some(len - 1));
-                            }
-                        }
-                        None => {
-                            self.wiki_pages.state.select(Some(0));
                         }
                     }
                 }

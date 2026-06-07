@@ -24,7 +24,7 @@ pub enum Event {
     FetchFailed(crate::app::Tab, String),
     DiffFetched(u64, String),
     DiffFetchFailed(String),
-    NotificationsFetched(Vec<crate::gitlab::notifications::Notification>),
+    TodosFetched(Vec<crate::gitlab::notifications::Notification>),
     JobsTabFetched(u64, Vec<crate::gitlab::pipelines::Job>),
     CommandStarted(String),
     CommandCompleted(crate::app::Tab, Result<(), String>),
@@ -35,7 +35,6 @@ pub enum Event {
     },
     MilestonesFetched(Vec<crate::gitlab::milestones::Milestone>),
     MilestoneIssuesFetched(u64, Vec<crate::gitlab::issues::Issue>),
-    WikiFetched(Vec<crate::gitlab::wiki::WikiPage>),
 }
 
 #[derive(Debug)]
