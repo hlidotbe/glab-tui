@@ -472,19 +472,58 @@ async fn apply_selector_changes(
     let tab = app.active_tab;
     match field_type {
         "labels" => {
-            let labels_comma = values.join(",");
-            if labels_comma.is_empty() {
-                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
-                    .flag("--unlabel", "all")
-                    .build();
-                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
+            let current_labels: Vec<String> = if entity_type == "issue" {
+                app.issues
+                    .items
+                    .iter()
+                    .find(|i| i.iid == iid)
+                    .map(|i| i.labels.clone())
+                    .unwrap_or_default()
+            } else if entity_type == "mr" {
+                app.mrs
+                    .items
+                    .iter()
+                    .find(|m| m.iid == iid)
+                    .map(|m| m.labels.clone())
+                    .unwrap_or_default()
             } else {
-                let mut cmd = UpdateCmd::new(cli.is_github, entity_type, iid);
-                // gh: --label replaces all labels, so skip --unlabel all
-                if !cli.is_github {
-                    cmd = cmd.flag("--unlabel", "all");
+                vec![]
+            };
+            let current_set: std::collections::HashSet<&str> =
+                current_labels.iter().map(String::as_str).collect();
+            let new_set: std::collections::HashSet<&str> =
+                values.iter().map(String::as_str).collect();
+            let to_remove: Vec<&&str> = current_set.difference(&new_set).collect();
+            let to_add: Vec<&&str> = new_set.difference(&current_set).collect();
+
+            let mut cmd = UpdateCmd::new(cli.is_github, entity_type, iid);
+            if cli.is_github {
+                for r in &to_remove {
+                    cmd = cmd.flag("--remove-label", r);
                 }
-                let args = cmd.flag("--label", &labels_comma).build();
+                for a in &to_add {
+                    cmd = cmd.flag("--add-label", a);
+                }
+            } else {
+                if !to_remove.is_empty() {
+                    let joined = to_remove
+                        .iter()
+                        .map(|l| l.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    cmd = cmd.flag("--unlabel", &joined);
+                }
+                if !to_add.is_empty() {
+                    let joined = to_add
+                        .iter()
+                        .map(|l| l.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    cmd = cmd.flag("--label", &joined);
+                }
+            }
+            let args = cmd.build();
+            if !to_remove.is_empty() || !to_add.is_empty() {
                 run_cli(&cli, &args, terminal, tx.clone(), tab).await;
             }
 
@@ -499,25 +538,66 @@ async fn apply_selector_changes(
             }
         }
         "assignees" => {
-            let clean_values: Vec<String> = values
+            let current_usernames: Vec<String> = if entity_type == "issue" {
+                app.issues
+                    .items
+                    .iter()
+                    .find(|i| i.iid == iid)
+                    .map(|i| i.assignees.iter().map(|a| a.username.clone()).collect())
+                    .unwrap_or_default()
+            } else if entity_type == "mr" {
+                app.mrs
+                    .items
+                    .iter()
+                    .find(|m| m.iid == iid)
+                    .map(|m| m.assignees.iter().map(|a| a.username.clone()).collect())
+                    .unwrap_or_default()
+            } else {
+                vec![]
+            };
+            let values_clean: Vec<String> = values
                 .iter()
                 .map(|v| v.trim_start_matches('@').to_string())
                 .collect();
-            let assignees_comma = clean_values.join(",");
+            let current_set: std::collections::HashSet<&str> =
+                current_usernames.iter().map(String::as_str).collect();
+            let new_set: std::collections::HashSet<&str> =
+                values_clean.iter().map(String::as_str).collect();
+            let to_remove: Vec<&&str> = current_set.difference(&new_set).collect();
+            let to_add: Vec<&&str> = new_set.difference(&current_set).collect();
 
-            if assignees_comma.is_empty() {
-                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
-                    .flag("--unassign", "")
-                    .build();
-                run_cli(&cli, &args, terminal, tx.clone(), tab).await;
+            let mut cmd = UpdateCmd::new(cli.is_github, entity_type, iid);
+            if cli.is_github {
+                for r in &to_remove {
+                    cmd = cmd.flag("--remove-assignee", r);
+                }
+                for a in &to_add {
+                    cmd = cmd.flag("--add-assignee", a);
+                }
             } else {
-                let args = UpdateCmd::new(cli.is_github, entity_type, iid)
-                    .flag("--assignee", &assignees_comma)
-                    .build();
+                if !to_remove.is_empty() {
+                    let joined = to_remove
+                        .iter()
+                        .map(|l| l.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    cmd = cmd.flag("--unassign", &joined);
+                }
+                if !to_add.is_empty() {
+                    let joined = to_add
+                        .iter()
+                        .map(|l| l.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    cmd = cmd.flag("--assignee", &joined);
+                }
+            }
+            let args = cmd.build();
+            if !to_remove.is_empty() || !to_add.is_empty() {
                 run_cli(&cli, &args, terminal, tx.clone(), tab).await;
             }
 
-            let new_assignees: Vec<crate::gitlab::issues::Assignee> = clean_values
+            let new_assignees: Vec<crate::gitlab::issues::Assignee> = values_clean
                 .iter()
                 .map(|u| crate::gitlab::issues::Assignee {
                     username: u.clone(),
@@ -3359,8 +3439,8 @@ async fn main() -> Result<()> {
                                 // close menu
                             }
                             KeyCode::Char('j') | KeyCode::Down => {
-                                let is_new = menu.entity_iid == 0
-                                    || menu.entity_type.starts_with("new_");
+                                let is_new =
+                                    menu.entity_iid == 0 || menu.entity_type.starts_with("new_");
                                 let max_idx = if is_new {
                                     menu.fields.len() + 1 // fields + spacer + submit
                                 } else {
@@ -3379,8 +3459,8 @@ async fn main() -> Result<()> {
                                 app.edit_menu = Some(menu);
                             }
                             KeyCode::Char('k') | KeyCode::Up => {
-                                let is_new = menu.entity_iid == 0
-                                    || menu.entity_type.starts_with("new_");
+                                let is_new =
+                                    menu.entity_iid == 0 || menu.entity_type.starts_with("new_");
                                 let max_idx = if is_new {
                                     menu.fields.len() + 1
                                 } else {
@@ -3408,400 +3488,398 @@ async fn main() -> Result<()> {
 
                                 if is_on_submit {
                                     if entity_type == "new_issue" {
-                                            let cli = app_cli(&app);
-                                            let title = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Title")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let description = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Description")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let labels = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Labels")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let assignees = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Assignees")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let milestone = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Milestone")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let confidential = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Confidential")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let due_date = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Due Date")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let weight = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Weight")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
+                                        let cli = app_cli(&app);
+                                        let title = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Title")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let description = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Description")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let labels = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Labels")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let assignees = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Assignees")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let milestone = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Milestone")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let confidential = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Confidential")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let due_date = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Due Date")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let weight = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Weight")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
 
-                                            let mut cmd_args: Vec<String> =
-                                                vec!["issue".into(), "create".into()];
-                                            if !title.is_empty() {
-                                                cmd_args.push("--title".into());
-                                                cmd_args.push(title);
-                                            }
-                                            if !description.is_empty() {
-                                                cmd_args.push(cli.flag_description().to_string());
-                                                cmd_args.push(description);
-                                            }
-                                            if !labels.is_empty() {
-                                                cmd_args.push("--label".into());
-                                                cmd_args.push(labels);
-                                            }
-                                            if !assignees.is_empty() {
-                                                let clean = assignees
-                                                    .split(',')
-                                                    .map(|a| {
-                                                        a.trim().trim_start_matches('@').to_string()
-                                                    })
-                                                    .collect::<Vec<_>>()
-                                                    .join(",");
-                                                cmd_args.push("--assignee".into());
-                                                cmd_args.push(clean);
-                                            }
-                                            if !milestone.is_empty() {
-                                                cmd_args.push("--milestone".into());
-                                                cmd_args.push(milestone);
-                                            }
-                                            if confidential.to_lowercase() == "yes" {
-                                                cmd_args.push("--confidential".into());
-                                            }
-                                            if !due_date.is_empty() {
-                                                cmd_args.push("--due-date".into());
-                                                cmd_args.push(due_date);
-                                            }
-                                            if !weight.is_empty() && weight != "0" {
-                                                cmd_args.push("--weight".into());
-                                                cmd_args.push(weight);
-                                            }
-
-                                            app.edit_menu = None;
-                                            run_cli(
-                                                &cli,
-                                                &cmd_args,
-                                                &mut terminal,
-                                                events.sender(),
-                                                app.active_tab,
-                                            )
-                                            .await;
-
-                                            if let Some(client) = &app.gitlab_client {
-                                                spawn_refresh_active_tab(
-                                                    client,
-                                                    &app.project_context,
-                                                    app.active_tab,
-                                                    events.sender(),
-                                                    app.is_column_visible(
-                                                        app.active_tab,
-                                                        "Show Closed Items",
-                                                    ),
-                                                );
-                                            }
-                                            continue;
-                                        } else if entity_type == "new_mr" {
-                                            let cli = app_cli(&app);
-                                            let title = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Title")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let source = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Source Branch")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let target = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Target Branch")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let labels = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Labels")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let assignees = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Assignees")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let reviewers = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Reviewers")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let milestone = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Milestone")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let status = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Status (Draft/Ready)")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let description = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Description")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let mr_pipeline = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Merge Request Pipeline")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-
-                                            let entity_iid_str = menu.entity_iid.to_string();
-                                            let mut cmd_args: Vec<String> =
-                                                vec![cli.entity("mr").into(), "create".into()];
-                                            if !cli.is_github {
-                                                cmd_args.push("-y".into());
-                                            }
-                                            if menu.entity_iid > 0 {
-                                                if cli.is_github {
-                                                    cmd_args.push("--body".into());
-                                                    cmd_args.push(format!(
-                                                        "Resolves #{}",
-                                                        entity_iid_str
-                                                    ));
-                                                } else {
-                                                    cmd_args.push("--related-issue".into());
-                                                    cmd_args.push(entity_iid_str);
-                                                }
-                                            }
-                                            if !title.is_empty() {
-                                                cmd_args.push("--title".into());
-                                                cmd_args.push(title);
-                                            }
-                                            if !source.is_empty() {
-                                                let flag = if cli.is_github {
-                                                    "--head"
-                                                } else {
-                                                    "--source-branch"
-                                                };
-                                                cmd_args.push(flag.to_string());
-                                                cmd_args.push(source);
-                                            }
-                                            if !target.is_empty() {
-                                                let flag = if cli.is_github {
-                                                    "--base"
-                                                } else {
-                                                    "--target-branch"
-                                                };
-                                                cmd_args.push(flag.to_string());
-                                                cmd_args.push(target);
-                                            }
-                                            if !labels.is_empty() {
-                                                cmd_args.push("--label".into());
-                                                cmd_args.push(labels);
-                                            }
-                                            if !assignees.is_empty() {
-                                                let clean = assignees
-                                                    .split(',')
-                                                    .map(|a| {
-                                                        a.trim().trim_start_matches('@').to_string()
-                                                    })
-                                                    .collect::<Vec<_>>()
-                                                    .join(",");
-                                                cmd_args.push("--assignee".into());
-                                                cmd_args.push(clean);
-                                            }
-                                            if !reviewers.is_empty() {
-                                                let clean = reviewers
-                                                    .split(',')
-                                                    .map(|r| {
-                                                        r.trim().trim_start_matches('@').to_string()
-                                                    })
-                                                    .collect::<Vec<_>>()
-                                                    .join(",");
-                                                cmd_args.push("--reviewer".into());
-                                                cmd_args.push(clean);
-                                            }
-                                            if !milestone.is_empty() {
-                                                cmd_args.push("--milestone".into());
-                                                cmd_args.push(milestone);
-                                            }
-                                            if status.to_lowercase() == "draft" {
-                                                cmd_args.push("--draft".into());
-                                            }
-                                            if mr_pipeline.to_lowercase() == "yes" {
-                                                if cli.is_github {
-                                                    // gh pr create doesn't have --create-pipeline
-                                                } else {
-                                                    cmd_args.push("--create-pipeline".into());
-                                                }
-                                            }
-                                            if !description.is_empty() {
-                                                cmd_args.push(cli.flag_description().to_string());
-                                                cmd_args.push(description);
-                                            }
-
-                                            app.edit_menu = None;
-                                            run_cli(
-                                                &cli,
-                                                &cmd_args,
-                                                &mut terminal,
-                                                events.sender(),
-                                                app.active_tab,
-                                            )
-                                            .await;
-
-                                            if let Some(client) = &app.gitlab_client {
-                                                spawn_refresh_active_tab(
-                                                    client,
-                                                    &app.project_context,
-                                                    app.active_tab,
-                                                    events.sender(),
-                                                    app.is_column_visible(
-                                                        app.active_tab,
-                                                        "Show Closed Items",
-                                                    ),
-                                                );
-                                            }
-                                            continue;
-                                        } else if entity_type == "new_pipeline" {
-                                            let cli = app_cli(&app);
-                                            let branch = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Branch / Ref")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let mr = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Merge Request Pipeline")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let variables = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Variables")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let inputs = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Inputs")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-                                            let workflow = menu
-                                                .fields
-                                                .iter()
-                                                .find(|(k, _)| k == "Workflow / CI File (GitHub)")
-                                                .map(|(_, v)| v.trim().to_string())
-                                                .unwrap_or_default();
-
-                                            let var_pairs = parse_key_value_pairs(&variables);
-                                            let mut var_strs = Vec::new();
-                                            for (k, v) in &var_pairs {
-                                                var_strs.push(format!(
-                                                    "{}{}{}",
-                                                    k,
-                                                    cli.input_separator(),
-                                                    v
-                                                ));
-                                            }
-
-                                            let input_pairs = parse_key_value_pairs(&inputs);
-                                            let mut input_strs = Vec::new();
-                                            for (k, v) in &input_pairs {
-                                                input_strs.push(format!(
-                                                    "{}{}{}",
-                                                    k,
-                                                    cli.input_separator(),
-                                                    v
-                                                ));
-                                            }
-
-                                            let mut cmd_args: Vec<String> = vec![
-                                                if cli.is_github {
-                                                    "workflow".into()
-                                                } else {
-                                                    "ci".into()
-                                                },
-                                                "run".into(),
-                                            ];
-                                            if !workflow.is_empty() {
-                                                cmd_args.push(workflow);
-                                            }
-                                            if !branch.is_empty() {
-                                                cmd_args.push(cli.flag_branch().to_string());
-                                                cmd_args.push(branch);
-                                            }
-                                            if mr.to_lowercase() == "yes" && !cli.is_github {
-                                                cmd_args.push("--mr".into());
-                                            }
-
-                                            let var_flag = cli.flag_variable();
-                                            for s in &var_strs {
-                                                cmd_args.push(var_flag.to_string());
-                                                cmd_args.push(s.clone());
-                                            }
-                                            let input_flag = cli.flag_input();
-                                            for s in &input_strs {
-                                                cmd_args.push(input_flag.to_string());
-                                                cmd_args.push(s.clone());
-                                            }
-
-                                            app.edit_menu = None;
-                                            run_cli(
-                                                &cli,
-                                                &cmd_args,
-                                                &mut terminal,
-                                                events.sender(),
-                                                app.active_tab,
-                                            )
-                                            .await;
-
-                                            if let Some(client) = &app.gitlab_client {
-                                                spawn_refresh_active_tab(
-                                                    client,
-                                                    &app.project_context,
-                                                    app.active_tab,
-                                                    events.sender(),
-                                                    app.is_column_visible(
-                                                        app.active_tab,
-                                                        "Show Closed Items",
-                                                    ),
-                                                );
-                                            }
-                                            continue;
+                                        let mut cmd_args: Vec<String> =
+                                            vec!["issue".into(), "create".into()];
+                                        if !title.is_empty() {
+                                            cmd_args.push("--title".into());
+                                            cmd_args.push(title);
                                         }
+                                        if !description.is_empty() {
+                                            cmd_args.push(cli.flag_description().to_string());
+                                            cmd_args.push(description);
+                                        }
+                                        if !labels.is_empty() {
+                                            cmd_args.push("--label".into());
+                                            cmd_args.push(labels.replace(", ", ","));
+                                        }
+                                        if !assignees.is_empty() {
+                                            let clean = assignees
+                                                .split(',')
+                                                .map(|a| {
+                                                    a.trim().trim_start_matches('@').to_string()
+                                                })
+                                                .collect::<Vec<_>>()
+                                                .join(",");
+                                            cmd_args.push("--assignee".into());
+                                            cmd_args.push(clean);
+                                        }
+                                        if !milestone.is_empty() {
+                                            cmd_args.push("--milestone".into());
+                                            cmd_args.push(milestone);
+                                        }
+                                        if confidential.to_lowercase() == "yes" {
+                                            cmd_args.push("--confidential".into());
+                                        }
+                                        if !due_date.is_empty() {
+                                            cmd_args.push("--due-date".into());
+                                            cmd_args.push(due_date);
+                                        }
+                                        if !weight.is_empty() && weight != "0" {
+                                            cmd_args.push("--weight".into());
+                                            cmd_args.push(weight);
+                                        }
+
+                                        app.edit_menu = None;
+                                        run_cli(
+                                            &cli,
+                                            &cmd_args,
+                                            &mut terminal,
+                                            events.sender(),
+                                            app.active_tab,
+                                        )
+                                        .await;
+
+                                        if let Some(client) = &app.gitlab_client {
+                                            spawn_refresh_active_tab(
+                                                client,
+                                                &app.project_context,
+                                                app.active_tab,
+                                                events.sender(),
+                                                app.is_column_visible(
+                                                    app.active_tab,
+                                                    "Show Closed Items",
+                                                ),
+                                            );
+                                        }
+                                        continue;
+                                    } else if entity_type == "new_mr" {
+                                        let cli = app_cli(&app);
+                                        let title = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Title")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let source = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Source Branch")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let target = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Target Branch")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let labels = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Labels")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let assignees = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Assignees")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let reviewers = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Reviewers")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let milestone = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Milestone")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let status = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Status (Draft/Ready)")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let description = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Description")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let mr_pipeline = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Merge Request Pipeline")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+
+                                        let entity_iid_str = menu.entity_iid.to_string();
+                                        let mut cmd_args: Vec<String> =
+                                            vec![cli.entity("mr").into(), "create".into()];
+                                        if !cli.is_github {
+                                            cmd_args.push("-y".into());
+                                        }
+                                        if menu.entity_iid > 0 {
+                                            if cli.is_github {
+                                                cmd_args.push("--body".into());
+                                                cmd_args
+                                                    .push(format!("Resolves #{}", entity_iid_str));
+                                            } else {
+                                                cmd_args.push("--related-issue".into());
+                                                cmd_args.push(entity_iid_str);
+                                            }
+                                        }
+                                        if !title.is_empty() {
+                                            cmd_args.push("--title".into());
+                                            cmd_args.push(title);
+                                        }
+                                        if !source.is_empty() {
+                                            let flag = if cli.is_github {
+                                                "--head"
+                                            } else {
+                                                "--source-branch"
+                                            };
+                                            cmd_args.push(flag.to_string());
+                                            cmd_args.push(source);
+                                        }
+                                        if !target.is_empty() {
+                                            let flag = if cli.is_github {
+                                                "--base"
+                                            } else {
+                                                "--target-branch"
+                                            };
+                                            cmd_args.push(flag.to_string());
+                                            cmd_args.push(target);
+                                        }
+                                        if !labels.is_empty() {
+                                            cmd_args.push("--label".into());
+                                            cmd_args.push(labels.replace(", ", ","));
+                                        }
+                                        if !assignees.is_empty() {
+                                            let clean = assignees
+                                                .split(',')
+                                                .map(|a| {
+                                                    a.trim().trim_start_matches('@').to_string()
+                                                })
+                                                .collect::<Vec<_>>()
+                                                .join(",");
+                                            cmd_args.push("--assignee".into());
+                                            cmd_args.push(clean);
+                                        }
+                                        if !reviewers.is_empty() {
+                                            let clean = reviewers
+                                                .split(',')
+                                                .map(|r| {
+                                                    r.trim().trim_start_matches('@').to_string()
+                                                })
+                                                .collect::<Vec<_>>()
+                                                .join(",");
+                                            cmd_args.push("--reviewer".into());
+                                            cmd_args.push(clean);
+                                        }
+                                        if !milestone.is_empty() {
+                                            cmd_args.push("--milestone".into());
+                                            cmd_args.push(milestone);
+                                        }
+                                        if status.to_lowercase() == "draft" {
+                                            cmd_args.push("--draft".into());
+                                        }
+                                        if mr_pipeline.to_lowercase() == "yes" {
+                                            if cli.is_github {
+                                                // gh pr create doesn't have --create-pipeline
+                                            } else {
+                                                cmd_args.push("--create-pipeline".into());
+                                            }
+                                        }
+                                        if !description.is_empty() {
+                                            cmd_args.push(cli.flag_description().to_string());
+                                            cmd_args.push(description);
+                                        }
+
+                                        app.edit_menu = None;
+                                        run_cli(
+                                            &cli,
+                                            &cmd_args,
+                                            &mut terminal,
+                                            events.sender(),
+                                            app.active_tab,
+                                        )
+                                        .await;
+
+                                        if let Some(client) = &app.gitlab_client {
+                                            spawn_refresh_active_tab(
+                                                client,
+                                                &app.project_context,
+                                                app.active_tab,
+                                                events.sender(),
+                                                app.is_column_visible(
+                                                    app.active_tab,
+                                                    "Show Closed Items",
+                                                ),
+                                            );
+                                        }
+                                        continue;
+                                    } else if entity_type == "new_pipeline" {
+                                        let cli = app_cli(&app);
+                                        let branch = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Branch / Ref")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let mr = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Merge Request Pipeline")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let variables = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Variables")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let inputs = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Inputs")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+                                        let workflow = menu
+                                            .fields
+                                            .iter()
+                                            .find(|(k, _)| k == "Workflow / CI File (GitHub)")
+                                            .map(|(_, v)| v.trim().to_string())
+                                            .unwrap_or_default();
+
+                                        let var_pairs = parse_key_value_pairs(&variables);
+                                        let mut var_strs = Vec::new();
+                                        for (k, v) in &var_pairs {
+                                            var_strs.push(format!(
+                                                "{}{}{}",
+                                                k,
+                                                cli.input_separator(),
+                                                v
+                                            ));
+                                        }
+
+                                        let input_pairs = parse_key_value_pairs(&inputs);
+                                        let mut input_strs = Vec::new();
+                                        for (k, v) in &input_pairs {
+                                            input_strs.push(format!(
+                                                "{}{}{}",
+                                                k,
+                                                cli.input_separator(),
+                                                v
+                                            ));
+                                        }
+
+                                        let mut cmd_args: Vec<String> = vec![
+                                            if cli.is_github {
+                                                "workflow".into()
+                                            } else {
+                                                "ci".into()
+                                            },
+                                            "run".into(),
+                                        ];
+                                        if !workflow.is_empty() {
+                                            cmd_args.push(workflow);
+                                        }
+                                        if !branch.is_empty() {
+                                            cmd_args.push(cli.flag_branch().to_string());
+                                            cmd_args.push(branch);
+                                        }
+                                        if mr.to_lowercase() == "yes" && !cli.is_github {
+                                            cmd_args.push("--mr".into());
+                                        }
+
+                                        let var_flag = cli.flag_variable();
+                                        for s in &var_strs {
+                                            cmd_args.push(var_flag.to_string());
+                                            cmd_args.push(s.clone());
+                                        }
+                                        let input_flag = cli.flag_input();
+                                        for s in &input_strs {
+                                            cmd_args.push(input_flag.to_string());
+                                            cmd_args.push(s.clone());
+                                        }
+
+                                        app.edit_menu = None;
+                                        run_cli(
+                                            &cli,
+                                            &cmd_args,
+                                            &mut terminal,
+                                            events.sender(),
+                                            app.active_tab,
+                                        )
+                                        .await;
+
+                                        if let Some(client) = &app.gitlab_client {
+                                            spawn_refresh_active_tab(
+                                                client,
+                                                &app.project_context,
+                                                app.active_tab,
+                                                events.sender(),
+                                                app.is_column_visible(
+                                                    app.active_tab,
+                                                    "Show Closed Items",
+                                                ),
+                                            );
+                                        }
+                                        continue;
+                                    }
                                 }
 
                                 // Not on submit — act on the currently selected field

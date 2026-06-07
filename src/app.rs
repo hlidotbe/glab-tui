@@ -147,20 +147,11 @@ impl Selector {
                 .map(|item| (item.clone(), None))
                 .collect()
         } else {
-            let matcher = SkimMatcherV2::default();
-            let mut scored: Vec<(String, Vec<usize>, i64)> = self
-                .all_items
+            let q = query.to_lowercase();
+            self.all_items
                 .iter()
-                .filter_map(|item| {
-                    matcher
-                        .fuzzy_indices(item, query)
-                        .map(|(score, indices)| (item.clone(), indices, score))
-                })
-                .collect();
-            scored.sort_by(|a, b| b.2.cmp(&a.2));
-            scored
-                .into_iter()
-                .map(|(item, indices, _)| (item, Some(indices)))
+                .filter(|item| item.to_lowercase().contains(&q))
+                .map(|item| (item.clone(), None))
                 .collect()
         };
 
@@ -170,7 +161,7 @@ impl Selector {
                 .iter()
                 .any(|item| item.to_lowercase() == query.to_lowercase());
             if !exact_match {
-                items.insert(0, (format!("+ Create \"{}\"", query), None));
+                items.push((format!("+ Create \"{}\"", query), None));
             }
         }
         items
@@ -898,62 +889,53 @@ impl App {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
-        let matcher = SkimMatcherV2::default();
-        let mut scored_items = Vec::new();
-
-        for item in items {
-            let mut best_score = None;
-
-            let mut check_match = |text: &str| {
-                if let Some(score) = matcher.fuzzy_match(text, query) {
-                    if best_score.is_none() || Some(score) > best_score {
-                        best_score = Some(score);
+        let q = query.trim().to_lowercase();
+        items
+            .iter()
+            .filter(|item| {
+                let mut matches = false;
+                let mut check_match = |text: &str| {
+                    if text.to_lowercase().contains(&q) {
+                        matches = true;
+                    }
+                };
+                if enabled_cols.contains("ID") {
+                    check_match(&format!("#{}", item.iid));
+                    check_match(&item.iid.to_string());
+                }
+                if enabled_cols.contains("State") {
+                    if item.state == "opened" {
+                        check_match("OPEN");
+                    } else if item.state == "closed" {
+                        check_match("CLOSED");
                     }
                 }
-            };
-
-            if enabled_cols.contains("ID") {
-                check_match(&format!("#{}", item.iid));
-                check_match(&item.iid.to_string());
-            }
-            if enabled_cols.contains("State") {
-                if item.state == "opened" {
-                    check_match("OPEN");
-                } else if item.state == "closed" {
-                    check_match("CLOSED");
+                if enabled_cols.contains("Title") {
+                    check_match(&item.title);
                 }
-            }
-            if enabled_cols.contains("Title") {
-                check_match(&item.title);
-            }
-            if enabled_cols.contains("Author") {
-                check_match(&item.author.username);
-                check_match(&format!("@{}", item.author.username));
-            }
-            if enabled_cols.contains("Milestone") {
-                if let Some(m) = &item.milestone {
-                    check_match(&m.title);
+                if enabled_cols.contains("Author") {
+                    check_match(&item.author.username);
+                    check_match(&format!("@{}", item.author.username));
                 }
-            }
-            if enabled_cols.contains("Labels") {
-                for label in &item.labels {
-                    check_match(label);
+                if enabled_cols.contains("Milestone") {
+                    if let Some(m) = &item.milestone {
+                        check_match(&m.title);
+                    }
                 }
-            }
-            if enabled_cols.contains("Assignees") {
-                for assignee in &item.assignees {
-                    check_match(&assignee.username);
-                    check_match(&format!("@{}", assignee.username));
+                if enabled_cols.contains("Labels") {
+                    for label in &item.labels {
+                        check_match(label);
+                    }
                 }
-            }
-
-            if let Some(score) = best_score {
-                scored_items.push((item, score));
-            }
-        }
-
-        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
-        scored_items.into_iter().map(|(item, _)| item).collect()
+                if enabled_cols.contains("Assignees") {
+                    for assignee in &item.assignees {
+                        check_match(&assignee.username);
+                        check_match(&format!("@{}", assignee.username));
+                    }
+                }
+                matches
+            })
+            .collect()
     }
 
     pub fn filtered_issues(&self) -> Vec<&crate::gitlab::issues::Issue> {
@@ -1066,47 +1048,38 @@ impl App {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
-        let matcher = SkimMatcherV2::default();
-        let mut scored_items = Vec::new();
-
-        for item in items {
-            let mut best_score = None;
-
-            let mut check_match = |text: &str| {
-                if let Some(score) = matcher.fuzzy_match(text, query) {
-                    if best_score.is_none() || Some(score) > best_score {
-                        best_score = Some(score);
+        let q = query.trim().to_lowercase();
+        items
+            .iter()
+            .filter(|item| {
+                let mut matches = false;
+                let mut check_match = |text: &str| {
+                    if text.to_lowercase().contains(&q) {
+                        matches = true;
+                    }
+                };
+                if enabled_cols.contains("ID") {
+                    check_match(&format!("#{}", item.id));
+                    check_match(&item.id.to_string());
+                }
+                if enabled_cols.contains("Status") {
+                    check_match(&item.status);
+                }
+                if enabled_cols.contains("Ref") {
+                    check_match(&item.r#ref);
+                }
+                if enabled_cols.contains("Stages") {
+                    if let Some(jobs) = pipeline_jobs.get(&item.id) {
+                        for job in jobs {
+                            check_match(&job.name);
+                            check_match(&job.stage);
+                            check_match(&job.status);
+                        }
                     }
                 }
-            };
-
-            if enabled_cols.contains("ID") {
-                check_match(&format!("#{}", item.id));
-                check_match(&item.id.to_string());
-            }
-            if enabled_cols.contains("Status") {
-                check_match(&item.status);
-            }
-            if enabled_cols.contains("Ref") {
-                check_match(&item.r#ref);
-            }
-            if enabled_cols.contains("Stages") {
-                if let Some(jobs) = pipeline_jobs.get(&item.id) {
-                    for job in jobs {
-                        check_match(&job.name);
-                        check_match(&job.stage);
-                        check_match(&job.status);
-                    }
-                }
-            }
-
-            if let Some(score) = best_score {
-                scored_items.push((item, score));
-            }
-        }
-
-        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
-        scored_items.into_iter().map(|(item, _)| item).collect()
+                matches
+            })
+            .collect()
     }
 
     pub fn filtered_pipelines(&self) -> Vec<&crate::gitlab::pipelines::Pipeline> {
@@ -1131,40 +1104,36 @@ impl App {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
-        let matcher = SkimMatcherV2::default();
-        let mut scored_items = Vec::new();
-        for item in items {
-            let mut best_score = None;
-            let mut check_match = |text: &str| {
-                if let Some(score) = matcher.fuzzy_match(text, query) {
-                    if best_score.is_none() || Some(score) > best_score {
-                        best_score = Some(score);
+        let q = query.trim().to_lowercase();
+        items
+            .iter()
+            .filter(|item| {
+                let mut matches = false;
+                let mut check_match = |text: &str| {
+                    if text.to_lowercase().contains(&q) {
+                        matches = true;
+                    }
+                };
+                if enabled_cols.contains("ID") {
+                    check_match(&item.id.to_string());
+                }
+                if enabled_cols.contains("Status") {
+                    check_match(&item.status);
+                }
+                if enabled_cols.contains("Stage") {
+                    check_match(&item.stage);
+                }
+                if enabled_cols.contains("Name") {
+                    check_match(&item.name);
+                }
+                if enabled_cols.contains("Matrix") {
+                    if let Some(matrix) = &item.matrix {
+                        check_match(matrix);
                     }
                 }
-            };
-            if enabled_cols.contains("ID") {
-                check_match(&item.id.to_string());
-            }
-            if enabled_cols.contains("Status") {
-                check_match(&item.status);
-            }
-            if enabled_cols.contains("Stage") {
-                check_match(&item.stage);
-            }
-            if enabled_cols.contains("Name") {
-                check_match(&item.name);
-            }
-            if enabled_cols.contains("Matrix") {
-                if let Some(matrix) = &item.matrix {
-                    check_match(matrix);
-                }
-            }
-            if let Some(score) = best_score {
-                scored_items.push((item, score));
-            }
-        }
-        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
-        scored_items.into_iter().map(|(item, _)| item).collect()
+                matches
+            })
+            .collect()
     }
 
     pub fn filtered_jobs(&self) -> Vec<&crate::gitlab::pipelines::Job> {
@@ -1185,44 +1154,35 @@ impl App {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
-        let matcher = SkimMatcherV2::default();
-        let mut scored_items = Vec::new();
-
-        for item in items {
-            let mut best_score = None;
-
-            let mut check_match = |text: &str| {
-                if let Some(score) = matcher.fuzzy_match(text, query) {
-                    if best_score.is_none() || Some(score) > best_score {
-                        best_score = Some(score);
+        let q = query.trim().to_lowercase();
+        items
+            .iter()
+            .filter(|item| {
+                let mut matches = false;
+                let mut check_match = |text: &str| {
+                    if text.to_lowercase().contains(&q) {
+                        matches = true;
+                    }
+                };
+                if enabled_cols.contains("ID") {
+                    check_match(&item.id.to_string());
+                }
+                if enabled_cols.contains("Description") {
+                    if let Some(desc) = &item.description {
+                        check_match(desc);
                     }
                 }
-            };
-
-            if enabled_cols.contains("ID") {
-                check_match(&item.id.to_string());
-            }
-            if enabled_cols.contains("Description") {
-                if let Some(desc) = &item.description {
-                    check_match(desc);
+                if enabled_cols.contains("Status") {
+                    check_match(&item.status);
                 }
-            }
-            if enabled_cols.contains("Status") {
-                check_match(&item.status);
-            }
-            if enabled_cols.contains("Active") {
-                let active_str = if item.active { "active" } else { "inactive" };
-                check_match(active_str);
-                check_match(&item.active.to_string());
-            }
-
-            if let Some(score) = best_score {
-                scored_items.push((item, score));
-            }
-        }
-
-        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
-        scored_items.into_iter().map(|(item, _)| item).collect()
+                if enabled_cols.contains("Active") {
+                    let active_str = if item.active { "active" } else { "inactive" };
+                    check_match(active_str);
+                    check_match(&item.active.to_string());
+                }
+                matches
+            })
+            .collect()
     }
 
     pub fn filtered_runners(&self) -> Vec<&crate::gitlab::runners::Runner> {
@@ -1242,38 +1202,29 @@ impl App {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
-        let matcher = SkimMatcherV2::default();
-        let mut scored_items = Vec::new();
-
-        for item in items {
-            let mut best_score = None;
-
-            let mut check_match = |text: &str| {
-                if let Some(score) = matcher.fuzzy_match(text, query) {
-                    if best_score.is_none() || Some(score) > best_score {
-                        best_score = Some(score);
+        let q = query.trim().to_lowercase();
+        items
+            .iter()
+            .filter(|item| {
+                let mut matches = false;
+                let mut check_match = |text: &str| {
+                    if text.to_lowercase().contains(&q) {
+                        matches = true;
                     }
+                };
+                if enabled_cols.contains("Tag") {
+                    check_match(&item.tag_name);
                 }
-            };
-
-            if enabled_cols.contains("Tag") {
-                check_match(&item.tag_name);
-            }
-            if enabled_cols.contains("Release Name") {
-                check_match(&item.name);
-            }
-            if enabled_cols.contains("Date") {
-                check_match(&item.released_at);
-                check_match(&crate::utils::format::time_ago(&item.released_at));
-            }
-
-            if let Some(score) = best_score {
-                scored_items.push((item, score));
-            }
-        }
-
-        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
-        scored_items.into_iter().map(|(item, _)| item).collect()
+                if enabled_cols.contains("Release Name") {
+                    check_match(&item.name);
+                }
+                if enabled_cols.contains("Date") {
+                    check_match(&item.released_at);
+                    check_match(&crate::utils::format::time_ago(&item.released_at));
+                }
+                matches
+            })
+            .collect()
     }
 
     pub fn filtered_releases(&self) -> Vec<&crate::gitlab::releases::Release> {
@@ -1293,44 +1244,35 @@ impl App {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
-        let matcher = SkimMatcherV2::default();
-        let mut scored_items = Vec::new();
-
-        for item in items {
-            let mut best_score = None;
-
-            let mut check_match = |text: &str| {
-                if let Some(score) = matcher.fuzzy_match(text, query) {
-                    if best_score.is_none() || Some(score) > best_score {
-                        best_score = Some(score);
+        let q = query.trim().to_lowercase();
+        items
+            .iter()
+            .filter(|item| {
+                let mut matches = false;
+                let mut check_match = |text: &str| {
+                    if text.to_lowercase().contains(&q) {
+                        matches = true;
                     }
+                };
+                if enabled_cols.contains("State") {
+                    check_match(&item.state);
                 }
-            };
-
-            if enabled_cols.contains("State") {
-                check_match(&item.state);
-            }
-            if enabled_cols.contains("Project") {
-                check_match(&item.project_path);
-            }
-            if enabled_cols.contains("Type") {
-                check_match(&item.target_type);
-            }
-            if enabled_cols.contains("ID") {
-                check_match(&item.target_iid.to_string());
-                check_match(&format!("#{}", item.target_iid));
-            }
-            if enabled_cols.contains("Title") {
-                check_match(&item.title);
-            }
-
-            if let Some(score) = best_score {
-                scored_items.push((item, score));
-            }
-        }
-
-        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
-        scored_items.into_iter().map(|(item, _)| item).collect()
+                if enabled_cols.contains("Project") {
+                    check_match(&item.project_path);
+                }
+                if enabled_cols.contains("Type") {
+                    check_match(&item.target_type);
+                }
+                if enabled_cols.contains("ID") {
+                    check_match(&item.target_iid.to_string());
+                    check_match(&format!("#{}", item.target_iid));
+                }
+                if enabled_cols.contains("Title") {
+                    check_match(&item.title);
+                }
+                matches
+            })
+            .collect()
     }
 
     pub fn filtered_notifications(&self) -> Vec<&crate::gitlab::notifications::Notification> {
@@ -1350,48 +1292,39 @@ impl App {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
-        let matcher = SkimMatcherV2::default();
-        let mut scored_items = Vec::new();
-
-        for item in items {
-            let mut best_score = None;
-
-            let mut check_match = |text: &str| {
-                if let Some(score) = matcher.fuzzy_match(text, query) {
-                    if best_score.is_none() || Some(score) > best_score {
-                        best_score = Some(score);
+        let q = query.trim().to_lowercase();
+        items
+            .iter()
+            .filter(|item| {
+                let mut matches = false;
+                let mut check_match = |text: &str| {
+                    if text.to_lowercase().contains(&q) {
+                        matches = true;
+                    }
+                };
+                if enabled_cols.contains("IID") {
+                    check_match(&item.iid.to_string());
+                    check_match(&format!("#{}", item.iid));
+                }
+                if enabled_cols.contains("Title") {
+                    check_match(&item.title);
+                }
+                if enabled_cols.contains("State") {
+                    check_match(&item.state);
+                }
+                if enabled_cols.contains("Start Date") {
+                    if let Some(d) = &item.start_date {
+                        check_match(d);
                     }
                 }
-            };
-
-            if enabled_cols.contains("IID") {
-                check_match(&item.iid.to_string());
-                check_match(&format!("#{}", item.iid));
-            }
-            if enabled_cols.contains("Title") {
-                check_match(&item.title);
-            }
-            if enabled_cols.contains("State") {
-                check_match(&item.state);
-            }
-            if enabled_cols.contains("Start Date") {
-                if let Some(d) = &item.start_date {
-                    check_match(d);
+                if enabled_cols.contains("Due Date") {
+                    if let Some(d) = &item.due_date {
+                        check_match(d);
+                    }
                 }
-            }
-            if enabled_cols.contains("Due Date") {
-                if let Some(d) = &item.due_date {
-                    check_match(d);
-                }
-            }
-
-            if let Some(score) = best_score {
-                scored_items.push((item, score));
-            }
-        }
-
-        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
-        scored_items.into_iter().map(|(item, _)| item).collect()
+                matches
+            })
+            .collect()
     }
 
     pub fn filtered_milestones(&self) -> Vec<&crate::gitlab::milestones::Milestone> {
@@ -1411,34 +1344,25 @@ impl App {
         if query.trim().is_empty() {
             return items.iter().collect();
         }
-        let matcher = SkimMatcherV2::default();
-        let mut scored_items = Vec::new();
-
-        for item in items {
-            let mut best_score = None;
-
-            let mut check_match = |text: &str| {
-                if let Some(score) = matcher.fuzzy_match(text, query) {
-                    if best_score.is_none() || Some(score) > best_score {
-                        best_score = Some(score);
+        let q = query.trim().to_lowercase();
+        items
+            .iter()
+            .filter(|item| {
+                let mut matches = false;
+                let mut check_match = |text: &str| {
+                    if text.to_lowercase().contains(&q) {
+                        matches = true;
                     }
+                };
+                if enabled_cols.contains("Title") {
+                    check_match(&item.title);
                 }
-            };
-
-            if enabled_cols.contains("Title") {
-                check_match(&item.title);
-            }
-            if enabled_cols.contains("Path") {
-                check_match(&item.path);
-            }
-
-            if let Some(score) = best_score {
-                scored_items.push((item, score));
-            }
-        }
-
-        scored_items.sort_by(|a, b| b.1.cmp(&a.1));
-        scored_items.into_iter().map(|(item, _)| item).collect()
+                if enabled_cols.contains("Path") {
+                    check_match(&item.path);
+                }
+                matches
+            })
+            .collect()
     }
 
     pub fn filtered_wiki(&self) -> Vec<&crate::gitlab::wiki::WikiPage> {
