@@ -3762,6 +3762,9 @@ async fn main() -> Result<()> {
                                                     .args(["branch", &source, "HEAD"])
                                                     .output();
                                             }
+                                            let _ = std::process::Command::new("git")
+                                                .args(["push", "-u", "origin", &source])
+                                                .output();
                                         }
 
                                         let entity_iid_str = menu.entity_iid.to_string();
