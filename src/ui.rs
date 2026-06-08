@@ -647,6 +647,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .split(chunks[1])
     };
 
+    // Split middle column vertically: main content area + compact terminal pane
+    let (content_area, term_area) = if app.active_tab != Tab::Terminal {
+        let tc = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(6)])
+            .split(middle_chunks[1]);
+        (tc[0], tc[1])
+    } else {
+        (middle_chunks[1], Rect::default())
+    };
+
     // Sidebar: Tabs
     let is_github = app
         .gitlab_client
@@ -712,7 +723,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
                         .style(Style::default().fg(THEME.text_muted)),
-                    middle_chunks[1],
+                    content_area,
                 );
                 f.render_widget(
                     Paragraph::new("Select an item to view details...")
@@ -896,7 +907,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
 
-                f.render_stateful_widget(table, middle_chunks[1], &mut app.issues.state);
+                f.render_stateful_widget(table, content_area, &mut app.issues.state);
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
@@ -1068,7 +1079,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
                         .style(Style::default().fg(THEME.text_muted)),
-                    middle_chunks[1],
+                    content_area,
                 );
                 f.render_widget(
                     Paragraph::new("Select an item to view details...")
@@ -1348,7 +1359,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
 
-                f.render_stateful_widget(table, middle_chunks[1], &mut app.mrs.state);
+                f.render_stateful_widget(table, content_area, &mut app.mrs.state);
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
@@ -1551,7 +1562,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
                         .style(Style::default().fg(THEME.text_muted)),
-                    middle_chunks[1],
+                    content_area,
                 );
                 f.render_widget(
                     Paragraph::new("Select a pipeline to view details...")
@@ -1688,7 +1699,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
 
-                f.render_stateful_widget(table, middle_chunks[1], &mut app.pipelines.state);
+                f.render_stateful_widget(table, content_area, &mut app.pipelines.state);
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
@@ -1783,7 +1794,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
                         .style(Style::default().fg(THEME.text_muted)),
-                    middle_chunks[1],
+                    content_area,
                 );
                 f.render_widget(
                     Paragraph::new("Select a job to view details...")
@@ -1934,7 +1945,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .highlight_symbol(" ❯ ");
 
                 let mut state = app.jobs_list_state.clone();
-                f.render_stateful_widget(table, middle_chunks[1], &mut state);
+                f.render_stateful_widget(table, content_area, &mut state);
                 app.jobs_list_state = state;
 
                 if let Some(trace) = &app.job_trace {
@@ -1997,7 +2008,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
                 }
             } else {
-                f.render_widget(Paragraph::new("\n\n No jobs loaded.\n Press 'p' to manually enter a pipeline ID to fetch jobs for,\n or view a pipeline in Pipelines tab and press Enter.").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), middle_chunks[1]);
+                f.render_widget(Paragraph::new("\n\n No jobs loaded.\n Press 'p' to manually enter a pipeline ID to fetch jobs for,\n or view a pipeline in Pipelines tab and press Enter.").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), content_area);
                 f.render_widget(
                     Paragraph::new("Select a job to view details...")
                         .block(
@@ -2018,7 +2029,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
                         .style(Style::default().fg(THEME.text_muted)),
-                    middle_chunks[1],
+                    content_area,
                 );
                 f.render_widget(
                     Paragraph::new("Select a runner to view details...")
@@ -2137,7 +2148,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
 
-                f.render_stateful_widget(table, middle_chunks[1], &mut app.runners.state);
+                f.render_stateful_widget(table, content_area, &mut app.runners.state);
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
@@ -2297,7 +2308,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
                         .style(Style::default().fg(THEME.text_muted)),
-                    middle_chunks[1],
+                    content_area,
                 );
                 f.render_widget(
                     Paragraph::new("Select a release to view details...")
@@ -2388,7 +2399,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
 
-                f.render_stateful_widget(table, middle_chunks[1], &mut app.releases.state);
+                f.render_stateful_widget(table, content_area, &mut app.releases.state);
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
@@ -2455,7 +2466,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
                         .style(Style::default().fg(THEME.text_muted)),
-                    middle_chunks[1],
+                    content_area,
                 );
                 f.render_widget(
                     Paragraph::new("Select a todo...")
@@ -2587,7 +2598,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
 
-                f.render_stateful_widget(table, middle_chunks[1], &mut app.todos.state);
+                f.render_stateful_widget(table, content_area, &mut app.todos.state);
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
@@ -2671,7 +2682,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
                         .style(Style::default().fg(THEME.text_muted)),
-                    middle_chunks[1],
+                    content_area,
                 );
                 f.render_widget(
                     Paragraph::new("Select a milestone...")
@@ -2747,7 +2758,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .row_highlight_style(highlight_style)
                 .highlight_symbol(" ❯ ");
 
-                f.render_stateful_widget(table, middle_chunks[1], &mut app.milestones.state);
+                f.render_stateful_widget(table, content_area, &mut app.milestones.state);
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
@@ -2856,7 +2867,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
         Tab::Terminal => {
             let num_cmds = app.terminal_commands.len();
-            let area = middle_chunks[1];
+            let area = content_area;
             let base_block =
                 Block::default()
                     .borders(Borders::ALL)
@@ -2907,48 +2918,40 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
 
     // Compact terminal pane at bottom of the middle column
-    if app.active_tab != Tab::Terminal {
-        let middle_col = middle_chunks[1];
-        let term_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(6)])
-            .split(middle_col);
-        let term_area = term_chunks[1];
-        if term_area.height > 0 {
-            let bottom_block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(THEME.border))
-                .title(" Terminal ")
-                .title_style(
-                    Style::default()
-                        .fg(THEME.purple)
-                        .add_modifier(Modifier::BOLD),
-                );
-            f.render_widget(bottom_block.clone(), term_area);
+    if term_area.height > 0 {
+        let bottom_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(THEME.border))
+            .title(" Terminal ")
+            .title_style(
+                Style::default()
+                    .fg(THEME.purple)
+                    .add_modifier(Modifier::BOLD),
+            );
+        f.render_widget(bottom_block.clone(), term_area);
 
-            let bottom_inner = bottom_block.inner(term_area);
-            if bottom_inner.height > 0 {
-                let mut log_lines = Vec::new();
-                let log_height = bottom_inner.height as usize;
+        let bottom_inner = bottom_block.inner(term_area);
+        if bottom_inner.height > 0 {
+            let mut log_lines = Vec::new();
+            let log_height = bottom_inner.height as usize;
 
-                let num_cmds = app.terminal_commands.len();
-                let display_count = std::cmp::min(num_cmds, log_height);
-                let start_idx = num_cmds.saturating_sub(display_count);
+            let num_cmds = app.terminal_commands.len();
+            let display_count = std::cmp::min(num_cmds, log_height);
+            let start_idx = num_cmds.saturating_sub(display_count);
 
-                if display_count < log_height {
-                    for _ in 0..(log_height - display_count) {
-                        log_lines.push(Line::from(""));
-                    }
+            if display_count < log_height {
+                for _ in 0..(log_height - display_count) {
+                    log_lines.push(Line::from(""));
                 }
-
-                for i in start_idx..num_cmds {
-                    if let Some(cmd) = app.terminal_commands.get(i) {
-                        log_lines.push(build_log_line(cmd, bottom_inner.width as usize));
-                    }
-                }
-
-                f.render_widget(Paragraph::new(log_lines), bottom_inner);
             }
+
+            for i in start_idx..num_cmds {
+                if let Some(cmd) = app.terminal_commands.get(i) {
+                    log_lines.push(build_log_line(cmd, bottom_inner.width as usize));
+                }
+            }
+
+            f.render_widget(Paragraph::new(log_lines), bottom_inner);
         }
     }
 

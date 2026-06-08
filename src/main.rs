@@ -193,18 +193,8 @@ async fn run_cli(
                     std::io::Write::write_all(&mut tmp, initial_body.as_bytes()).ok()?;
                     let file_path = tmp.into_temp_path();
 
-                    let mut cmd = if cfg!(target_os = "windows") {
-                        let mut c = std::process::Command::new("cmd");
-                        c.args(&[
-                            "/c",
-                            &format!("{} \"{}\"", editor, file_path.to_string_lossy()),
-                        ]);
-                        c
-                    } else {
-                        let mut c = std::process::Command::new(&editor);
-                        c.arg(&file_path);
-                        c
-                    };
+                    let mut cmd = std::process::Command::new(&editor);
+                    cmd.arg(file_path.as_os_str());
                     cmd.stdin(std::process::Stdio::inherit())
                         .stdout(std::process::Stdio::inherit())
                         .stderr(std::process::Stdio::inherit());
@@ -316,18 +306,8 @@ fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<Strin
         )
         .ok()?;
 
-        let mut cmd = if cfg!(target_os = "windows") {
-            let mut c = std::process::Command::new("cmd");
-            c.args(&[
-                "/c",
-                &format!("{} \"{}\"", editor, file_path.to_string_lossy()),
-            ]);
-            c
-        } else {
-            let mut c = std::process::Command::new(&editor);
-            c.arg(&file_path);
-            c
-        };
+        let mut cmd = std::process::Command::new(&editor);
+        cmd.arg(file_path.as_os_str());
         cmd.stdin(std::process::Stdio::inherit())
             .stdout(std::process::Stdio::inherit())
             .stderr(std::process::Stdio::inherit());
@@ -5583,22 +5563,8 @@ async fn main() -> Result<()> {
                                             let editor = std::env::var("EDITOR")
                                                 .or_else(|_| std::env::var("VISUAL"))
                                                 .unwrap_or_else(|_| "helix".to_string());
-                                            let mut cmd = if cfg!(target_os = "windows") {
-                                                let mut c = std::process::Command::new("cmd");
-                                                c.args(&[
-                                                    "/c",
-                                                    &format!(
-                                                        "{} \"{}\"",
-                                                        editor,
-                                                        temp_file.to_string_lossy()
-                                                    ),
-                                                ]);
-                                                c
-                                            } else {
-                                                let mut c = std::process::Command::new(&editor);
-                                                c.arg(&temp_file);
-                                                c
-                                            };
+                                            let mut cmd = std::process::Command::new(&editor);
+                                            cmd.arg(temp_file.as_os_str());
                                             cmd.stdin(std::process::Stdio::inherit());
                                             cmd.stdout(std::process::Stdio::inherit());
                                             cmd.stderr(std::process::Stdio::inherit());
