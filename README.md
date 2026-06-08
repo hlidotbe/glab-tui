@@ -258,8 +258,9 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 | [`anyhow`](https://crates.io/crates/anyhow) | 1.0 | Ergonomic error handling |
 | [`chrono`](https://crates.io/crates/chrono) | 0.4 | Timestamp formatting ("2 hours ago") |
 | [`tempfile`](https://crates.io/crates/tempfile) | 3.10 | Temporary files for editor integration |
+| [`fuzzy-matcher`](https://crates.io/crates/fuzzy-matcher) | 0.3 | Fuzzy search/filter across table columns |
 
-All API calls are made by shelling out to `glab api` — no GitLab personal access token or direct HTTP client is required inside the binary.
+All API calls are made by shelling out to `gh api` or `glab api` — no personal access token or direct HTTP client is required inside the binary.
 
 ---
 
@@ -268,21 +269,25 @@ All API calls are made by shelling out to `glab api` — no GitLab personal acce
 ```
 src/
 ├── main.rs          # Entry point, event loop, all key-binding handlers
-├── app.rs           # App state, Tab enum, filtering logic
+├── app.rs           # App state, Tab enum, DiffView, filtering logic
 ├── event.rs         # Async event handler (keyboard, tick, async data events)
 ├── ui.rs            # Ratatui render functions for every tab and overlay
 ├── gitlab/
 │   ├── mod.rs       # Module declarations
-│   ├── client.rs    # GitlabClient (wraps `glab api`), project context detection
-│   ├── issues.rs    # Issue type + list/get API calls
-│   ├── mr.rs        # MergeRequest type + list/get API calls
+│   ├── client.rs    # GitlabClient (wraps `gh api` / `glab api`), endpoint translation
+│   ├── issues.rs    # Issue type + list/get/edit API calls
+│   ├── mr.rs        # MergeRequest/PR type + list/get/edit API calls
 │   ├── pipelines.rs # Pipeline + Job types, list/fetch/retry logic, unit tests
-│   ├── runners.rs   # Runner type + list API call
-│   └── releases.rs  # Release type + list API call
+│   ├── runners.rs   # Runner type + list/edit API calls
+│   ├── releases.rs  # Release type + list API call
+│   ├── milestones.rs# Milestone type + list/issue API calls
+│   └── notifications.rs # Todo/notification type + list API calls
 └── utils/
     ├── mod.rs       # Module declarations
-    ├── format.rs    # Time formatting helpers (time_ago, etc.)
-    └── ui.rs        # StatefulTable generic helper
+    ├── cache.rs     # Offline caching for repo context and API payloads
+    ├── format.rs    # Time formatting, markdown rendering, string truncation
+    ├── ui.rs        # StatefulTable generic helper
+    └── update.rs    # GitHub releases self-updater
 ```
 
 ---
@@ -293,7 +298,10 @@ src/
 cargo test
 ```
 
-There is currently a unit test suite for the pipeline job deduplication and stage-ordering logic in [`src/gitlab/pipelines.rs`](src/gitlab/pipelines.rs).
+Unit tests live in several modules:
+- [`src/gitlab/pipelines.rs`](src/gitlab/pipelines.rs) — pipeline job deduplication and stage-ordering logic.
+- [`src/gitlab/client.rs`](src/gitlab/client.rs) — GitHub-to-GitLab endpoint translation and JSON schema translation.
+- [`src/app.rs`](src/app.rs) — selector fuzzy-matching and filter logic.
 
 ---
 
