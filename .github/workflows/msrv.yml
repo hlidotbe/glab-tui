@@ -2,9 +2,9 @@ name: MSRV
 
 on:
   push:
-    branches: ["main", "dev"]
+    branches: ["main"]
   pull_request:
-    branches: ["main", "dev"]
+    branches: ["main"]
   schedule:
     # Run weekly to catch MSRV regressions from dep updates
     - cron: "0 8 * * 2"
