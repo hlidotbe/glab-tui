@@ -189,19 +189,20 @@ async fn run_cli(
                     let editor = std::env::var("EDITOR")
                         .or_else(|_| std::env::var("VISUAL"))
                         .unwrap_or_else(|_| "helix".to_string());
-                    let mut tmp = tempfile::NamedTempFile::new().ok()?;
+                    let mut tmp = tempfile::Builder::new().suffix(".md").tempfile().ok()?;
                     std::io::Write::write_all(&mut tmp, initial_body.as_bytes()).ok()?;
+                    let file_path = tmp.into_temp_path();
 
                     let mut cmd = if cfg!(target_os = "windows") {
                         let mut c = std::process::Command::new("cmd");
                         c.args(&[
                             "/c",
-                            &format!("{} \"{}\"", editor, tmp.path().to_string_lossy()),
+                            &format!("{} \"{}\"", editor, file_path.to_string_lossy()),
                         ]);
                         c
                     } else {
                         let mut c = std::process::Command::new(&editor);
-                        c.arg(tmp.path());
+                        c.arg(&file_path);
                         c
                     };
                     cmd.stdin(std::process::Stdio::inherit())
@@ -211,7 +212,7 @@ async fn run_cli(
                         child.wait().ok()?;
                     }
 
-                    let content = std::fs::read_to_string(tmp.path()).ok()?;
+                    let content = std::fs::read_to_string(&file_path).ok()?;
                     Some(content.trim().to_string())
                 })();
 
@@ -299,17 +300,10 @@ fn editor_name() -> String {
 fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<String> {
     let editor = editor_name();
 
-    // Create a unique temporary file
-    let mut tmp = match tempfile::NamedTempFile::new() {
-        Ok(f) => f,
-        Err(_) => return None,
-    };
-    // Write current description (or empty) to file
-    if std::io::Write::write_all(&mut tmp, current_val.as_bytes()).is_err() {
-        return None;
-    }
+    let mut tmp = tempfile::Builder::new().suffix(".md").tempfile().ok()?;
+    std::io::Write::write_all(&mut tmp, current_val.as_bytes()).ok()?;
+    let file_path = tmp.into_temp_path();
 
-    // Suspend TUI
     crate::event::PAUSED.store(true, std::sync::atomic::Ordering::Relaxed);
     std::thread::sleep(std::time::Duration::from_millis(50));
 
@@ -322,17 +316,16 @@ fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<Strin
         )
         .ok()?;
 
-        // Launch external editor
         let mut cmd = if cfg!(target_os = "windows") {
             let mut c = std::process::Command::new("cmd");
             c.args(&[
                 "/c",
-                &format!("{} \"{}\"", editor, tmp.path().to_string_lossy()),
+                &format!("{} \"{}\"", editor, file_path.to_string_lossy()),
             ]);
             c
         } else {
             let mut c = std::process::Command::new(&editor);
-            c.arg(tmp.path());
+            c.arg(&file_path);
             c
         };
         cmd.stdin(std::process::Stdio::inherit())
@@ -342,7 +335,7 @@ fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<Strin
             child.wait().ok()?;
         }
 
-        let content = std::fs::read_to_string(tmp.path()).ok()?;
+        let content = std::fs::read_to_string(&file_path).ok()?;
         let trimmed = content.trim().to_string();
         if trimmed.is_empty() {
             None
