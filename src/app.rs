@@ -3,7 +3,96 @@
 use crate::utils::ui::StatefulTable;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use ratatui::style::Modifier;
 use ratatui::widgets::{ListState, TableState};
+use std::sync::LazyLock;
+use syntect::highlighting::Style as SyntectStyle;
+use syntect::highlighting::ThemeSet;
+use syntect::parsing::SyntaxSet;
+
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
+
+fn file_extension(file_path: &str) -> Option<&str> {
+    let file_name = file_path.rsplit(|c| c == '/' || c == '\\').next()?;
+    let ext = file_name.rsplit('.').next()?;
+    if ext.is_empty() || ext == file_name {
+        None
+    } else {
+        Some(ext)
+    }
+}
+
+/// Highlight a single line's content using syntect, returning colored spans.
+fn highlight_line_syntax(
+    file_path: &str,
+    line_content: &str,
+    ext: Option<&str>,
+) -> Option<Vec<(ratatui::style::Style, String)>> {
+    let ext = ext.or_else(|| file_extension(file_path))?;
+    let syntax = SYNTAX_SET
+        .find_syntax_by_extension(ext)
+        .or_else(|| SYNTAX_SET.find_syntax_by_extension("txt"))?;
+
+    let mut highlighter =
+        syntect::easy::HighlightLines::new(syntax, &THEME_SET.themes["base16-ocean.dark"]);
+
+    // Remove the leading +/-/space for syntax highlighting, but keep the actual code
+    let code = if line_content.starts_with('+')
+        || line_content.starts_with('-')
+        || line_content.starts_with(' ')
+    {
+        if line_content.len() > 1 {
+            &line_content[1..]
+        } else {
+            ""
+        }
+    } else {
+        line_content
+    };
+
+    let ranges = highlighter.highlight_line(code, &SYNTAX_SET).ok()?;
+
+    let result: Vec<_> = ranges
+        .into_iter()
+        .map(|(style, text)| (syntect_style_to_ratatui(style), text.to_string()))
+        .collect();
+
+    if result.is_empty() {
+        Some(vec![(
+            syntect_style_to_ratatui(SyntectStyle::default()),
+            code.to_string(),
+        )])
+    } else {
+        Some(result)
+    }
+}
+
+fn syntect_style_to_ratatui(style: SyntectStyle) -> ratatui::style::Style {
+    let fg = ratatui::style::Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
+    let mut modifier = Modifier::empty();
+    if style
+        .font_style
+        .contains(syntect::highlighting::FontStyle::BOLD)
+    {
+        modifier |= Modifier::BOLD;
+    }
+    if style
+        .font_style
+        .contains(syntect::highlighting::FontStyle::ITALIC)
+    {
+        modifier |= Modifier::ITALIC;
+    }
+    if style
+        .font_style
+        .contains(syntect::highlighting::FontStyle::UNDERLINE)
+    {
+        modifier |= Modifier::UNDERLINED;
+    }
+    ratatui::style::Style::default()
+        .fg(fg)
+        .add_modifier(modifier)
+}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tab {
@@ -186,6 +275,7 @@ pub struct DiffLine {
     pub file_path: String,
     pub old_line_num: Option<u32>,
     pub new_line_num: Option<u32>,
+    pub syntax_highlighted: Option<Vec<(ratatui::style::Style, String)>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -372,6 +462,8 @@ pub struct DiffView {
     pub visible_nodes: Vec<FlatDiffTreeNode>,
     pub selected_visible_idx: usize,
     pub focus_on_files: bool,
+    pub selection_start: Option<usize>,
+    pub selection_end: Option<usize>,
 }
 
 fn strip_ansi_escapes(input: &str) -> String {
@@ -449,6 +541,7 @@ impl DiffView {
                     file_path: current_file.clone(),
                     old_line_num: None,
                     new_line_num: None,
+                    syntax_highlighted: None,
                 });
                 old_line_num = None;
                 new_line_num = None;
@@ -462,6 +555,7 @@ impl DiffView {
                     file_path: current_file.clone(),
                     old_line_num: None,
                     new_line_num: None,
+                    syntax_highlighted: None,
                 });
             } else if line.starts_with("@@ ") {
                 if let Some(caps) = parse_hunk_header(line) {
@@ -477,36 +571,43 @@ impl DiffView {
                     file_path: current_file.clone(),
                     old_line_num: None,
                     new_line_num: None,
+                    syntax_highlighted: None,
                 });
             } else if line.starts_with('+') {
+                let highlighted = highlight_line_syntax(&current_file, line, None);
                 all_lines.push(DiffLine {
                     content: line.to_string(),
                     line_type: DiffLineType::Addition,
                     file_path: current_file.clone(),
                     old_line_num: None,
                     new_line_num: new_line_num,
+                    syntax_highlighted: highlighted,
                 });
                 if let Some(ref mut n) = new_line_num {
                     *n += 1;
                 }
             } else if line.starts_with('-') {
+                let highlighted = highlight_line_syntax(&current_file, line, None);
                 all_lines.push(DiffLine {
                     content: line.to_string(),
                     line_type: DiffLineType::Deletion,
                     file_path: current_file.clone(),
                     old_line_num: old_line_num,
                     new_line_num: None,
+                    syntax_highlighted: highlighted,
                 });
                 if let Some(ref mut n) = old_line_num {
                     *n += 1;
                 }
             } else {
+                let highlighted = highlight_line_syntax(&current_file, line, None);
                 all_lines.push(DiffLine {
                     content: line.to_string(),
                     line_type: DiffLineType::Normal,
                     file_path: current_file.clone(),
                     old_line_num: old_line_num,
                     new_line_num: new_line_num,
+                    syntax_highlighted: highlighted,
                 });
                 if let Some(ref mut o) = old_line_num {
                     *o += 1;
@@ -543,6 +644,8 @@ impl DiffView {
             visible_nodes,
             selected_visible_idx: 0,
             focus_on_files: true,
+            selection_start: None,
+            selection_end: None,
         };
 
         view.update_active_lines();
@@ -649,6 +752,8 @@ pub struct DraftComment {
     pub file_path: String,
     pub line_num: Option<u32>,
     pub old_line_num: Option<u32>,
+    pub end_line_num: Option<u32>,
+    pub end_old_line_num: Option<u32>,
     pub body: String,
 }
 
@@ -671,6 +776,8 @@ pub enum TextInputAction {
         file_path: String,
         line_num: Option<u32>,
         old_line_num: Option<u32>,
+        end_line_num: Option<u32>,
+        end_old_line_num: Option<u32>,
     },
     EnterPipelineId,
     CreateRelease,

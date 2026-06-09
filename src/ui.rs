@@ -1,17 +1,17 @@
 #![allow(dead_code)]
 
 use ratatui::{
-    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table},
+    Frame,
 };
 
 use crate::app::{App, Tab};
 use crate::utils::format::{format_ref, render_markdown, time_ago, truncate};
-use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 
 fn highlight_fuzzy_match(
     text: &str,
@@ -3053,7 +3053,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
             let indent = "  ".repeat(node.depth);
             let indicator = if node.is_dir {
-                if node.is_expanded { "- " } else { "+ " }
+                if node.is_expanded {
+                    "- "
+                } else {
+                    "+ "
+                }
             } else {
                 "  "
             };
@@ -3106,6 +3110,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             let line = &updated_diff_view.lines[idx];
             let is_cursor = idx == updated_diff_view.cursor_idx;
 
+            let in_selection = updated_diff_view
+                .selection_start
+                .zip(updated_diff_view.selection_end)
+                .map_or(false, |(s, e)| idx >= s && idx <= e);
+
             let old_str = line
                 .old_line_num
                 .map(|n| n.to_string())
@@ -3118,7 +3127,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
             let num_style = Style::default().fg(THEME.text_muted);
             let mut line_spans = vec![
                 Span::styled(
-                    if is_cursor { " ❯ " } else { "   " },
+                    if is_cursor {
+                        " ❯ "
+                    } else if in_selection {
+                        " ▐ "
+                    } else {
+                        "   "
+                    },
                     Style::default()
                         .fg(THEME.yellow)
                         .add_modifier(Modifier::BOLD),
@@ -3127,7 +3142,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 Span::styled(format!("{:>4} │ ", new_str), num_style),
             ];
 
-            let content_style = match line.line_type {
+            let mut content_style = match line.line_type {
                 crate::app::DiffLineType::Addition => Style::default()
                     .fg(Color::Rgb(140, 220, 140))
                     .bg(Color::Rgb(20, 45, 25)),
@@ -3143,6 +3158,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 crate::app::DiffLineType::Normal => Style::default().fg(THEME.text_normal),
             };
 
+            if in_selection {
+                content_style = content_style.bg(Color::Rgb(30, 50, 80));
+            }
+
             let final_content_style = if is_cursor {
                 content_style
                     .add_modifier(Modifier::UNDERLINED)
@@ -3151,7 +3170,23 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 content_style
             };
 
-            line_spans.push(Span::styled(&line.content, final_content_style));
+            if let Some(ref highlighted) = line.syntax_highlighted {
+                for (span_style, text) in highlighted {
+                    let merged = final_content_style
+                        .fg(span_style
+                            .fg
+                            .unwrap_or(final_content_style.fg.unwrap_or(THEME.text_normal)))
+                        .add_modifier(span_style.add_modifier);
+                    let actual_bg = if in_selection {
+                        Color::Rgb(30, 50, 80)
+                    } else {
+                        final_content_style.bg.unwrap_or(Color::Reset)
+                    };
+                    line_spans.push(Span::styled(text.clone(), merged.bg(actual_bg)));
+                }
+            } else {
+                line_spans.push(Span::styled(&line.content, final_content_style));
+            }
             list_lines.push(Line::from(line_spans));
 
             let matching_comments: Vec<_> = app
@@ -3167,10 +3202,20 @@ pub fn render(f: &mut Frame, app: &mut App) {
             for comment in matching_comments {
                 let comment_style = Style::default().fg(THEME.yellow).bg(Color::Rgb(45, 45, 20));
 
+                let range_info = match (comment.end_line_num, comment.end_old_line_num) {
+                    (Some(end_l), _) if end_l != comment.line_num.unwrap_or(0) => {
+                        format!(" (L{}-{})", comment.line_num.unwrap_or(0), end_l)
+                    }
+                    (_, Some(end_o)) if end_o != comment.old_line_num.unwrap_or(0) => {
+                        format!(" (OL{}-{})", comment.old_line_num.unwrap_or(0), end_o)
+                    }
+                    _ => String::new(),
+                };
+
                 let spans = vec![
                     Span::styled("         ", Style::default()),
                     Span::styled(
-                        " 💬 Draft Note: ",
+                        format!(" 💬 Draft Note:{} ", range_info),
                         Style::default()
                             .fg(THEME.yellow)
                             .add_modifier(Modifier::BOLD),
@@ -3183,7 +3228,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let diff_para = Paragraph::new(list_lines).block(diff_block);
 
-        let footer_p = Paragraph::new(" Esc/q: Exit • Tab: Toggle Focus • h/l/Left/Right: Switch Panels • j/k/↑/↓: Navigate • J/K: Next/Prev Hunk • c: Comment • p: Toggle Review Mode • r: Submit Review ")
+        let footer_p = Paragraph::new(" Esc/q: Exit • Tab: Toggle Focus • h/l/Left/Right: Switch Panels • j/k/↑/↓: Navigate • J/K: Next/Prev Hunk • V: Select Lines • c: Comment • e: Suggest Code • p: Toggle Review Mode • r: Submit Review ")
             .alignment(Alignment::Center)
             .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC))
             .wrap(ratatui::widgets::Wrap { trim: true });

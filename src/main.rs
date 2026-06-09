@@ -2147,6 +2147,8 @@ async fn main() -> Result<()> {
                                         file_path,
                                         line_num,
                                         old_line_num,
+                                        end_line_num,
+                                        end_old_line_num,
                                     } => {
                                         if !value.trim().is_empty() {
                                             if app.in_review_mode {
@@ -2154,6 +2156,8 @@ async fn main() -> Result<()> {
                                                     file_path,
                                                     line_num,
                                                     old_line_num,
+                                                    end_line_num,
+                                                    end_old_line_num,
                                                     body: value,
                                                 });
                                                 app.status_message = Some(format!(
@@ -2432,11 +2436,75 @@ async fn main() -> Result<()> {
                                                             .line_num
                                                             .or(comment.old_line_num)
                                                             .unwrap_or(1);
-                                                        arr.push(serde_json::json!({
+                                                        let mut obj = serde_json::json!({
                                                             "path": comment.file_path,
                                                             "line": line,
                                                             "body": comment.body,
-                                                        }));
+                                                        });
+                                                        // Add multi-line range if applicable
+                                                        if let Some(end_l) = comment.end_line_num {
+                                                            if end_l != line {
+                                                                if let Some(obj_map) =
+                                                                    obj.as_object_mut()
+                                                                {
+                                                                    obj_map.insert(
+                                                                        "start_line".to_string(),
+                                                                        serde_json::json!(
+                                                                            line.min(end_l)
+                                                                        ),
+                                                                    );
+                                                                    obj_map.insert(
+                                                                        "start_side".to_string(),
+                                                                        serde_json::json!("RIGHT"),
+                                                                    );
+                                                                    obj_map.insert(
+                                                                        "line".to_string(),
+                                                                        serde_json::json!(
+                                                                            line.max(end_l)
+                                                                        ),
+                                                                    );
+                                                                }
+                                                            }
+                                                        } else if let Some(end_o) =
+                                                            comment.end_old_line_num
+                                                        {
+                                                            if let Some(oln) = comment.old_line_num
+                                                            {
+                                                                if end_o != oln {
+                                                                    if let Some(obj_map) =
+                                                                        obj.as_object_mut()
+                                                                    {
+                                                                        obj_map.insert(
+                                                                            "start_line"
+                                                                                .to_string(),
+                                                                            serde_json::json!(
+                                                                                oln.min(end_o)
+                                                                            ),
+                                                                        );
+                                                                        obj_map.insert(
+                                                                            "start_side"
+                                                                                .to_string(),
+                                                                            serde_json::json!(
+                                                                                "LEFT"
+                                                                            ),
+                                                                        );
+                                                                        obj_map.insert(
+                                                                            "line".to_string(),
+                                                                            serde_json::json!(
+                                                                                oln.max(end_o)
+                                                                            ),
+                                                                        );
+                                                                        obj_map.insert(
+                                                                            "side".to_string(),
+                                                                            serde_json::json!(
+                                                                                "LEFT"
+                                                                            ),
+                                                                        );
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        arr.push(obj);
                                                     }
                                                 }
                                                 let payload = serde_json::json!({
@@ -2588,6 +2656,34 @@ async fn main() -> Result<()> {
                                                             serde_json::json!(old_line_num);
                                                         position["old_path"] =
                                                             serde_json::json!(comment.file_path);
+                                                    }
+
+                                                    // Multi-line range for GitLab
+                                                    if let Some(end_l) = comment.end_line_num {
+                                                        if let Some(start_l) = comment.line_num {
+                                                            if end_l != start_l {
+                                                                let line_range = serde_json::json!({
+                                                                    "start": {"line_code": "", "type": "new_line"},
+                                                                    "end": {"line_code": "", "type": "new_line"},
+                                                                });
+                                                                if let Some(lr) =
+                                                                    line_range.as_object()
+                                                                {
+                                                                    position["line_range"] = serde_json::json!({
+                                                                        "start": {
+                                                                            "line_code": "",
+                                                                            "type": "new_line",
+                                                                            "new_line": start_l.min(end_l),
+                                                                        },
+                                                                        "end": {
+                                                                            "line_code": "",
+                                                                            "type": "new_line",
+                                                                            "new_line": start_l.max(end_l),
+                                                                        },
+                                                                    });
+                                                                }
+                                                            }
+                                                        }
                                                     }
 
                                                     let draft_payload = serde_json::json!({
@@ -4296,9 +4392,16 @@ async fn main() -> Result<()> {
                     }
 
                     if let Some(mut diff_view) = app.diff_view.take() {
+                        let in_selection = diff_view.selection_start.is_some();
                         match key_event.code {
                             KeyCode::Esc | KeyCode::Char('q') => {
-                                app.diff_view = None;
+                                if in_selection {
+                                    diff_view.selection_start = None;
+                                    diff_view.selection_end = None;
+                                } else {
+                                    app.diff_view = None;
+                                    continue;
+                                }
                             }
                             KeyCode::Tab => {
                                 diff_view.focus_on_files = !diff_view.focus_on_files;
@@ -4384,8 +4487,12 @@ async fn main() -> Result<()> {
                                     }
                                 } else {
                                     if !diff_view.lines.is_empty() {
-                                        diff_view.cursor_idx = (diff_view.cursor_idx + 1)
+                                        let new_idx = (diff_view.cursor_idx + 1)
                                             .min(diff_view.lines.len() - 1);
+                                        if in_selection {
+                                            diff_view.selection_end = Some(new_idx);
+                                        }
+                                        diff_view.cursor_idx = new_idx;
                                         diff_view.update_selected_file_from_cursor();
                                     }
                                 }
@@ -4404,7 +4511,11 @@ async fn main() -> Result<()> {
                                     }
                                 } else {
                                     if diff_view.cursor_idx > 0 {
-                                        diff_view.cursor_idx -= 1;
+                                        let new_idx = diff_view.cursor_idx - 1;
+                                        if in_selection {
+                                            diff_view.selection_end = Some(new_idx);
+                                        }
+                                        diff_view.cursor_idx = new_idx;
                                         diff_view.update_selected_file_from_cursor();
                                     }
                                 }
@@ -4419,6 +4530,9 @@ async fn main() -> Result<()> {
                                     {
                                         diff_view.cursor_idx = next_hunk;
                                         diff_view.update_selected_file_from_cursor();
+                                        if in_selection {
+                                            diff_view.selection_end = Some(next_hunk);
+                                        }
                                     }
                                 }
                                 app.diff_view = Some(diff_view);
@@ -4433,6 +4547,27 @@ async fn main() -> Result<()> {
                                     {
                                         diff_view.cursor_idx = prev_hunk;
                                         diff_view.update_selected_file_from_cursor();
+                                        if in_selection {
+                                            diff_view.selection_end = Some(prev_hunk);
+                                        }
+                                    }
+                                }
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('V') => {
+                                if !diff_view.focus_on_files {
+                                    if in_selection {
+                                        diff_view.selection_start = None;
+                                        diff_view.selection_end = None;
+                                        app.status_message =
+                                            Some("Selection cancelled.".to_string());
+                                    } else {
+                                        diff_view.selection_start = Some(diff_view.cursor_idx);
+                                        diff_view.selection_end = Some(diff_view.cursor_idx);
+                                        app.status_message = Some(
+                                            "Selection started. Use j/k to extend, Esc to cancel, c to comment."
+                                                .to_string(),
+                                        );
                                     }
                                 }
                                 app.diff_view = Some(diff_view);
@@ -4446,6 +4581,24 @@ async fn main() -> Result<()> {
                                         _ => false,
                                     };
                                     if can_comment {
+                                        let (end_line_num, end_old_line_num) = diff_view
+                                            .selection_start
+                                            .zip(diff_view.selection_end)
+                                            .and_then(|(s, e)| {
+                                                if s != e {
+                                                    let start_line =
+                                                        diff_view.lines.get(s.min(e))?;
+                                                    let end_line = diff_view.lines.get(s.max(e))?;
+                                                    Some((
+                                                        end_line.new_line_num,
+                                                        end_line.old_line_num,
+                                                    ))
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .unwrap_or((None, None));
+
                                         app.text_input = Some(crate::app::TextInput {
                                             title: format!(" Add Comment to {} ", line.file_path),
                                             value: String::new(),
@@ -4455,13 +4608,22 @@ async fn main() -> Result<()> {
                                                 file_path: line.file_path.clone(),
                                                 line_num: line.new_line_num,
                                                 old_line_num: line.old_line_num,
+                                                end_line_num,
+                                                end_old_line_num,
                                             },
                                         });
+                                        // Clear selection after starting a comment
+                                        diff_view.selection_start = None;
+                                        diff_view.selection_end = None;
                                     }
                                 }
                                 app.diff_view = Some(diff_view);
                             }
                             KeyCode::Char('p') => {
+                                if in_selection {
+                                    diff_view.selection_start = None;
+                                    diff_view.selection_end = None;
+                                }
                                 app.in_review_mode = !app.in_review_mode;
                                 app.status_message = Some(format!(
                                     "Review mode: {}. ({} pending comments)",
@@ -4489,6 +4651,136 @@ async fn main() -> Result<()> {
                                     multi_select: false,
                                     state: ListState::default(),
                                 });
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('e') => {
+                                if let Some(line) = diff_view.lines.get(diff_view.cursor_idx) {
+                                    let can_suggest = match line.line_type {
+                                        crate::app::DiffLineType::Addition
+                                        | crate::app::DiffLineType::Deletion
+                                        | crate::app::DiffLineType::Normal => true,
+                                        _ => false,
+                                    };
+                                    if can_suggest {
+                                        let content = if let (Some(s), Some(e)) =
+                                            (diff_view.selection_start, diff_view.selection_end)
+                                        {
+                                            let (s, e) = (s.min(e), s.max(e));
+                                            diff_view.lines[s..=e]
+                                                .iter()
+                                                .map(|l| {
+                                                    let c = l.content.as_str();
+                                                    if c.starts_with('+')
+                                                        || c.starts_with('-')
+                                                        || c.starts_with(' ')
+                                                    {
+                                                        if c.len() > 1 { &c[1..] } else { "" }
+                                                    } else {
+                                                        c
+                                                    }
+                                                })
+                                                .collect::<Vec<_>>()
+                                                .join("\n")
+                                        } else {
+                                            let c = line.content.as_str();
+                                            if c.starts_with('+')
+                                                || c.starts_with('-')
+                                                || c.starts_with(' ')
+                                            {
+                                                if c.len() > 1 {
+                                                    c[1..].to_string()
+                                                } else {
+                                                    String::new()
+                                                }
+                                            } else {
+                                                c.to_string()
+                                            }
+                                        };
+
+                                        app.status_message = Some(
+                                            "Opening editor for code suggestion...".to_string(),
+                                        );
+                                        let editor_content =
+                                            edit_in_editor(&content, &mut terminal);
+                                        if let Some(suggestion) = editor_content {
+                                            let (end_line_num, end_old_line_num) = diff_view
+                                                .selection_start
+                                                .zip(diff_view.selection_end)
+                                                .and_then(|(s, e)| {
+                                                    if s != e {
+                                                        let end_line =
+                                                            diff_view.lines.get(s.max(e))?;
+                                                        Some((
+                                                            end_line.new_line_num,
+                                                            end_line.old_line_num,
+                                                        ))
+                                                    } else {
+                                                        None
+                                                    }
+                                                })
+                                                .unwrap_or((None, None));
+
+                                            let body =
+                                                format!("```suggestion\n{}\n```", suggestion);
+
+                                            if app.in_review_mode {
+                                                app.draft_comments.push(crate::app::DraftComment {
+                                                    file_path: line.file_path.clone(),
+                                                    line_num: line.new_line_num,
+                                                    old_line_num: line.old_line_num,
+                                                    end_line_num,
+                                                    end_old_line_num,
+                                                    body,
+                                                });
+                                                app.status_message = Some(format!(
+                                                    "Added suggestion draft. ({} pending)",
+                                                    app.draft_comments.len()
+                                                ));
+                                            } else {
+                                                let cli = app_cli(&app);
+                                                let mut args = if cli.is_github {
+                                                    vec![
+                                                        "pr".to_string(),
+                                                        "comment".to_string(),
+                                                        diff_view.mr_iid.to_string(),
+                                                        "--body".to_string(),
+                                                        body,
+                                                    ]
+                                                } else {
+                                                    vec![
+                                                        "mr".to_string(),
+                                                        "note".to_string(),
+                                                        "create".to_string(),
+                                                        diff_view.mr_iid.to_string(),
+                                                        "--file".to_string(),
+                                                        line.file_path.clone(),
+                                                        "-m".to_string(),
+                                                        body,
+                                                    ]
+                                                };
+                                                if !cli.is_github {
+                                                    if let Some(ln) = line.new_line_num {
+                                                        args.push("--line".to_string());
+                                                        args.push(ln.to_string());
+                                                    } else if let Some(oln) = line.old_line_num {
+                                                        args.push("--old-line".to_string());
+                                                        args.push(oln.to_string());
+                                                    }
+                                                }
+                                                run_cli(
+                                                    &cli,
+                                                    &args,
+                                                    &mut terminal,
+                                                    events.sender(),
+                                                    app.active_tab,
+                                                )
+                                                .await;
+                                            }
+                                        }
+                                        diff_view.selection_start = None;
+                                        diff_view.selection_end = None;
+                                    }
+                                }
                                 app.diff_view = Some(diff_view);
                             }
                             _ => {
