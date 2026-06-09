@@ -3611,7 +3611,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .border_style(Style::default().fg(THEME.border_focused))
             .style(Style::default().bg(Color::Reset));
 
-        let area = centered_rect(50, 20, size);
+        let area = centered_rect(60, 60, size);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
