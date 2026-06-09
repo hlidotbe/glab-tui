@@ -3150,8 +3150,7 @@ async fn main() -> Result<()> {
                                         let mut milestone_val = String::new();
                                         let mut source_branch_val =
                                             get_current_branch().unwrap_or_default();
-                                        let mut description_val =
-                                            get_default_template("mr").unwrap_or_default();
+                                        let mut description_val = String::new();
                                         let mut issue_iid = 0;
 
                                         if let Some(item) = selected_val {
@@ -3321,13 +3320,25 @@ async fn main() -> Result<()> {
                                                     .find(|f| f.0 == "Description")
                                                 {
                                                     if choice == "Edit (basic)" {
+                                                        let tmpl_val = if f.1.trim().is_empty() {
+                                                            let template_type =
+                                                                if entity_type == "new_mr" {
+                                                                    "mr"
+                                                                } else {
+                                                                    "issue"
+                                                                };
+                                                            get_default_template(template_type)
+                                                                .unwrap_or_default()
+                                                        } else {
+                                                            f.1.clone()
+                                                        };
                                                         app.text_input = Some(
                                                             crate::app::TextInput {
                                                                 title:
                                                                     " Edit Description "
                                                                         .to_string(),
-                                                                value: f.1.clone(),
-                                                                cursor_idx: f.1.len(),
+                                                                value: tmpl_val.clone(),
+                                                                cursor_idx: tmpl_val.len(),
                                                                 action:
                                                                     crate::app::TextInputAction::EditNewField {
                                                                         field_idx,
@@ -4247,7 +4258,14 @@ async fn main() -> Result<()> {
                                         let action = crate::app::TextInputAction::EditNewField {
                                             field_idx: menu.selected_idx,
                                         };
-                                        let current_val = menu.fields[menu.selected_idx].1.clone();
+                                        let raw_val = menu.fields[menu.selected_idx].1.clone();
+                                        let current_val = if raw_val.trim().is_empty() {
+                                            let template_type =
+                                                if entity_type == "new_mr" { "mr" } else { "issue" };
+                                            get_default_template(template_type).unwrap_or_default()
+                                        } else {
+                                            raw_val
+                                        };
                                         app.text_input = Some(crate::app::TextInput {
                                             title: " Edit Description ".to_string(),
                                             value: current_val.clone(),
@@ -4874,7 +4892,7 @@ async fn main() -> Result<()> {
                                         ("Weight".to_string(), "0".to_string()),
                                         (
                                             "Description".to_string(),
-                                            get_default_template("issue").unwrap_or_default(),
+                                            String::new(),
                                         ),
                                         (
                                             "Description ($EDITOR)".to_string(),
