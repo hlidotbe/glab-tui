@@ -1,17 +1,17 @@
 #![allow(dead_code)]
 
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table},
-    Frame,
 };
 
 use crate::app::{App, Tab};
 use crate::utils::format::{format_ref, render_markdown, time_ago, truncate};
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 
 fn highlight_fuzzy_match(
     text: &str,
@@ -637,13 +637,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
             ])
             .split(chunks[1])
     } else {
+        let details_width = if size.width > 150 {
+            Constraint::Percentage(35)
+        } else if size.width > 100 {
+            Constraint::Length(45)
+        } else {
+            Constraint::Length(30)
+        };
         Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(22),
-                Constraint::Min(0),
-                Constraint::Length(45),
-            ])
+            .constraints([Constraint::Length(22), Constraint::Min(0), details_width])
             .split(chunks[1])
     };
 
@@ -3053,11 +3056,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
             let indent = "  ".repeat(node.depth);
             let indicator = if node.is_dir {
-                if node.is_expanded {
-                    "- "
-                } else {
-                    "+ "
-                }
+                if node.is_expanded { "- " } else { "+ " }
             } else {
                 "  "
             };

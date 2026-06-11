@@ -209,11 +209,14 @@ impl GitlabClient {
 
     pub async fn fetch_raw_api(&self, endpoint: &str) -> Result<String> {
         let desc = get_api_description(endpoint, self.is_github);
+        let is_post = endpoint.contains("/retry") || endpoint.contains("/cancel");
         let cmd_str = if self.is_github {
             let gh_endpoint = gitlab_to_github_endpoint(endpoint);
-            format!("{}: gh api {}", desc, gh_endpoint)
+            let method = if is_post { "-X POST " } else { "" };
+            format!("{}: gh api {}{}", desc, method, gh_endpoint)
         } else {
-            format!("{}: glab api {}", desc, endpoint)
+            let method = if is_post { "-X POST " } else { "" };
+            format!("{}: glab api {}{}", desc, method, endpoint)
         };
         let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
         if let Some(ref tx) = self.tx {
@@ -226,8 +229,14 @@ impl GitlabClient {
 
         let res = if self.is_github {
             let gh_endpoint = gitlab_to_github_endpoint(endpoint);
-            let output = Command::new("gh")
-                .args(["api", &gh_endpoint])
+            let mut cmd = Command::new("gh");
+            cmd.arg("api");
+            if is_post {
+                cmd.arg("-X");
+                cmd.arg("POST");
+            }
+            cmd.arg(&gh_endpoint);
+            let output = cmd
                 .output()
                 .await
                 .context("Failed to execute gh api command");
@@ -284,8 +293,14 @@ impl GitlabClient {
                 }
             }
         } else {
-            let output = Command::new("glab")
-                .args(["api", endpoint])
+            let mut cmd = Command::new("glab");
+            cmd.arg("api");
+            if is_post {
+                cmd.arg("-X");
+                cmd.arg("POST");
+            }
+            cmd.arg(endpoint);
+            let output = cmd
                 .output()
                 .await
                 .context("Failed to execute glab api command");
@@ -425,6 +440,7 @@ fn gitlab_to_github_endpoint(endpoint: &str) -> String {
     path = path.replace("/members/all", "/assignees");
     path = path.replace("/jobs/", "/actions/jobs/");
     path = path.replace("/trace", "/logs");
+    path = path.replace("/retry", "/rerun");
     if path.contains("/milestones/") && path.contains("/issues") {
         if let Some(milestone_id) = path
             .split("/milestones/")

@@ -4260,8 +4260,11 @@ async fn main() -> Result<()> {
                                         };
                                         let raw_val = menu.fields[menu.selected_idx].1.clone();
                                         let current_val = if raw_val.trim().is_empty() {
-                                            let template_type =
-                                                if entity_type == "new_mr" { "mr" } else { "issue" };
+                                            let template_type = if entity_type == "new_mr" {
+                                                "mr"
+                                            } else {
+                                                "issue"
+                                            };
                                             get_default_template(template_type).unwrap_or_default()
                                         } else {
                                             raw_val
@@ -4637,6 +4640,102 @@ async fn main() -> Result<()> {
                                 }
                                 app.diff_view = Some(diff_view);
                             }
+                            KeyCode::Char('C') => {
+                                if let Some(line) = diff_view.lines.get(diff_view.cursor_idx) {
+                                    let can_comment = match line.line_type {
+                                        crate::app::DiffLineType::Addition
+                                        | crate::app::DiffLineType::Deletion
+                                        | crate::app::DiffLineType::Normal => true,
+                                        _ => false,
+                                    };
+                                    if can_comment {
+                                        let (end_line_num, end_old_line_num) = diff_view
+                                            .selection_start
+                                            .zip(diff_view.selection_end)
+                                            .and_then(|(s, e)| {
+                                                if s != e {
+                                                    let end_line = diff_view.lines.get(s.max(e))?;
+                                                    Some((
+                                                        end_line.new_line_num,
+                                                        end_line.old_line_num,
+                                                    ))
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .unwrap_or((None, None));
+
+                                        app.status_message =
+                                            Some("Opening editor for comment...".to_string());
+                                        let comment_content = edit_in_editor("", &mut terminal);
+                                        if let Some(body) = comment_content {
+                                            if !body.trim().is_empty() {
+                                                if app.in_review_mode {
+                                                    app.draft_comments.push(
+                                                        crate::app::DraftComment {
+                                                            file_path: line.file_path.clone(),
+                                                            line_num: line.new_line_num,
+                                                            old_line_num: line.old_line_num,
+                                                            end_line_num,
+                                                            end_old_line_num,
+                                                            body,
+                                                        },
+                                                    );
+                                                    app.status_message = Some(format!(
+                                                        "Added draft comment. ({} pending)",
+                                                        app.draft_comments.len()
+                                                    ));
+                                                } else {
+                                                    let cli = app_cli(&app);
+                                                    let mut args = if cli.is_github {
+                                                        vec![
+                                                            "pr".to_string(),
+                                                            "comment".to_string(),
+                                                            diff_view.mr_iid.to_string(),
+                                                            "--body".to_string(),
+                                                            body,
+                                                        ]
+                                                    } else {
+                                                        vec![
+                                                            "mr".to_string(),
+                                                            "note".to_string(),
+                                                            "create".to_string(),
+                                                            diff_view.mr_iid.to_string(),
+                                                            "--file-path".to_string(),
+                                                            line.file_path.clone(),
+                                                            "-m".to_string(),
+                                                            body,
+                                                        ]
+                                                    };
+                                                    if !cli.is_github {
+                                                        if let Some(ln) = line.new_line_num {
+                                                            args.push("--line".to_string());
+                                                            args.push(ln.to_string());
+                                                        } else if let Some(old_line) =
+                                                            line.old_line_num
+                                                        {
+                                                            args.push("--old-line".to_string());
+                                                            args.push(old_line.to_string());
+                                                        }
+                                                    }
+                                                    run_cli(
+                                                        &cli,
+                                                        &args,
+                                                        &mut terminal,
+                                                        events.sender(),
+                                                        app.active_tab,
+                                                    )
+                                                    .await;
+                                                }
+                                            }
+                                        }
+                                        // Clear selection after starting a comment
+                                        diff_view.selection_start = None;
+                                        diff_view.selection_end = None;
+                                    }
+                                }
+                                app.diff_view = Some(diff_view);
+                            }
                             KeyCode::Char('p') => {
                                 if in_selection {
                                     diff_view.selection_start = None;
@@ -4890,10 +4989,7 @@ async fn main() -> Result<()> {
                                         ("Confidential".to_string(), "No".to_string()),
                                         ("Due Date".to_string(), String::new()),
                                         ("Weight".to_string(), "0".to_string()),
-                                        (
-                                            "Description".to_string(),
-                                            String::new(),
-                                        ),
+                                        ("Description".to_string(), String::new()),
                                         (
                                             "Description ($EDITOR)".to_string(),
                                             format!("Open in {}", editor_name()),
