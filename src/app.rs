@@ -1060,7 +1060,50 @@ impl App {
             .enabled_columns
             .get(&Tab::Issues)
             .unwrap_or(&default_set);
-        Self::filter_issues_list(&self.issues.items, &self.search_query, enabled_cols)
+        let mut list =
+            Self::filter_issues_list(&self.issues.items, &self.search_query, enabled_cols);
+        if let Some(ref col) = self.group_by_column {
+            list.sort_by(|a, b| {
+                let val_a = match col.as_str() {
+                    "State" => a.state.clone(),
+                    "Author" => a.author.username.clone(),
+                    "Labels" => a.labels.first().cloned().unwrap_or_default(),
+                    "Milestone" => a
+                        .milestone
+                        .as_ref()
+                        .map(|m| m.title.clone())
+                        .unwrap_or_default(),
+                    "Assignees" => a
+                        .assignees
+                        .first()
+                        .map(|asg| asg.username.clone())
+                        .unwrap_or_default(),
+                    "ID" => a.iid.to_string(),
+                    "Title" => a.title.clone(),
+                    _ => String::new(),
+                };
+                let val_b = match col.as_str() {
+                    "State" => b.state.clone(),
+                    "Author" => b.author.username.clone(),
+                    "Labels" => b.labels.first().cloned().unwrap_or_default(),
+                    "Milestone" => b
+                        .milestone
+                        .as_ref()
+                        .map(|m| m.title.clone())
+                        .unwrap_or_default(),
+                    "Assignees" => b
+                        .assignees
+                        .first()
+                        .map(|asg| asg.username.clone())
+                        .unwrap_or_default(),
+                    "ID" => b.iid.to_string(),
+                    "Title" => b.title.clone(),
+                    _ => String::new(),
+                };
+                val_a.cmp(&val_b)
+            });
+        }
+        list
     }
 
     pub fn filter_mrs_list<'a>(
@@ -1152,7 +1195,73 @@ impl App {
             .enabled_columns
             .get(&Tab::MergeRequests)
             .unwrap_or(&default_set);
-        Self::filter_mrs_list(&self.mrs.items, &self.search_query, enabled_cols)
+        let mut list = Self::filter_mrs_list(&self.mrs.items, &self.search_query, enabled_cols);
+        if let Some(ref col) = self.group_by_column {
+            list.sort_by(|a, b| {
+                let val_a = match col.as_str() {
+                    "State" => a.state.clone(),
+                    "Author" => a.author.username.clone(),
+                    "Labels" => a.labels.first().cloned().unwrap_or_default(),
+                    "Milestone" => a
+                        .milestone
+                        .as_ref()
+                        .map(|m| m.title.clone())
+                        .unwrap_or_default(),
+                    "Assignees" => a
+                        .assignees
+                        .first()
+                        .map(|asg| asg.username.clone())
+                        .unwrap_or_default(),
+                    "Reviewers" => a
+                        .reviewers
+                        .first()
+                        .map(|rev| rev.username.clone())
+                        .unwrap_or_default(),
+                    "Status" => {
+                        if a.draft {
+                            "Draft".to_string()
+                        } else {
+                            "Ready".to_string()
+                        }
+                    }
+                    "ID" => a.iid.to_string(),
+                    "Title" => a.title.clone(),
+                    _ => String::new(),
+                };
+                let val_b = match col.as_str() {
+                    "State" => b.state.clone(),
+                    "Author" => b.author.username.clone(),
+                    "Labels" => b.labels.first().cloned().unwrap_or_default(),
+                    "Milestone" => b
+                        .milestone
+                        .as_ref()
+                        .map(|m| m.title.clone())
+                        .unwrap_or_default(),
+                    "Assignees" => b
+                        .assignees
+                        .first()
+                        .map(|asg| asg.username.clone())
+                        .unwrap_or_default(),
+                    "Reviewers" => b
+                        .reviewers
+                        .first()
+                        .map(|rev| rev.username.clone())
+                        .unwrap_or_default(),
+                    "Status" => {
+                        if b.draft {
+                            "Draft".to_string()
+                        } else {
+                            "Ready".to_string()
+                        }
+                    }
+                    "ID" => b.iid.to_string(),
+                    "Title" => b.title.clone(),
+                    _ => String::new(),
+                };
+                val_a.cmp(&val_b)
+            });
+        }
+        list
     }
 
     pub fn filter_pipelines_list<'a>(
@@ -1204,12 +1313,30 @@ impl App {
             .enabled_columns
             .get(&Tab::Pipelines)
             .unwrap_or(&default_set);
-        Self::filter_pipelines_list(
+        let mut list = Self::filter_pipelines_list(
             &self.pipelines.items,
             &self.search_query,
             &self.pipeline_jobs,
             enabled_cols,
-        )
+        );
+        if let Some(ref col) = self.group_by_column {
+            list.sort_by(|a, b| {
+                let val_a = match col.as_str() {
+                    "Status" => a.status.clone(),
+                    "Ref" => a.r#ref.clone(),
+                    "ID" => a.id.to_string(),
+                    _ => String::new(),
+                };
+                let val_b = match col.as_str() {
+                    "Status" => b.status.clone(),
+                    "Ref" => b.r#ref.clone(),
+                    "ID" => b.id.to_string(),
+                    _ => String::new(),
+                };
+                val_a.cmp(&val_b)
+            });
+        }
+        list
     }
 
     pub fn filter_jobs_list<'a>(
@@ -1256,7 +1383,27 @@ impl App {
         if let Some(jobs) = &self.selected_pipeline_jobs {
             let default_set = std::collections::HashSet::new();
             let enabled_cols = self.enabled_columns.get(&Tab::Jobs).unwrap_or(&default_set);
-            Self::filter_jobs_list(jobs, &self.search_query, enabled_cols)
+            let mut list = Self::filter_jobs_list(jobs, &self.search_query, enabled_cols);
+            if let Some(ref col) = self.group_by_column {
+                list.sort_by(|a, b| {
+                    let val_a = match col.as_str() {
+                        "Status" => a.status.clone(),
+                        "Stage" => a.stage.clone(),
+                        "Name" => a.name.clone(),
+                        "ID" => a.id.to_string(),
+                        _ => String::new(),
+                    };
+                    let val_b = match col.as_str() {
+                        "Status" => b.status.clone(),
+                        "Stage" => b.stage.clone(),
+                        "Name" => b.name.clone(),
+                        "ID" => b.id.to_string(),
+                        _ => String::new(),
+                    };
+                    val_a.cmp(&val_b)
+                });
+            }
+            list
         } else {
             vec![]
         }
@@ -1397,7 +1544,29 @@ impl App {
             .enabled_columns
             .get(&Tab::Todos)
             .unwrap_or(&default_set);
-        Self::filter_todos_list(&self.todos.items, &self.search_query, enabled_cols)
+        let mut list = Self::filter_todos_list(&self.todos.items, &self.search_query, enabled_cols);
+        if let Some(ref col) = self.group_by_column {
+            list.sort_by(|a, b| {
+                let val_a = match col.as_str() {
+                    "State" => a.state.clone(),
+                    "Type" => a.target_type.clone(),
+                    "Project" => a.project_path.clone(),
+                    "ID" => a.target_iid.to_string(),
+                    "Title" => a.title.clone(),
+                    _ => String::new(),
+                };
+                let val_b = match col.as_str() {
+                    "State" => b.state.clone(),
+                    "Type" => b.target_type.clone(),
+                    "Project" => b.project_path.clone(),
+                    "ID" => b.target_iid.to_string(),
+                    "Title" => b.title.clone(),
+                    _ => String::new(),
+                };
+                val_a.cmp(&val_b)
+            });
+        }
+        list
     }
 
     pub fn filter_milestones_list<'a>(
