@@ -740,13 +740,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     middle_chunks[2],
                 );
             } else {
-                let default_set = std::collections::HashSet::new();
-                let enabled_cols = app
-                    .enabled_columns
-                    .get(&Tab::Issues)
-                    .unwrap_or(&default_set);
-                let filtered_issues =
-                    App::filter_issues_list(&app.issues.items, &app.search_query, enabled_cols);
+                let filtered_issues = App::filtered_issues_list(
+                    &app.issues.items,
+                    &app.search_query,
+                    &app.enabled_columns,
+                    &app.group_by_column,
+                );
 
                 let rows = filtered_issues.iter().enumerate().map(|(idx, i)| {
                     let is_selected = app.issues.state.selected() == Some(idx);
@@ -1096,13 +1095,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     middle_chunks[2],
                 );
             } else {
-                let default_set = std::collections::HashSet::new();
-                let enabled_cols = app
-                    .enabled_columns
-                    .get(&Tab::MergeRequests)
-                    .unwrap_or(&default_set);
-                let filtered_mrs =
-                    App::filter_mrs_list(&app.mrs.items, &app.search_query, enabled_cols);
+                let filtered_mrs = App::filtered_mrs_list(
+                    &app.mrs.items,
+                    &app.search_query,
+                    &app.enabled_columns,
+                    &app.group_by_column,
+                );
 
                 let rows = filtered_mrs.iter().enumerate().map(|(idx, m)| {
                     let is_selected = app.mrs.state.selected() == Some(idx);
@@ -1579,16 +1577,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     middle_chunks[2],
                 );
             } else {
-                let default_set = std::collections::HashSet::new();
-                let enabled_cols = app
-                    .enabled_columns
-                    .get(&Tab::Pipelines)
-                    .unwrap_or(&default_set);
-                let filtered_pipelines = App::filter_pipelines_list(
+                let filtered_pipelines = App::filtered_pipelines_list(
                     &app.pipelines.items,
                     &app.search_query,
                     &app.pipeline_jobs,
-                    enabled_cols,
+                    &app.enabled_columns,
+                    &app.group_by_column,
                 );
 
                 let rows = filtered_pipelines.iter().enumerate().map(|(idx, p)| {
@@ -1811,9 +1805,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     middle_chunks[2],
                 );
             } else if let Some(jobs) = &app.selected_pipeline_jobs {
-                let default_set = std::collections::HashSet::new();
-                let enabled_cols = app.enabled_columns.get(&Tab::Jobs).unwrap_or(&default_set);
-                let filtered_jobs = App::filter_jobs_list(jobs, &app.search_query, enabled_cols);
+                let filtered_jobs = App::filtered_jobs_list(
+                    jobs,
+                    &app.search_query,
+                    &app.enabled_columns,
+                    &app.group_by_column,
+                );
 
                 let rows = filtered_jobs.iter().enumerate().map(|(i, j)| {
                     let (status_text, status_color, bg_color) = match j.status.as_str() {
@@ -2483,10 +2480,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     middle_chunks[2],
                 );
             } else {
-                let default_set = std::collections::HashSet::new();
-                let enabled_cols = app.enabled_columns.get(&Tab::Todos).unwrap_or(&default_set);
-                let filtered_todos =
-                    App::filter_todos_list(&app.todos.items, &app.search_query, enabled_cols);
+                let filtered_todos = App::filtered_todos_list(
+                    &app.todos.items,
+                    &app.search_query,
+                    &app.enabled_columns,
+                    &app.group_by_column,
+                );
 
                 let rows = filtered_todos.iter().enumerate().map(|(idx, n)| {
                     let is_row_highlighted = app.todos.state.selected() == Some(idx);

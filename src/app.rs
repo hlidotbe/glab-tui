@@ -1054,15 +1054,16 @@ impl App {
             .collect()
     }
 
-    pub fn filtered_issues(&self) -> Vec<&crate::gitlab::issues::Issue> {
+    pub fn filtered_issues_list<'a>(
+        items: &'a [crate::gitlab::issues::Issue],
+        query: &str,
+        enabled_columns: &std::collections::HashMap<Tab, std::collections::HashSet<String>>,
+        group_by_column: &Option<String>,
+    ) -> Vec<&'a crate::gitlab::issues::Issue> {
         let default_set = std::collections::HashSet::new();
-        let enabled_cols = self
-            .enabled_columns
-            .get(&Tab::Issues)
-            .unwrap_or(&default_set);
-        let mut list =
-            Self::filter_issues_list(&self.issues.items, &self.search_query, enabled_cols);
-        if let Some(ref col) = self.group_by_column {
+        let enabled_cols = enabled_columns.get(&Tab::Issues).unwrap_or(&default_set);
+        let mut list = Self::filter_issues_list(items, query, enabled_cols);
+        if let Some(col) = group_by_column {
             list.sort_by(|a, b| {
                 let val_a = match col.as_str() {
                     "State" => a.state.clone(),
@@ -1104,6 +1105,15 @@ impl App {
             });
         }
         list
+    }
+
+    pub fn filtered_issues(&self) -> Vec<&crate::gitlab::issues::Issue> {
+        Self::filtered_issues_list(
+            &self.issues.items,
+            &self.search_query,
+            &self.enabled_columns,
+            &self.group_by_column,
+        )
     }
 
     pub fn filter_mrs_list<'a>(
@@ -1189,14 +1199,18 @@ impl App {
         scored_items.into_iter().map(|(item, _)| item).collect()
     }
 
-    pub fn filtered_mrs(&self) -> Vec<&crate::gitlab::mr::MergeRequest> {
+    pub fn filtered_mrs_list<'a>(
+        items: &'a [crate::gitlab::mr::MergeRequest],
+        query: &str,
+        enabled_columns: &std::collections::HashMap<Tab, std::collections::HashSet<String>>,
+        group_by_column: &Option<String>,
+    ) -> Vec<&'a crate::gitlab::mr::MergeRequest> {
         let default_set = std::collections::HashSet::new();
-        let enabled_cols = self
-            .enabled_columns
+        let enabled_cols = enabled_columns
             .get(&Tab::MergeRequests)
             .unwrap_or(&default_set);
-        let mut list = Self::filter_mrs_list(&self.mrs.items, &self.search_query, enabled_cols);
-        if let Some(ref col) = self.group_by_column {
+        let mut list = Self::filter_mrs_list(items, query, enabled_cols);
+        if let Some(col) = group_by_column {
             list.sort_by(|a, b| {
                 let val_a = match col.as_str() {
                     "State" => a.state.clone(),
@@ -1264,6 +1278,15 @@ impl App {
         list
     }
 
+    pub fn filtered_mrs(&self) -> Vec<&crate::gitlab::mr::MergeRequest> {
+        Self::filtered_mrs_list(
+            &self.mrs.items,
+            &self.search_query,
+            &self.enabled_columns,
+            &self.group_by_column,
+        )
+    }
+
     pub fn filter_pipelines_list<'a>(
         items: &'a [crate::gitlab::pipelines::Pipeline],
         query: &str,
@@ -1307,19 +1330,17 @@ impl App {
             .collect()
     }
 
-    pub fn filtered_pipelines(&self) -> Vec<&crate::gitlab::pipelines::Pipeline> {
+    pub fn filtered_pipelines_list<'a>(
+        items: &'a [crate::gitlab::pipelines::Pipeline],
+        query: &str,
+        pipeline_jobs: &std::collections::HashMap<u64, Vec<crate::gitlab::pipelines::Job>>,
+        enabled_columns: &std::collections::HashMap<Tab, std::collections::HashSet<String>>,
+        group_by_column: &Option<String>,
+    ) -> Vec<&'a crate::gitlab::pipelines::Pipeline> {
         let default_set = std::collections::HashSet::new();
-        let enabled_cols = self
-            .enabled_columns
-            .get(&Tab::Pipelines)
-            .unwrap_or(&default_set);
-        let mut list = Self::filter_pipelines_list(
-            &self.pipelines.items,
-            &self.search_query,
-            &self.pipeline_jobs,
-            enabled_cols,
-        );
-        if let Some(ref col) = self.group_by_column {
+        let enabled_cols = enabled_columns.get(&Tab::Pipelines).unwrap_or(&default_set);
+        let mut list = Self::filter_pipelines_list(items, query, pipeline_jobs, enabled_cols);
+        if let Some(col) = group_by_column {
             list.sort_by(|a, b| {
                 let val_a = match col.as_str() {
                     "Status" => a.status.clone(),
@@ -1337,6 +1358,16 @@ impl App {
             });
         }
         list
+    }
+
+    pub fn filtered_pipelines(&self) -> Vec<&crate::gitlab::pipelines::Pipeline> {
+        Self::filtered_pipelines_list(
+            &self.pipelines.items,
+            &self.search_query,
+            &self.pipeline_jobs,
+            &self.enabled_columns,
+            &self.group_by_column,
+        )
     }
 
     pub fn filter_jobs_list<'a>(
@@ -1379,31 +1410,45 @@ impl App {
             .collect()
     }
 
+    pub fn filtered_jobs_list<'a>(
+        items: &'a [crate::gitlab::pipelines::Job],
+        query: &str,
+        enabled_columns: &std::collections::HashMap<Tab, std::collections::HashSet<String>>,
+        group_by_column: &Option<String>,
+    ) -> Vec<&'a crate::gitlab::pipelines::Job> {
+        let default_set = std::collections::HashSet::new();
+        let enabled_cols = enabled_columns.get(&Tab::Jobs).unwrap_or(&default_set);
+        let mut list = Self::filter_jobs_list(items, query, enabled_cols);
+        if let Some(col) = group_by_column {
+            list.sort_by(|a, b| {
+                let val_a = match col.as_str() {
+                    "Status" => a.status.clone(),
+                    "Stage" => a.stage.clone(),
+                    "Name" => a.name.clone(),
+                    "ID" => a.id.to_string(),
+                    _ => String::new(),
+                };
+                let val_b = match col.as_str() {
+                    "Status" => b.status.clone(),
+                    "Stage" => b.stage.clone(),
+                    "Name" => b.name.clone(),
+                    "ID" => b.id.to_string(),
+                    _ => String::new(),
+                };
+                val_a.cmp(&val_b)
+            });
+        }
+        list
+    }
+
     pub fn filtered_jobs(&self) -> Vec<&crate::gitlab::pipelines::Job> {
         if let Some(jobs) = &self.selected_pipeline_jobs {
-            let default_set = std::collections::HashSet::new();
-            let enabled_cols = self.enabled_columns.get(&Tab::Jobs).unwrap_or(&default_set);
-            let mut list = Self::filter_jobs_list(jobs, &self.search_query, enabled_cols);
-            if let Some(ref col) = self.group_by_column {
-                list.sort_by(|a, b| {
-                    let val_a = match col.as_str() {
-                        "Status" => a.status.clone(),
-                        "Stage" => a.stage.clone(),
-                        "Name" => a.name.clone(),
-                        "ID" => a.id.to_string(),
-                        _ => String::new(),
-                    };
-                    let val_b = match col.as_str() {
-                        "Status" => b.status.clone(),
-                        "Stage" => b.stage.clone(),
-                        "Name" => b.name.clone(),
-                        "ID" => b.id.to_string(),
-                        _ => String::new(),
-                    };
-                    val_a.cmp(&val_b)
-                });
-            }
-            list
+            Self::filtered_jobs_list(
+                jobs,
+                &self.search_query,
+                &self.enabled_columns,
+                &self.group_by_column,
+            )
         } else {
             vec![]
         }
@@ -1538,14 +1583,16 @@ impl App {
             .collect()
     }
 
-    pub fn filtered_todos(&self) -> Vec<&crate::gitlab::notifications::Notification> {
+    pub fn filtered_todos_list<'a>(
+        items: &'a [crate::gitlab::notifications::Notification],
+        query: &str,
+        enabled_columns: &std::collections::HashMap<Tab, std::collections::HashSet<String>>,
+        group_by_column: &Option<String>,
+    ) -> Vec<&'a crate::gitlab::notifications::Notification> {
         let default_set = std::collections::HashSet::new();
-        let enabled_cols = self
-            .enabled_columns
-            .get(&Tab::Todos)
-            .unwrap_or(&default_set);
-        let mut list = Self::filter_todos_list(&self.todos.items, &self.search_query, enabled_cols);
-        if let Some(ref col) = self.group_by_column {
+        let enabled_cols = enabled_columns.get(&Tab::Todos).unwrap_or(&default_set);
+        let mut list = Self::filter_todos_list(items, query, enabled_cols);
+        if let Some(col) = group_by_column {
             list.sort_by(|a, b| {
                 let val_a = match col.as_str() {
                     "State" => a.state.clone(),
@@ -1567,6 +1614,15 @@ impl App {
             });
         }
         list
+    }
+
+    pub fn filtered_todos(&self) -> Vec<&crate::gitlab::notifications::Notification> {
+        Self::filtered_todos_list(
+            &self.todos.items,
+            &self.search_query,
+            &self.enabled_columns,
+            &self.group_by_column,
+        )
     }
 
     pub fn filter_milestones_list<'a>(
