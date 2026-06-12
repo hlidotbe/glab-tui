@@ -3094,6 +3094,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let list_height = (main_chunks[1].height as usize).saturating_sub(2);
 
         let mut updated_diff_view = diff_view;
+        updated_diff_view.viewport_height = list_height;
+        let total_lines = if updated_diff_view.side_by_side {
+            updated_diff_view.side_by_side_lines.len()
+        } else {
+            updated_diff_view.lines.len()
+        };
+
         if updated_diff_view.cursor_idx < updated_diff_view.scroll_offset {
             updated_diff_view.scroll_offset = updated_diff_view.cursor_idx;
         } else if updated_diff_view.cursor_idx >= updated_diff_view.scroll_offset + list_height {
@@ -3101,254 +3108,700 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
 
         let start = updated_diff_view.scroll_offset;
-        let end = (start + list_height).min(updated_diff_view.lines.len());
+        let end = (start + list_height).min(total_lines);
 
         let mut list_lines = Vec::new();
-        for idx in start..end {
-            let line = &updated_diff_view.lines[idx];
-            let is_cursor = idx == updated_diff_view.cursor_idx;
+        let mut left_list_lines = Vec::new();
+        let mut right_list_lines = Vec::new();
 
-            let in_selection = updated_diff_view
-                .selection_start
-                .zip(updated_diff_view.selection_end)
-                .map_or(false, |(s, e)| idx >= s && idx <= e);
+        if updated_diff_view.side_by_side {
+            for idx in start..end {
+                let sline = &updated_diff_view.side_by_side_lines[idx];
+                let is_cursor = idx == updated_diff_view.cursor_idx;
 
-            let old_str = line
-                .old_line_num
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| " ".to_string());
-            let new_str = line
-                .new_line_num
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| " ".to_string());
+                let in_selection = updated_diff_view
+                    .selection_start
+                    .zip(updated_diff_view.selection_end)
+                    .map_or(false, |(s, e)| idx >= s && idx <= e);
 
-            let gutter_bg = Color::Rgb(22, 22, 26);
+                let gutter_bg = Color::Rgb(22, 22, 26);
+                let marker_style = Style::default()
+                    .fg(THEME.yellow)
+                    .add_modifier(Modifier::BOLD)
+                    .bg(gutter_bg);
+                let num_style = Style::default().fg(THEME.text_muted).bg(gutter_bg);
+                let sep_style = Style::default().fg(Color::Rgb(60, 60, 68)).bg(gutter_bg);
 
-            let marker_style = Style::default()
-                .fg(THEME.yellow)
-                .add_modifier(Modifier::BOLD)
-                .bg(gutter_bg);
-
-            let num_style = Style::default().fg(THEME.text_muted).bg(gutter_bg);
-
-            let sep_style = Style::default().fg(Color::Rgb(60, 60, 68)).bg(gutter_bg);
-
-            let mut line_spans = vec![
-                Span::styled(
-                    if is_cursor {
-                        " ❯ "
-                    } else if in_selection {
-                        " ▐ "
-                    } else {
-                        "   "
-                    },
-                    marker_style,
-                ),
-                Span::styled(format!("{:>4} ", old_str), num_style),
-                Span::styled(format!("{:>4} ", new_str), num_style),
-                Span::styled("│ ", sep_style),
-            ];
-
-            let sel_bg = if in_selection {
-                Some(Color::Rgb(30, 50, 80))
-            } else {
-                None
-            };
-
-            match line.line_type {
-                crate::app::DiffLineType::Addition | crate::app::DiffLineType::Deletion => {
-                    let is_add = line.line_type == crate::app::DiffLineType::Addition;
-                    let code_fg = if is_add {
-                        Color::Rgb(140, 220, 140)
-                    } else {
-                        Color::Rgb(220, 140, 140)
-                    };
-                    let code_bg = if is_add {
-                        Color::Rgb(22, 48, 28)
-                    } else {
-                        Color::Rgb(55, 22, 28)
-                    };
-                    let prefix_fg = if is_add {
-                        Color::Rgb(80, 220, 80)
-                    } else {
-                        Color::Rgb(255, 100, 100)
-                    };
-
-                    let actual_bg = sel_bg.unwrap_or(code_bg);
-                    let prefix = line
-                        .content
-                        .chars()
-                        .next()
-                        .map(|c| c.to_string())
-                        .unwrap_or_else(|| " ".to_string());
-                    line_spans.push(Span::styled(
-                        prefix,
-                        Style::default()
-                            .fg(prefix_fg)
-                            .add_modifier(Modifier::BOLD)
-                            .bg(actual_bg),
-                    ));
-
-                    let content_base = Style::default().fg(code_fg).bg(actual_bg);
-                    let final_style = if is_cursor {
-                        content_base
-                            .add_modifier(Modifier::UNDERLINED)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        content_base
-                    };
-
-                    if let Some(ref highlighted) = line.syntax_highlighted {
-                        for (span_style, text) in highlighted {
-                            let merged = final_style
-                                .fg(span_style.fg.unwrap_or(code_fg))
-                                .add_modifier(span_style.add_modifier);
-                            line_spans.push(Span::styled(text.clone(), merged));
-                        }
-                    } else {
-                        let code = if line.content.len() > 1 {
-                            &line.content[1..]
-                        } else {
-                            ""
-                        };
-                        line_spans.push(Span::styled(code, final_style));
-                    }
-                }
-                crate::app::DiffLineType::Normal => {
-                    let actual_bg = sel_bg.unwrap_or(Color::Reset);
-                    let prefix = line
-                        .content
-                        .chars()
-                        .next()
-                        .map(|c| c.to_string())
-                        .unwrap_or_else(|| " ".to_string());
-                    line_spans.push(Span::styled(
-                        prefix,
-                        Style::default().fg(THEME.text_muted).bg(actual_bg),
-                    ));
-
-                    let content_base = Style::default().fg(THEME.text_normal).bg(actual_bg);
-                    let final_style = if is_cursor {
-                        content_base
-                            .add_modifier(Modifier::UNDERLINED)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        content_base
-                    };
-
-                    if let Some(ref highlighted) = line.syntax_highlighted {
-                        for (span_style, text) in highlighted {
-                            let merged = final_style
-                                .fg(span_style.fg.unwrap_or(THEME.text_normal))
-                                .add_modifier(span_style.add_modifier);
-                            line_spans.push(Span::styled(text.clone(), merged));
-                        }
-                    } else {
-                        let code = if line.content.len() > 1 {
-                            &line.content[1..]
-                        } else {
-                            ""
-                        };
-                        line_spans.push(Span::styled(code, final_style));
-                    }
-                }
-                crate::app::DiffLineType::Meta => {
-                    let mut s = Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
-                    if let Some(bg) = sel_bg {
-                        s = s.bg(bg);
-                    }
-                    let final_style = if is_cursor {
-                        s.add_modifier(Modifier::UNDERLINED)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        s
-                    };
-                    if let Some(ref highlighted) = line.syntax_highlighted {
-                        for (span_style, text) in highlighted {
-                            let merged = final_style
-                                .fg(span_style.fg.unwrap_or(THEME.blue))
-                                .add_modifier(span_style.add_modifier);
-                            if let Some(bg) = sel_bg {
-                                line_spans.push(Span::styled(text.clone(), merged.bg(bg)));
-                            } else {
-                                line_spans.push(Span::styled(text.clone(), merged));
-                            }
-                        }
-                    } else {
-                        line_spans.push(Span::styled(&line.content, final_style));
-                    }
-                }
-                crate::app::DiffLineType::HunkHeader => {
-                    let mut s = Style::default()
-                        .fg(THEME.purple)
-                        .add_modifier(Modifier::BOLD);
-                    if let Some(bg) = sel_bg {
-                        s = s.bg(bg);
-                    }
-                    let final_style = if is_cursor {
-                        s.add_modifier(Modifier::UNDERLINED)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        s
-                    };
-                    if let Some(ref highlighted) = line.syntax_highlighted {
-                        for (span_style, text) in highlighted {
-                            let merged = final_style
-                                .fg(span_style.fg.unwrap_or(THEME.purple))
-                                .add_modifier(span_style.add_modifier);
-                            if let Some(bg) = sel_bg {
-                                line_spans.push(Span::styled(text.clone(), merged.bg(bg)));
-                            } else {
-                                line_spans.push(Span::styled(text.clone(), merged));
-                            }
-                        }
-                    } else {
-                        line_spans.push(Span::styled(&line.content, final_style));
-                    }
-                }
-            }
-            list_lines.push(Line::from(line_spans));
-
-            let matching_comments: Vec<_> = app
-                .draft_comments
-                .iter()
-                .filter(|c| {
-                    c.file_path == line.file_path
-                        && ((c.line_num.is_some() && c.line_num == line.new_line_num)
-                            || (c.old_line_num.is_some() && c.old_line_num == line.old_line_num))
-                })
-                .collect();
-
-            for comment in matching_comments {
-                let comment_style = Style::default().fg(THEME.yellow).bg(Color::Rgb(45, 45, 20));
-
-                let range_info = match (comment.end_line_num, comment.end_old_line_num) {
-                    (Some(end_l), _) if end_l != comment.line_num.unwrap_or(0) => {
-                        format!(" (L{}-{})", comment.line_num.unwrap_or(0), end_l)
-                    }
-                    (_, Some(end_o)) if end_o != comment.old_line_num.unwrap_or(0) => {
-                        format!(" (OL{}-{})", comment.old_line_num.unwrap_or(0), end_o)
-                    }
-                    _ => String::new(),
+                let sel_bg = if in_selection {
+                    Some(Color::Rgb(30, 50, 80))
+                } else {
+                    None
                 };
 
-                let spans = vec![
-                    Span::styled("         ", Style::default()),
+                // LEFT PANEL (OLD / DELETION)
+                let mut left_spans = Vec::new();
+                if let Some(ref line) = sline.left {
+                    let old_str = line
+                        .old_line_num
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| " ".to_string());
+
+                    left_spans.extend(vec![
+                        Span::styled(
+                            if is_cursor {
+                                " ❯ "
+                            } else if in_selection {
+                                " ▐ "
+                            } else {
+                                "   "
+                            },
+                            marker_style,
+                        ),
+                        Span::styled(format!("{:>4} ", old_str), num_style),
+                        Span::styled("│ ", sep_style),
+                    ]);
+
+                    match line.line_type {
+                        crate::app::DiffLineType::Deletion => {
+                            let code_fg = Color::Rgb(220, 140, 140);
+                            let code_bg = Color::Rgb(55, 22, 28);
+                            let prefix_fg = Color::Rgb(255, 100, 100);
+                            let actual_bg = sel_bg.unwrap_or(code_bg);
+
+                            let prefix = line
+                                .content
+                                .chars()
+                                .next()
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| " ".to_string());
+                            left_spans.push(Span::styled(
+                                prefix,
+                                Style::default()
+                                    .fg(prefix_fg)
+                                    .add_modifier(Modifier::BOLD)
+                                    .bg(actual_bg),
+                            ));
+
+                            let content_base = Style::default().fg(code_fg).bg(actual_bg);
+                            let final_style = if is_cursor {
+                                content_base
+                                    .add_modifier(Modifier::UNDERLINED)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                content_base
+                            };
+
+                            if let Some(ref highlighted) = line.syntax_highlighted {
+                                for (span_style, text) in highlighted {
+                                    let merged = final_style
+                                        .fg(span_style.fg.unwrap_or(code_fg))
+                                        .add_modifier(span_style.add_modifier);
+                                    left_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            } else {
+                                let code = if line.content.len() > 1 {
+                                    &line.content[1..]
+                                } else {
+                                    ""
+                                };
+                                left_spans.push(Span::styled(code, final_style));
+                            }
+                        }
+                        crate::app::DiffLineType::Normal => {
+                            let actual_bg = sel_bg.unwrap_or(Color::Reset);
+                            let prefix = line
+                                .content
+                                .chars()
+                                .next()
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| " ".to_string());
+                            left_spans.push(Span::styled(
+                                prefix,
+                                Style::default().fg(THEME.text_muted).bg(actual_bg),
+                            ));
+
+                            let content_base = Style::default().fg(THEME.text_normal).bg(actual_bg);
+                            let final_style = if is_cursor {
+                                content_base
+                                    .add_modifier(Modifier::UNDERLINED)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                content_base
+                            };
+
+                            if let Some(ref highlighted) = line.syntax_highlighted {
+                                for (span_style, text) in highlighted {
+                                    let merged = final_style
+                                        .fg(span_style.fg.unwrap_or(THEME.text_normal))
+                                        .add_modifier(span_style.add_modifier);
+                                    left_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            } else {
+                                let code = if line.content.len() > 1 {
+                                    &line.content[1..]
+                                } else {
+                                    ""
+                                };
+                                left_spans.push(Span::styled(code, final_style));
+                            }
+                        }
+                        crate::app::DiffLineType::Meta => {
+                            let mut s =
+                                Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
+                            if let Some(bg) = sel_bg {
+                                s = s.bg(bg);
+                            }
+                            let final_style = if is_cursor {
+                                s.add_modifier(Modifier::UNDERLINED)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                s
+                            };
+                            if let Some(ref highlighted) = line.syntax_highlighted {
+                                for (span_style, text) in highlighted {
+                                    let merged = final_style
+                                        .fg(span_style.fg.unwrap_or(THEME.blue))
+                                        .add_modifier(span_style.add_modifier);
+                                    left_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            } else {
+                                left_spans.push(Span::styled(&line.content, final_style));
+                            }
+                        }
+                        crate::app::DiffLineType::HunkHeader => {
+                            let mut s = Style::default()
+                                .fg(THEME.purple)
+                                .add_modifier(Modifier::BOLD);
+                            if let Some(bg) = sel_bg {
+                                s = s.bg(bg);
+                            }
+                            let final_style = if is_cursor {
+                                s.add_modifier(Modifier::UNDERLINED)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                s
+                            };
+                            if let Some(ref highlighted) = line.syntax_highlighted {
+                                for (span_style, text) in highlighted {
+                                    let merged = final_style
+                                        .fg(span_style.fg.unwrap_or(THEME.purple))
+                                        .add_modifier(span_style.add_modifier);
+                                    left_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            } else {
+                                left_spans.push(Span::styled(&line.content, final_style));
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    let actual_bg = sel_bg.unwrap_or(Color::Reset);
+                    left_spans.extend(vec![
+                        Span::styled(
+                            if is_cursor {
+                                " ❯ "
+                            } else if in_selection {
+                                " ▐ "
+                            } else {
+                                "   "
+                            },
+                            marker_style,
+                        ),
+                        Span::styled("     ", num_style),
+                        Span::styled("│ ", sep_style),
+                        Span::styled(" ", Style::default().bg(actual_bg)),
+                    ]);
+                }
+                left_list_lines.push(Line::from(left_spans));
+
+                // RIGHT PANEL (NEW / ADDITION)
+                let mut right_spans = Vec::new();
+                if let Some(ref line) = sline.right {
+                    let new_str = line
+                        .new_line_num
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| " ".to_string());
+
+                    right_spans.extend(vec![
+                        Span::styled(
+                            if is_cursor {
+                                " ❯ "
+                            } else if in_selection {
+                                " ▐ "
+                            } else {
+                                "   "
+                            },
+                            marker_style,
+                        ),
+                        Span::styled(format!("{:>4} ", new_str), num_style),
+                        Span::styled("│ ", sep_style),
+                    ]);
+
+                    match line.line_type {
+                        crate::app::DiffLineType::Addition => {
+                            let code_fg = Color::Rgb(140, 220, 140);
+                            let code_bg = Color::Rgb(22, 48, 28);
+                            let prefix_fg = Color::Rgb(80, 220, 80);
+                            let actual_bg = sel_bg.unwrap_or(code_bg);
+
+                            let prefix = line
+                                .content
+                                .chars()
+                                .next()
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| " ".to_string());
+                            right_spans.push(Span::styled(
+                                prefix,
+                                Style::default()
+                                    .fg(prefix_fg)
+                                    .add_modifier(Modifier::BOLD)
+                                    .bg(actual_bg),
+                            ));
+
+                            let content_base = Style::default().fg(code_fg).bg(actual_bg);
+                            let final_style = if is_cursor {
+                                content_base
+                                    .add_modifier(Modifier::UNDERLINED)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                content_base
+                            };
+
+                            if let Some(ref highlighted) = line.syntax_highlighted {
+                                for (span_style, text) in highlighted {
+                                    let merged = final_style
+                                        .fg(span_style.fg.unwrap_or(code_fg))
+                                        .add_modifier(span_style.add_modifier);
+                                    right_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            } else {
+                                let code = if line.content.len() > 1 {
+                                    &line.content[1..]
+                                } else {
+                                    ""
+                                };
+                                right_spans.push(Span::styled(code, final_style));
+                            }
+                        }
+                        crate::app::DiffLineType::Normal => {
+                            let actual_bg = sel_bg.unwrap_or(Color::Reset);
+                            let prefix = line
+                                .content
+                                .chars()
+                                .next()
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| " ".to_string());
+                            right_spans.push(Span::styled(
+                                prefix,
+                                Style::default().fg(THEME.text_muted).bg(actual_bg),
+                            ));
+
+                            let content_base = Style::default().fg(THEME.text_normal).bg(actual_bg);
+                            let final_style = if is_cursor {
+                                content_base
+                                    .add_modifier(Modifier::UNDERLINED)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                content_base
+                            };
+
+                            if let Some(ref highlighted) = line.syntax_highlighted {
+                                for (span_style, text) in highlighted {
+                                    let merged = final_style
+                                        .fg(span_style.fg.unwrap_or(THEME.text_normal))
+                                        .add_modifier(span_style.add_modifier);
+                                    right_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            } else {
+                                let code = if line.content.len() > 1 {
+                                    &line.content[1..]
+                                } else {
+                                    ""
+                                };
+                                right_spans.push(Span::styled(code, final_style));
+                            }
+                        }
+                        crate::app::DiffLineType::Meta => {
+                            let mut s =
+                                Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
+                            if let Some(bg) = sel_bg {
+                                s = s.bg(bg);
+                            }
+                            let final_style = if is_cursor {
+                                s.add_modifier(Modifier::UNDERLINED)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                s
+                            };
+                            if let Some(ref highlighted) = line.syntax_highlighted {
+                                for (span_style, text) in highlighted {
+                                    let merged = final_style
+                                        .fg(span_style.fg.unwrap_or(THEME.blue))
+                                        .add_modifier(span_style.add_modifier);
+                                    right_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            } else {
+                                right_spans.push(Span::styled(&line.content, final_style));
+                            }
+                        }
+                        crate::app::DiffLineType::HunkHeader => {
+                            let mut s = Style::default()
+                                .fg(THEME.purple)
+                                .add_modifier(Modifier::BOLD);
+                            if let Some(bg) = sel_bg {
+                                s = s.bg(bg);
+                            }
+                            let final_style = if is_cursor {
+                                s.add_modifier(Modifier::UNDERLINED)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                s
+                            };
+                            if let Some(ref highlighted) = line.syntax_highlighted {
+                                for (span_style, text) in highlighted {
+                                    let merged = final_style
+                                        .fg(span_style.fg.unwrap_or(THEME.purple))
+                                        .add_modifier(span_style.add_modifier);
+                                    right_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            } else {
+                                right_spans.push(Span::styled(&line.content, final_style));
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    let actual_bg = sel_bg.unwrap_or(Color::Reset);
+                    right_spans.extend(vec![
+                        Span::styled(
+                            if is_cursor {
+                                " ❯ "
+                            } else if in_selection {
+                                " ▐ "
+                            } else {
+                                "   "
+                            },
+                            marker_style,
+                        ),
+                        Span::styled("     ", num_style),
+                        Span::styled("│ ", sep_style),
+                        Span::styled(" ", Style::default().bg(actual_bg)),
+                    ]);
+                }
+                right_list_lines.push(Line::from(right_spans));
+
+                // COMMENTS OVERLAY
+                let matching_comments: Vec<_> = app
+                    .draft_comments
+                    .iter()
+                    .filter(|c| {
+                        let path_matches = sline
+                            .left
+                            .as_ref()
+                            .map_or(false, |l| l.file_path == c.file_path)
+                            || sline
+                                .right
+                                .as_ref()
+                                .map_or(false, |r| r.file_path == c.file_path);
+
+                        path_matches
+                            && ((c.line_num.is_some()
+                                && sline.right.as_ref().and_then(|r| r.new_line_num) == c.line_num)
+                                || (c.old_line_num.is_some()
+                                    && sline.left.as_ref().and_then(|l| l.old_line_num)
+                                        == c.old_line_num))
+                    })
+                    .collect();
+
+                for comment in matching_comments {
+                    let comment_style =
+                        Style::default().fg(THEME.yellow).bg(Color::Rgb(45, 45, 20));
+
+                    let range_info = match (comment.end_line_num, comment.end_old_line_num) {
+                        (Some(end_l), _) if end_l != comment.line_num.unwrap_or(0) => {
+                            format!(" (L{}-{})", comment.line_num.unwrap_or(0), end_l)
+                        }
+                        (_, Some(end_o)) if end_o != comment.old_line_num.unwrap_or(0) => {
+                            format!(" (OL{}-{})", comment.old_line_num.unwrap_or(0), end_o)
+                        }
+                        _ => String::new(),
+                    };
+
+                    left_list_lines.push(
+                        Line::from(vec![
+                            Span::styled("         ", Style::default()),
+                            Span::styled(
+                                " 💬 Draft Note ",
+                                Style::default()
+                                    .fg(THEME.yellow)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                        ])
+                        .style(comment_style),
+                    );
+
+                    right_list_lines.push(
+                        Line::from(vec![
+                            Span::styled(
+                                format!(" 💬 Draft Note:{} ", range_info),
+                                Style::default()
+                                    .fg(THEME.yellow)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(&comment.body, Style::default().fg(THEME.text_normal)),
+                        ])
+                        .style(comment_style),
+                    );
+                }
+            }
+        } else {
+            // UNIFIED/INLINE DIFF RENDER
+            for idx in start..end {
+                let line = &updated_diff_view.lines[idx];
+                let is_cursor = idx == updated_diff_view.cursor_idx;
+
+                let in_selection = updated_diff_view
+                    .selection_start
+                    .zip(updated_diff_view.selection_end)
+                    .map_or(false, |(s, e)| idx >= s && idx <= e);
+
+                let old_str = line
+                    .old_line_num
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| " ".to_string());
+                let new_str = line
+                    .new_line_num
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| " ".to_string());
+
+                let gutter_bg = Color::Rgb(22, 22, 26);
+
+                let marker_style = Style::default()
+                    .fg(THEME.yellow)
+                    .add_modifier(Modifier::BOLD)
+                    .bg(gutter_bg);
+
+                let num_style = Style::default().fg(THEME.text_muted).bg(gutter_bg);
+
+                let sep_style = Style::default().fg(Color::Rgb(60, 60, 68)).bg(gutter_bg);
+
+                let mut line_spans = vec![
                     Span::styled(
-                        format!(" 💬 Draft Note:{} ", range_info),
-                        Style::default()
-                            .fg(THEME.yellow)
-                            .add_modifier(Modifier::BOLD),
+                        if is_cursor {
+                            " ❯ "
+                        } else if in_selection {
+                            " ▐ "
+                        } else {
+                            "   "
+                        },
+                        marker_style,
                     ),
-                    Span::styled(&comment.body, Style::default().fg(THEME.text_normal)),
+                    Span::styled(format!("{:>4} ", old_str), num_style),
+                    Span::styled(format!("{:>4} ", new_str), num_style),
+                    Span::styled("│ ", sep_style),
                 ];
-                list_lines.push(Line::from(spans).style(comment_style));
+
+                let sel_bg = if in_selection {
+                    Some(Color::Rgb(30, 50, 80))
+                } else {
+                    None
+                };
+
+                match line.line_type {
+                    crate::app::DiffLineType::Addition | crate::app::DiffLineType::Deletion => {
+                        let is_add = line.line_type == crate::app::DiffLineType::Addition;
+                        let code_fg = if is_add {
+                            Color::Rgb(140, 220, 140)
+                        } else {
+                            Color::Rgb(220, 140, 140)
+                        };
+                        let code_bg = if is_add {
+                            Color::Rgb(22, 48, 28)
+                        } else {
+                            Color::Rgb(55, 22, 28)
+                        };
+                        let prefix_fg = if is_add {
+                            Color::Rgb(80, 220, 80)
+                        } else {
+                            Color::Rgb(255, 100, 100)
+                        };
+
+                        let actual_bg = sel_bg.unwrap_or(code_bg);
+                        let prefix = line
+                            .content
+                            .chars()
+                            .next()
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| " ".to_string());
+                        line_spans.push(Span::styled(
+                            prefix,
+                            Style::default()
+                                .fg(prefix_fg)
+                                .add_modifier(Modifier::BOLD)
+                                .bg(actual_bg),
+                        ));
+
+                        let content_base = Style::default().fg(code_fg).bg(actual_bg);
+                        let final_style = if is_cursor {
+                            content_base
+                                .add_modifier(Modifier::UNDERLINED)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            content_base
+                        };
+
+                        if let Some(ref highlighted) = line.syntax_highlighted {
+                            for (span_style, text) in highlighted {
+                                let merged = final_style
+                                    .fg(span_style.fg.unwrap_or(code_fg))
+                                    .add_modifier(span_style.add_modifier);
+                                line_spans.push(Span::styled(text.clone(), merged));
+                            }
+                        } else {
+                            let code = if line.content.len() > 1 {
+                                &line.content[1..]
+                            } else {
+                                ""
+                            };
+                            line_spans.push(Span::styled(code, final_style));
+                        }
+                    }
+                    crate::app::DiffLineType::Normal => {
+                        let actual_bg = sel_bg.unwrap_or(Color::Reset);
+                        let prefix = line
+                            .content
+                            .chars()
+                            .next()
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| " ".to_string());
+                        line_spans.push(Span::styled(
+                            prefix,
+                            Style::default().fg(THEME.text_muted).bg(actual_bg),
+                        ));
+
+                        let content_base = Style::default().fg(THEME.text_normal).bg(actual_bg);
+                        let final_style = if is_cursor {
+                            content_base
+                                .add_modifier(Modifier::UNDERLINED)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            content_base
+                        };
+
+                        if let Some(ref highlighted) = line.syntax_highlighted {
+                            for (span_style, text) in highlighted {
+                                let merged = final_style
+                                    .fg(span_style.fg.unwrap_or(THEME.text_normal))
+                                    .add_modifier(span_style.add_modifier);
+                                line_spans.push(Span::styled(text.clone(), merged));
+                            }
+                        } else {
+                            let code = if line.content.len() > 1 {
+                                &line.content[1..]
+                            } else {
+                                ""
+                            };
+                            line_spans.push(Span::styled(code, final_style));
+                        }
+                    }
+                    crate::app::DiffLineType::Meta => {
+                        let mut s = Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
+                        if let Some(bg) = sel_bg {
+                            s = s.bg(bg);
+                        }
+                        let final_style = if is_cursor {
+                            s.add_modifier(Modifier::UNDERLINED)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            s
+                        };
+                        if let Some(ref highlighted) = line.syntax_highlighted {
+                            for (span_style, text) in highlighted {
+                                let merged = final_style
+                                    .fg(span_style.fg.unwrap_or(THEME.blue))
+                                    .add_modifier(span_style.add_modifier);
+                                if let Some(bg) = sel_bg {
+                                    line_spans.push(Span::styled(text.clone(), merged.bg(bg)));
+                                } else {
+                                    line_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            }
+                        } else {
+                            line_spans.push(Span::styled(&line.content, final_style));
+                        }
+                    }
+                    crate::app::DiffLineType::HunkHeader => {
+                        let mut s = Style::default()
+                            .fg(THEME.purple)
+                            .add_modifier(Modifier::BOLD);
+                        if let Some(bg) = sel_bg {
+                            s = s.bg(bg);
+                        }
+                        let final_style = if is_cursor {
+                            s.add_modifier(Modifier::UNDERLINED)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            s
+                        };
+                        if let Some(ref highlighted) = line.syntax_highlighted {
+                            for (span_style, text) in highlighted {
+                                let merged = final_style
+                                    .fg(span_style.fg.unwrap_or(THEME.purple))
+                                    .add_modifier(span_style.add_modifier);
+                                if let Some(bg) = sel_bg {
+                                    line_spans.push(Span::styled(text.clone(), merged.bg(bg)));
+                                } else {
+                                    line_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            }
+                        } else {
+                            line_spans.push(Span::styled(&line.content, final_style));
+                        }
+                    }
+                }
+                list_lines.push(Line::from(line_spans));
+
+                let matching_comments: Vec<_> = app
+                    .draft_comments
+                    .iter()
+                    .filter(|c| {
+                        c.file_path == line.file_path
+                            && ((c.line_num.is_some() && c.line_num == line.new_line_num)
+                                || (c.old_line_num.is_some()
+                                    && c.old_line_num == line.old_line_num))
+                    })
+                    .collect();
+
+                for comment in matching_comments {
+                    let comment_style =
+                        Style::default().fg(THEME.yellow).bg(Color::Rgb(45, 45, 20));
+
+                    let range_info = match (comment.end_line_num, comment.end_old_line_num) {
+                        (Some(end_l), _) if end_l != comment.line_num.unwrap_or(0) => {
+                            format!(" (L{}-{})", comment.line_num.unwrap_or(0), end_l)
+                        }
+                        (_, Some(end_o)) if end_o != comment.old_line_num.unwrap_or(0) => {
+                            format!(" (OL{}-{})", comment.old_line_num.unwrap_or(0), end_o)
+                        }
+                        _ => String::new(),
+                    };
+
+                    let spans = vec![
+                        Span::styled("         ", Style::default()),
+                        Span::styled(
+                            format!(" 💬 Draft Note:{} ", range_info),
+                            Style::default()
+                                .fg(THEME.yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(&comment.body, Style::default().fg(THEME.text_normal)),
+                    ];
+                    list_lines.push(Line::from(spans).style(comment_style));
+                }
             }
         }
 
-        let diff_para = Paragraph::new(list_lines).block(diff_block);
-
-        let footer_p = Paragraph::new(" Esc/q: Exit • Tab: Toggle Focus • h/l/Left/Right: Switch Panels • j/k/↑/↓: Navigate • J/K: Next/Prev Hunk • V: Select Lines • c: Comment • e: Suggest Code • p: Toggle Review Mode • r: Submit Review ")
+        let footer_p = Paragraph::new(" Esc/q: Exit • d: Toggle Diff Layout • Tab: Toggle Focus • h/l/Left/Right: Switch Panels • j/k/↑/↓: Navigate • J/K: Next/Prev Hunk • V: Select Lines • c: Comment • e: Suggest Code • p: Toggle Review Mode • r: Submit Review ")
             .alignment(Alignment::Center)
             .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC))
             .wrap(ratatui::widgets::Wrap { trim: true });
@@ -3356,8 +3809,42 @@ pub fn render(f: &mut Frame, app: &mut App) {
         f.render_widget(Clear, area);
         f.render_widget(outer_block, area);
         f.render_widget(files_list, main_chunks[0]);
-        f.render_widget(diff_para, main_chunks[1]);
         f.render_widget(footer_p, chunks[1]);
+
+        if updated_diff_view.side_by_side {
+            let diff_inner = diff_block.inner(main_chunks[1]);
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(
+                    [
+                        Constraint::Fill(1),
+                        Constraint::Length(1),
+                        Constraint::Fill(1),
+                    ]
+                    .as_ref(),
+                )
+                .split(diff_inner);
+
+            let left_para = Paragraph::new(left_list_lines);
+            let right_para = Paragraph::new(right_list_lines);
+            let divider_lines: Vec<Line> = (0..diff_inner.height)
+                .map(|_| {
+                    Line::from(Span::styled(
+                        "│",
+                        Style::default().fg(Color::Rgb(60, 60, 68)),
+                    ))
+                })
+                .collect();
+            let divider_para = Paragraph::new(divider_lines);
+
+            f.render_widget(diff_block, main_chunks[1]);
+            f.render_widget(left_para, cols[0]);
+            f.render_widget(divider_para, cols[1]);
+            f.render_widget(right_para, cols[2]);
+        } else {
+            let diff_para = Paragraph::new(list_lines).block(diff_block);
+            f.render_widget(diff_para, main_chunks[1]);
+        }
 
         app.diff_view = Some(updated_diff_view);
     }

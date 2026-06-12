@@ -4493,6 +4493,70 @@ async fn main() -> Result<()> {
                                 }
                                 app.diff_view = Some(diff_view);
                             }
+                            KeyCode::Char('d') => {
+                                if !diff_view.focus_on_files {
+                                    let old_side_by_side = diff_view.side_by_side;
+                                    let old_cursor = diff_view.cursor_idx;
+                                    diff_view.side_by_side = !diff_view.side_by_side;
+                                    diff_view.update_active_lines();
+
+                                    if old_side_by_side {
+                                        if let Some(sline) =
+                                            diff_view.side_by_side_lines.get(old_cursor)
+                                        {
+                                            let target_line =
+                                                sline.right.as_ref().or(sline.left.as_ref());
+                                            if let Some(target) = target_line {
+                                                if let Some(new_idx) =
+                                                    diff_view.lines.iter().position(|l| {
+                                                        l.file_path == target.file_path
+                                                            && l.old_line_num == target.old_line_num
+                                                            && l.new_line_num == target.new_line_num
+                                                            && l.line_type == target.line_type
+                                                    })
+                                                {
+                                                    diff_view.cursor_idx = new_idx;
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        if let Some(uline) = diff_view.lines.get(old_cursor) {
+                                            if let Some(new_idx) =
+                                                diff_view.side_by_side_lines.iter().position(|l| {
+                                                    if uline.line_type
+                                                        == crate::app::DiffLineType::HunkHeader
+                                                        || uline.line_type
+                                                            == crate::app::DiffLineType::Meta
+                                                    {
+                                                        l.line_type == uline.line_type
+                                                            && l.left.as_ref().map_or(false, |x| {
+                                                                x.content == uline.content
+                                                            })
+                                                    } else {
+                                                        l.left.as_ref().map_or(false, |x| {
+                                                            x.old_line_num == uline.old_line_num
+                                                                && x.new_line_num
+                                                                    == uline.new_line_num
+                                                                && x.file_path == uline.file_path
+                                                        }) || l.right.as_ref().map_or(false, |x| {
+                                                            x.old_line_num == uline.old_line_num
+                                                                && x.new_line_num
+                                                                    == uline.new_line_num
+                                                                && x.file_path == uline.file_path
+                                                        })
+                                                    }
+                                                })
+                                            {
+                                                diff_view.cursor_idx = new_idx;
+                                            }
+                                        }
+                                    }
+
+                                    diff_view.scroll_offset =
+                                        diff_view.cursor_idx.saturating_sub(5);
+                                }
+                                app.diff_view = Some(diff_view);
+                            }
                             KeyCode::Char('j') | KeyCode::Down => {
                                 if diff_view.focus_on_files {
                                     if !diff_view.visible_nodes.is_empty() {
@@ -4507,9 +4571,14 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                 } else {
-                                    if !diff_view.lines.is_empty() {
-                                        let new_idx = (diff_view.cursor_idx + 1)
-                                            .min(diff_view.lines.len() - 1);
+                                    let active_len = if diff_view.side_by_side {
+                                        diff_view.side_by_side_lines.len()
+                                    } else {
+                                        diff_view.lines.len()
+                                    };
+                                    if active_len > 0 {
+                                        let new_idx =
+                                            (diff_view.cursor_idx + 1).min(active_len - 1);
                                         if in_selection {
                                             diff_view.selection_end = Some(new_idx);
                                         }
@@ -4543,35 +4612,36 @@ async fn main() -> Result<()> {
                                 app.diff_view = Some(diff_view);
                             }
                             KeyCode::Char('J') => {
-                                if !diff_view.focus_on_files {
-                                    if let Some(&next_hunk) = diff_view
-                                        .hunks
-                                        .iter()
-                                        .find(|&&idx| idx > diff_view.cursor_idx)
-                                    {
-                                        diff_view.cursor_idx = next_hunk;
+                                let active_len = if diff_view.side_by_side {
+                                    diff_view.side_by_side_lines.len()
+                                } else {
+                                    diff_view.lines.len()
+                                };
+                                if active_len > 0 {
+                                    let scroll_amount =
+                                        diff_view.viewport_height.saturating_sub(2).max(1);
+                                    let new_idx =
+                                        (diff_view.cursor_idx + scroll_amount).min(active_len - 1);
+                                    if in_selection && !diff_view.focus_on_files {
+                                        diff_view.selection_end = Some(new_idx);
+                                    }
+                                    diff_view.cursor_idx = new_idx;
+                                    if !diff_view.focus_on_files {
                                         diff_view.update_selected_file_from_cursor();
-                                        if in_selection {
-                                            diff_view.selection_end = Some(next_hunk);
-                                        }
                                     }
                                 }
                                 app.diff_view = Some(diff_view);
                             }
                             KeyCode::Char('K') => {
+                                let scroll_amount =
+                                    diff_view.viewport_height.saturating_sub(2).max(1);
+                                let new_idx = diff_view.cursor_idx.saturating_sub(scroll_amount);
+                                if in_selection && !diff_view.focus_on_files {
+                                    diff_view.selection_end = Some(new_idx);
+                                }
+                                diff_view.cursor_idx = new_idx;
                                 if !diff_view.focus_on_files {
-                                    if let Some(&prev_hunk) = diff_view
-                                        .hunks
-                                        .iter()
-                                        .rev()
-                                        .find(|&&idx| idx < diff_view.cursor_idx)
-                                    {
-                                        diff_view.cursor_idx = prev_hunk;
-                                        diff_view.update_selected_file_from_cursor();
-                                        if in_selection {
-                                            diff_view.selection_end = Some(prev_hunk);
-                                        }
-                                    }
+                                    diff_view.update_selected_file_from_cursor();
                                 }
                                 app.diff_view = Some(diff_view);
                             }
@@ -4594,7 +4664,17 @@ async fn main() -> Result<()> {
                                 app.diff_view = Some(diff_view);
                             }
                             KeyCode::Char('c') => {
-                                if let Some(line) = diff_view.lines.get(diff_view.cursor_idx) {
+                                let line_opt = if diff_view.side_by_side {
+                                    diff_view
+                                        .side_by_side_lines
+                                        .get(diff_view.cursor_idx)
+                                        .and_then(|sline| {
+                                            sline.right.as_ref().or(sline.left.as_ref()).cloned()
+                                        })
+                                } else {
+                                    diff_view.lines.get(diff_view.cursor_idx).cloned()
+                                };
+                                if let Some(line) = line_opt {
                                     let can_comment = match line.line_type {
                                         crate::app::DiffLineType::Addition
                                         | crate::app::DiffLineType::Deletion
@@ -4607,9 +4687,34 @@ async fn main() -> Result<()> {
                                             .zip(diff_view.selection_end)
                                             .and_then(|(s, e)| {
                                                 if s != e {
-                                                    let start_line =
-                                                        diff_view.lines.get(s.min(e))?;
-                                                    let end_line = diff_view.lines.get(s.max(e))?;
+                                                    let start_line = if diff_view.side_by_side {
+                                                        diff_view
+                                                            .side_by_side_lines
+                                                            .get(s.min(e))
+                                                            .and_then(|sline| {
+                                                            sline
+                                                                .right
+                                                                .as_ref()
+                                                                .or(sline.left.as_ref())
+                                                                .cloned()
+                                                        })?
+                                                    } else {
+                                                        diff_view.lines.get(s.min(e))?.clone()
+                                                    };
+                                                    let end_line = if diff_view.side_by_side {
+                                                        diff_view
+                                                            .side_by_side_lines
+                                                            .get(s.max(e))
+                                                            .and_then(|sline| {
+                                                            sline
+                                                                .right
+                                                                .as_ref()
+                                                                .or(sline.left.as_ref())
+                                                                .cloned()
+                                                        })?
+                                                    } else {
+                                                        diff_view.lines.get(s.max(e))?.clone()
+                                                    };
                                                     Some((
                                                         end_line.new_line_num,
                                                         end_line.old_line_num,
@@ -4771,7 +4876,17 @@ async fn main() -> Result<()> {
                                 app.diff_view = Some(diff_view);
                             }
                             KeyCode::Char('e') => {
-                                if let Some(line) = diff_view.lines.get(diff_view.cursor_idx) {
+                                let line_opt = if diff_view.side_by_side {
+                                    diff_view
+                                        .side_by_side_lines
+                                        .get(diff_view.cursor_idx)
+                                        .and_then(|sline| {
+                                            sline.right.as_ref().or(sline.left.as_ref()).cloned()
+                                        })
+                                } else {
+                                    diff_view.lines.get(diff_view.cursor_idx).cloned()
+                                };
+                                if let Some(line) = line_opt {
                                     let can_suggest = match line.line_type {
                                         crate::app::DiffLineType::Addition
                                         | crate::app::DiffLineType::Deletion
@@ -4783,7 +4898,22 @@ async fn main() -> Result<()> {
                                             (diff_view.selection_start, diff_view.selection_end)
                                         {
                                             let (s, e) = (s.min(e), s.max(e));
-                                            diff_view.lines[s..=e]
+                                            let selected_lines: Vec<crate::app::DiffLine> =
+                                                if diff_view.side_by_side {
+                                                    diff_view.side_by_side_lines[s..=e]
+                                                        .iter()
+                                                        .filter_map(|sline| {
+                                                            sline
+                                                                .right
+                                                                .as_ref()
+                                                                .or(sline.left.as_ref())
+                                                                .cloned()
+                                                        })
+                                                        .collect()
+                                                } else {
+                                                    diff_view.lines[s..=e].to_vec()
+                                                };
+                                            selected_lines
                                                 .iter()
                                                 .map(|l| {
                                                     let c = l.content.as_str();
@@ -4825,8 +4955,20 @@ async fn main() -> Result<()> {
                                                 .zip(diff_view.selection_end)
                                                 .and_then(|(s, e)| {
                                                     if s != e {
-                                                        let end_line =
-                                                            diff_view.lines.get(s.max(e))?;
+                                                        let end_line = if diff_view.side_by_side {
+                                                            diff_view
+                                                                .side_by_side_lines
+                                                                .get(s.max(e))
+                                                                .and_then(|sline| {
+                                                                    sline
+                                                                        .right
+                                                                        .as_ref()
+                                                                        .or(sline.left.as_ref())
+                                                                        .cloned()
+                                                                })?
+                                                        } else {
+                                                            diff_view.lines.get(s.max(e))?.clone()
+                                                        };
                                                         Some((
                                                             end_line.new_line_num,
                                                             end_line.old_line_num,

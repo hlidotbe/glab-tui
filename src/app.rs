@@ -449,6 +449,13 @@ pub struct FlatDiffTreeNode {
 }
 
 #[derive(Clone, Debug)]
+pub struct SideBySideLine {
+    pub left: Option<DiffLine>,
+    pub right: Option<DiffLine>,
+    pub line_type: DiffLineType,
+}
+
+#[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct DiffView {
     pub mr_iid: u64,
@@ -464,6 +471,9 @@ pub struct DiffView {
     pub focus_on_files: bool,
     pub selection_start: Option<usize>,
     pub selection_end: Option<usize>,
+    pub side_by_side: bool,
+    pub side_by_side_lines: Vec<SideBySideLine>,
+    pub viewport_height: usize,
 }
 
 fn strip_ansi_escapes(input: &str) -> String {
@@ -646,6 +656,9 @@ impl DiffView {
             focus_on_files: true,
             selection_start: None,
             selection_end: None,
+            side_by_side: false,
+            side_by_side_lines: Vec::new(),
+            viewport_height: 15,
         };
 
         view.update_active_lines();
@@ -653,71 +666,90 @@ impl DiffView {
     }
 
     pub fn update_active_lines(&mut self) {
-        if self.visible_nodes.is_empty() {
-            self.lines = self.all_lines.clone();
-            self.hunks = self
-                .lines
-                .iter()
-                .enumerate()
-                .filter(|(_, l)| l.line_type == DiffLineType::HunkHeader)
-                .map(|(i, _)| i)
-                .collect();
-            return;
-        }
-
-        let selected_node = &self.visible_nodes[self.selected_visible_idx];
-        let rel_path = if selected_node.path_id == "root" {
-            ""
+        let new_lines = if self.visible_nodes.is_empty() {
+            self.all_lines.clone()
         } else {
-            selected_node
-                .path_id
-                .strip_prefix("root/")
-                .unwrap_or(&selected_node.path_id)
-        };
+            let selected_node = &self.visible_nodes[self.selected_visible_idx];
+            let rel_path = if selected_node.path_id == "root" {
+                ""
+            } else {
+                selected_node
+                    .path_id
+                    .strip_prefix("root/")
+                    .unwrap_or(&selected_node.path_id)
+            };
 
-        let new_lines = if selected_node.is_dir {
-            if rel_path.is_empty() {
-                self.all_lines.clone()
+            if selected_node.is_dir {
+                if rel_path.is_empty() {
+                    self.all_lines.clone()
+                } else {
+                    let prefix1 = format!("{}/", rel_path);
+                    let prefix2 = format!("{}\\", rel_path);
+                    self.all_lines
+                        .iter()
+                        .filter(|line| {
+                            line.file_path.starts_with(&prefix1)
+                                || line.file_path.starts_with(&prefix2)
+                                || &line.file_path == rel_path
+                        })
+                        .cloned()
+                        .collect()
+                }
             } else {
-                let prefix1 = format!("{}/", rel_path);
-                let prefix2 = format!("{}\\", rel_path);
-                self.all_lines
-                    .iter()
-                    .filter(|line| {
-                        line.file_path.starts_with(&prefix1)
-                            || line.file_path.starts_with(&prefix2)
-                            || &line.file_path == rel_path
-                    })
-                    .cloned()
-                    .collect()
-            }
-        } else {
-            if !rel_path.is_empty() {
-                self.all_lines
-                    .iter()
-                    .filter(|line| &line.file_path == rel_path)
-                    .cloned()
-                    .collect()
-            } else {
-                self.all_lines.clone()
+                if !rel_path.is_empty() {
+                    self.all_lines
+                        .iter()
+                        .filter(|line| &line.file_path == rel_path)
+                        .cloned()
+                        .collect()
+                } else {
+                    self.all_lines.clone()
+                }
             }
         };
 
         self.lines = new_lines;
-        self.hunks = self
-            .lines
-            .iter()
-            .enumerate()
-            .filter(|(_, l)| l.line_type == DiffLineType::HunkHeader)
-            .map(|(i, _)| i)
-            .collect();
+        self.side_by_side_lines = build_side_by_side_lines(&self.lines);
+
+        let active_len = if self.side_by_side {
+            self.side_by_side_lines.len()
+        } else {
+            self.lines.len()
+        };
+
+        if self.cursor_idx >= active_len {
+            self.cursor_idx = active_len.saturating_sub(1);
+        }
+
+        self.hunks = if self.side_by_side {
+            self.side_by_side_lines
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| l.line_type == DiffLineType::HunkHeader)
+                .map(|(i, _)| i)
+                .collect()
+        } else {
+            self.lines
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| l.line_type == DiffLineType::HunkHeader)
+                .map(|(i, _)| i)
+                .collect()
+        };
     }
 
     pub fn update_selected_file_from_cursor(&mut self) {
         if self.visible_nodes.is_empty() {
             return;
         }
-        if let Some(line) = self.lines.get(self.cursor_idx) {
+        let line_opt = if self.side_by_side {
+            self.side_by_side_lines
+                .get(self.cursor_idx)
+                .and_then(|sline| sline.right.as_ref().or(sline.left.as_ref()).cloned())
+        } else {
+            self.lines.get(self.cursor_idx).cloned()
+        };
+        if let Some(line) = line_opt {
             let active_path = &line.file_path;
             if let Some(pos) = self.visible_nodes.iter().position(|node| {
                 !node.is_dir
@@ -731,6 +763,56 @@ impl DiffView {
             }
         }
     }
+}
+
+pub fn build_side_by_side_lines(lines: &[DiffLine]) -> Vec<SideBySideLine> {
+    let mut side_lines = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = &lines[i];
+        match line.line_type {
+            DiffLineType::Meta | DiffLineType::HunkHeader => {
+                side_lines.push(SideBySideLine {
+                    left: Some(line.clone()),
+                    right: Some(line.clone()),
+                    line_type: line.line_type,
+                });
+                i += 1;
+            }
+            DiffLineType::Normal => {
+                side_lines.push(SideBySideLine {
+                    left: Some(line.clone()),
+                    right: Some(line.clone()),
+                    line_type: DiffLineType::Normal,
+                });
+                i += 1;
+            }
+            DiffLineType::Deletion | DiffLineType::Addition => {
+                let mut deletions = Vec::new();
+                while i < lines.len() && lines[i].line_type == DiffLineType::Deletion {
+                    deletions.push(lines[i].clone());
+                    i += 1;
+                }
+                let mut additions = Vec::new();
+                while i < lines.len() && lines[i].line_type == DiffLineType::Addition {
+                    additions.push(lines[i].clone());
+                    i += 1;
+                }
+
+                let max_len = std::cmp::max(deletions.len(), additions.len());
+                for j in 0..max_len {
+                    let left = deletions.get(j).cloned();
+                    let right = additions.get(j).cloned();
+                    side_lines.push(SideBySideLine {
+                        left,
+                        right,
+                        line_type: DiffLineType::Normal,
+                    });
+                }
+            }
+        }
+    }
+    side_lines
 }
 
 fn parse_hunk_header(header: &str) -> Option<(u32, u32)> {
@@ -2237,5 +2319,86 @@ index abcdef..ffffff 100644
 
         assert!(!app.focus_column_checklist);
         assert_eq!(app.column_checklist_idx, 0);
+    }
+
+    #[test]
+    fn test_side_by_side_alignment() {
+        let lines = vec![
+            DiffLine {
+                content: "@@ -1,2 +1,3 @@".to_string(),
+                line_type: DiffLineType::HunkHeader,
+                file_path: "foo.txt".to_string(),
+                old_line_num: None,
+                new_line_num: None,
+                syntax_highlighted: None,
+            },
+            DiffLine {
+                content: "-deleted line".to_string(),
+                line_type: DiffLineType::Deletion,
+                file_path: "foo.txt".to_string(),
+                old_line_num: Some(1),
+                new_line_num: None,
+                syntax_highlighted: None,
+            },
+            DiffLine {
+                content: "+added line 1".to_string(),
+                line_type: DiffLineType::Addition,
+                file_path: "foo.txt".to_string(),
+                old_line_num: None,
+                new_line_num: Some(1),
+                syntax_highlighted: None,
+            },
+            DiffLine {
+                content: "+added line 2".to_string(),
+                line_type: DiffLineType::Addition,
+                file_path: "foo.txt".to_string(),
+                old_line_num: None,
+                new_line_num: Some(2),
+                syntax_highlighted: None,
+            },
+            DiffLine {
+                content: " normal line".to_string(),
+                line_type: DiffLineType::Normal,
+                file_path: "foo.txt".to_string(),
+                old_line_num: Some(2),
+                new_line_num: Some(3),
+                syntax_highlighted: None,
+            },
+        ];
+
+        let side_by_side = build_side_by_side_lines(&lines);
+
+        assert_eq!(side_by_side.len(), 4);
+
+        assert_eq!(side_by_side[0].line_type, DiffLineType::HunkHeader);
+        assert!(side_by_side[0].left.is_some());
+        assert!(side_by_side[0].right.is_some());
+
+        assert_eq!(side_by_side[1].line_type, DiffLineType::Normal);
+        assert_eq!(
+            side_by_side[1].left.as_ref().unwrap().content,
+            "-deleted line"
+        );
+        assert_eq!(
+            side_by_side[1].right.as_ref().unwrap().content,
+            "+added line 1"
+        );
+
+        assert_eq!(side_by_side[2].line_type, DiffLineType::Normal);
+        assert!(side_by_side[2].left.is_none());
+        assert_eq!(
+            side_by_side[2].right.as_ref().unwrap().content,
+            "+added line 2"
+        );
+
+        assert_eq!(side_by_side[3].line_type, DiffLineType::Normal);
+        assert_eq!(
+            side_by_side[3].left.as_ref().unwrap().content,
+            " normal line"
+        );
+        assert_eq!(
+            side_by_side[3].right.as_ref().unwrap().content,
+            " normal line"
+        );
     }
 }
