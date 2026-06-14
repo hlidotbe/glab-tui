@@ -5028,7 +5028,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let mut columns_list = Vec::new();
         let mut filters_list = Vec::new();
         for (i, col) in cols.iter().enumerate() {
-            if *col == "Show Closed Items" {
+            if *col == "Show Closed Items" || *col == "Show Merged Items" {
                 filters_list.push((i, *col));
             } else {
                 columns_list.push((i, *col));
@@ -5149,12 +5149,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .iter()
                 .map(|&(orig_idx, col)| {
                     let checked = app.is_column_visible(tab, col);
-                    let display_name = if col == "Show Closed Items" {
-                        "Show Closed / Merged Items"
-                    } else {
-                        col
-                    };
-                    let text = format!("  [{}] {}", if checked { "x" } else { " " }, display_name);
+                    let text = format!("  [{}] {}", if checked { "x" } else { " " }, col);
                     let is_active = orig_idx == active_idx;
                     let style = if is_active {
                         Style::default()
@@ -5178,7 +5173,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let cols: Vec<&str> = tab
             .columns()
             .into_iter()
-            .filter(|c| *c != "Show Closed Items")
+            .filter(|c| *c != "Show Closed Items" && *c != "Show Merged Items")
             .collect();
         let active_idx = app.grouping_idx;
 

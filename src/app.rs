@@ -163,7 +163,7 @@ impl Tab {
                 "Labels",
                 "Milestone",
                 "Author",
-                "Show Closed Items",
+                "Show Merged Items",
             ],
             Tab::Pipelines => vec!["ID", "Status", "Stages", "Ref"],
             Tab::Jobs => vec!["ID", "Stage", "Status", "Name", "Matrix"],
@@ -172,6 +172,13 @@ impl Tab {
             Tab::Todos => vec!["State", "Project", "Type", "ID", "Title"],
             Tab::Milestones => vec!["ID", "Title", "State", "Start Date", "Due Date"],
             Tab::Terminal => vec![],
+        }
+    }
+
+    pub fn show_closed_column_name(&self) -> &'static str {
+        match self {
+            Tab::MergeRequests => "Show Merged Items",
+            _ => "Show Closed Items",
         }
     }
 

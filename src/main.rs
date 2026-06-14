@@ -1598,6 +1598,19 @@ async fn main() -> Result<()> {
     app.todos.items = cache.todos;
     app.milestones.items = cache.milestones;
 
+    if !cache.enabled_columns.is_empty() {
+        for (tab_str, cols) in &cache.enabled_columns {
+            let col_set: std::collections::HashSet<String> = cols.iter().cloned().collect();
+            if let Some(tab) = app::Tab::ALL.iter().find(|t| format!("{t:?}") == *tab_str) {
+                app.enabled_columns.insert(*tab, col_set);
+            }
+        }
+    }
+
+    if let Some(col) = &cache.group_by_column {
+        app.group_by_column = Some(col.clone());
+    }
+
     if !app.issues.items.is_empty() {
         app.loaded_tabs.insert(app::Tab::Issues);
     }
@@ -1633,7 +1646,7 @@ async fn main() -> Result<()> {
             &app.project_context,
             app.active_tab,
             tx.clone(),
-            app.is_column_visible(app.active_tab, "Show Closed Items"),
+            app.is_column_visible(app.active_tab, app.active_tab.show_closed_column_name()),
         );
     } else {
         let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
@@ -1733,7 +1746,10 @@ async fn main() -> Result<()> {
                                     &app.project_context,
                                     app.active_tab,
                                     events.sender(),
-                                    app.is_column_visible(app.active_tab, "Show Closed Items"),
+                                    app.is_column_visible(
+                                        app.active_tab,
+                                        app.active_tab.show_closed_column_name(),
+                                    ),
                                 );
                             }
                         }
@@ -1780,6 +1796,12 @@ async fn main() -> Result<()> {
                     app.update_filter_selection();
                     let mut cache = crate::utils::cache::load_cache(&app.project_context);
                     cache.issues = app.issues.items.clone();
+                    cache.enabled_columns = app
+                        .enabled_columns
+                        .iter()
+                        .map(|(tab, cols)| (format!("{tab:?}"), cols.iter().cloned().collect()))
+                        .collect();
+                    cache.group_by_column = app.group_by_column.clone();
                     crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::MrsFetched(mrs) => {
@@ -1968,7 +1990,10 @@ async fn main() -> Result<()> {
                                     &app.project_context,
                                     tab,
                                     events.sender(),
-                                    app.is_column_visible(app.active_tab, "Show Closed Items"),
+                                    app.is_column_visible(
+                                        app.active_tab,
+                                        app.active_tab.show_closed_column_name(),
+                                    ),
                                 );
                             }
                             if let Some(diff_view) = &app.diff_view {
@@ -2171,7 +2196,10 @@ async fn main() -> Result<()> {
                                     &app.project_context,
                                     app.active_tab,
                                     events.sender(),
-                                    app.is_column_visible(app.active_tab, "Show Closed Items"),
+                                    app.is_column_visible(
+                                        app.active_tab,
+                                        app.active_tab.show_closed_column_name(),
+                                    ),
                                 );
                             }
                         }
@@ -3405,7 +3433,8 @@ async fn main() -> Result<()> {
                                                             events.sender(),
                                                             app.is_column_visible(
                                                                 app.active_tab,
-                                                                "Show Closed Items",
+                                                                app.active_tab
+                                                                    .show_closed_column_name(),
                                                             ),
                                                         );
                                                     }
@@ -4252,7 +4281,7 @@ async fn main() -> Result<()> {
                                                 events.sender(),
                                                 app.is_column_visible(
                                                     app.active_tab,
-                                                    "Show Closed Items",
+                                                    app.active_tab.show_closed_column_name(),
                                                 ),
                                             );
                                         }
@@ -4432,7 +4461,7 @@ async fn main() -> Result<()> {
                                                 events.sender(),
                                                 app.is_column_visible(
                                                     app.active_tab,
-                                                    "Show Closed Items",
+                                                    app.active_tab.show_closed_column_name(),
                                                 ),
                                             );
                                         }
@@ -4617,7 +4646,7 @@ async fn main() -> Result<()> {
                                                 events.sender(),
                                                 app.is_column_visible(
                                                     app.active_tab,
-                                                    "Show Closed Items",
+                                                    app.active_tab.show_closed_column_name(),
                                                 ),
                                             );
                                         }
@@ -4725,7 +4754,7 @@ async fn main() -> Result<()> {
                                                 events.sender(),
                                                 app.is_column_visible(
                                                     app.active_tab,
-                                                    "Show Closed Items",
+                                                    app.active_tab.show_closed_column_name(),
                                                 ),
                                             );
                                         }
@@ -5783,6 +5812,20 @@ async fn main() -> Result<()> {
                                             set.insert(col_str);
                                         }
                                         app.update_filter_selection();
+                                        let mut cache =
+                                            crate::utils::cache::load_cache(&app.project_context);
+                                        cache.enabled_columns = app
+                                            .enabled_columns
+                                            .iter()
+                                            .map(|(tab, cols)| {
+                                                (format!("{tab:?}"), cols.iter().cloned().collect())
+                                            })
+                                            .collect();
+                                        cache.group_by_column = app.group_by_column.clone();
+                                        crate::utils::cache::save_cache(
+                                            &app.project_context,
+                                            &cache,
+                                        );
                                     }
                                 }
                             }
@@ -7332,7 +7375,7 @@ async fn main() -> Result<()> {
                                             events.sender(),
                                             app.is_column_visible(
                                                 app.active_tab,
-                                                "Show Closed Items",
+                                                app.active_tab.show_closed_column_name(),
                                             ),
                                         );
                                     }
@@ -7354,7 +7397,7 @@ async fn main() -> Result<()> {
                                             events.sender(),
                                             app.is_column_visible(
                                                 app.active_tab,
-                                                "Show Closed Items",
+                                                app.active_tab.show_closed_column_name(),
                                             ),
                                         );
                                     }

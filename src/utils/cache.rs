@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,6 +12,8 @@ pub struct ProjectCache {
     pub releases: Vec<crate::gitlab::releases::Release>,
     pub todos: Vec<crate::gitlab::notifications::Notification>,
     pub milestones: Vec<crate::gitlab::milestones::Milestone>,
+    pub enabled_columns: HashMap<String, Vec<String>>,
+    pub group_by_column: Option<String>,
 }
 
 fn get_cache_file_path(project_context: &str) -> PathBuf {
@@ -20,7 +23,8 @@ fn get_cache_file_path(project_context: &str) -> PathBuf {
         .unwrap_or_else(|_| ".".to_string());
 
     let mut path = PathBuf::from(home);
-    path.push(".glab-tui-cache");
+    path.push(".cache");
+    path.push("glab-tui");
     let _ = fs::create_dir_all(&path);
     path.push(format!("{}.json", safe_name));
     path
@@ -49,7 +53,8 @@ fn get_recent_repos_file_path() -> PathBuf {
         .unwrap_or_else(|_| ".".to_string());
 
     let mut path = PathBuf::from(home);
-    path.push(".glab-tui-cache");
+    path.push(".cache");
+    path.push("glab-tui");
     let _ = fs::create_dir_all(&path);
     path.push("recent_repos.json");
     path
