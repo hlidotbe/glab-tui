@@ -927,6 +927,7 @@ pub struct App {
     pub help_search_query: String,
     pub diff_view: Option<DiffView>,
     pub current_comments: Vec<crate::gitlab::mr::DiscussionNote>,
+    pub show_submit_review_prompt: Option<u64>,
     pub diff_loading: bool,
     pub todos: StatefulTable<crate::gitlab::notifications::Notification>,
     pub status_message: Option<String>,
@@ -987,6 +988,7 @@ impl Default for App {
             help_search_query: String::new(),
             diff_view: None,
             current_comments: Vec::new(),
+            show_submit_review_prompt: None,
             diff_loading: false,
             todos: StatefulTable::with_items(vec![]),
             status_message: None,
@@ -2402,5 +2404,13 @@ index abcdef..ffffff 100644
             side_by_side[3].right.as_ref().unwrap().content,
             " normal line"
         );
+    }
+
+    #[test]
+    fn test_show_submit_review_prompt_defaults() {
+        let app = App::default();
+        assert_eq!(app.show_submit_review_prompt, None);
+        assert!(!app.in_review_mode);
+        assert!(app.draft_comments.is_empty());
     }
 }

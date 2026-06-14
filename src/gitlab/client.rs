@@ -772,6 +772,7 @@ fn translate_json_to_gitlab(endpoint: &str, val: serde_json::Value) -> Result<se
                     let path = c.get("path").and_then(|p| p.as_str());
                     let line = c.get("line").and_then(|l| l.as_u64());
                     let side = c.get("side").and_then(|s| s.as_str()).unwrap_or("RIGHT");
+                    let start_line = c.get("start_line").and_then(|l| l.as_u64());
 
                     let position = if let Some(p) = path {
                         let (new_line, old_line) = if side == "LEFT" {
@@ -784,6 +785,7 @@ fn translate_json_to_gitlab(endpoint: &str, val: serde_json::Value) -> Result<se
                             "old_path": p,
                             "new_line": new_line,
                             "old_line": old_line,
+                            "start_line": start_line,
                             "position_type": "text"
                         })
                     } else {

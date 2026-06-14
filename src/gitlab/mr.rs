@@ -73,6 +73,48 @@ pub struct NotePosition {
     pub new_line: Option<u64>,
     #[serde(default)]
     pub old_line: Option<u64>,
+    #[serde(default)]
+    pub start_line: Option<u64>,
+    #[serde(default)]
+    pub line_range: Option<serde_json::Value>,
+}
+
+impl NotePosition {
+    pub fn get_line_range(&self) -> (Option<u64>, Option<u64>, Option<u64>, Option<u64>) {
+        let mut start_new = self.new_line;
+        let mut end_new = self.new_line;
+        let mut start_old = self.old_line;
+        let mut end_old = self.old_line;
+
+        if let Some(ref lr) = self.line_range {
+            if let Some(start_obj) = lr.get("start") {
+                if let Some(nl) = start_obj.get("new_line").and_then(|v| v.as_u64()) {
+                    start_new = Some(nl);
+                }
+                if let Some(ol) = start_obj.get("old_line").and_then(|v| v.as_u64()) {
+                    start_old = Some(ol);
+                }
+            }
+            if let Some(end_obj) = lr.get("end") {
+                if let Some(nl) = end_obj.get("new_line").and_then(|v| v.as_u64()) {
+                    end_new = Some(nl);
+                }
+                if let Some(ol) = end_obj.get("old_line").and_then(|v| v.as_u64()) {
+                    end_old = Some(ol);
+                }
+            }
+        }
+
+        if let Some(sl) = self.start_line {
+            if self.new_line.is_some() {
+                start_new = Some(sl);
+            } else if self.old_line.is_some() {
+                start_old = Some(sl);
+            }
+        }
+
+        (start_new, end_new, start_old, end_old)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

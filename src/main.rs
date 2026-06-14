@@ -2038,6 +2038,43 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
+                    if let Some(mr_iid) = app.show_submit_review_prompt {
+                        match key_event.code {
+                            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                                app.show_submit_review_prompt = None;
+                                app.selector = Some(crate::app::Selector {
+                                    title: " Submit Pull Request Review ".to_string(),
+                                    all_items: vec![
+                                        "Approve".to_string(),
+                                        "Request Changes".to_string(),
+                                        "Comment".to_string(),
+                                    ],
+                                    selected_items: std::collections::HashSet::new(),
+                                    cursor_idx: 0,
+                                    search_query: String::new(),
+                                    is_filtering: false,
+                                    is_loading: false,
+                                    entity_iid: mr_iid,
+                                    entity_type: "mr".to_string(),
+                                    field_type: "review_submit_status".to_string(),
+                                    multi_select: false,
+                                    state: ListState::default(),
+                                });
+                            }
+                            KeyCode::Char('n') | KeyCode::Char('N') => {
+                                app.show_submit_review_prompt = None;
+                                app.draft_comments.clear();
+                                app.in_review_mode = false;
+                                app.diff_view = None;
+                            }
+                            KeyCode::Esc | KeyCode::Char('q') => {
+                                app.show_submit_review_prompt = None;
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     if app.show_help {
                         match key_event.code {
                             KeyCode::Esc | KeyCode::Enter => {
@@ -2765,6 +2802,34 @@ async fn main() -> Result<()> {
                                                                             "line_code": "",
                                                                             "type": "new_line",
                                                                             "new_line": start_l.max(end_l),
+                                                                        },
+                                                                    });
+                                                                }
+                                                            }
+                                                        }
+                                                    } else if let Some(end_o) =
+                                                        comment.end_old_line_num
+                                                    {
+                                                        if let Some(start_o) = comment.old_line_num
+                                                        {
+                                                            if end_o != start_o {
+                                                                let line_range = serde_json::json!({
+                                                                    "start": {"line_code": "", "type": "old_line"},
+                                                                    "end": {"line_code": "", "type": "old_line"},
+                                                                });
+                                                                if let Some(lr) =
+                                                                    line_range.as_object()
+                                                                {
+                                                                    position["line_range"] = serde_json::json!({
+                                                                        "start": {
+                                                                            "line_code": "",
+                                                                            "type": "old_line",
+                                                                            "old_line": start_o.min(end_o),
+                                                                        },
+                                                                        "end": {
+                                                                            "line_code": "",
+                                                                            "type": "old_line",
+                                                                            "old_line": start_o.max(end_o),
                                                                         },
                                                                     });
                                                                 }

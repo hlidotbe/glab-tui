@@ -3527,42 +3527,41 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         _ => String::new(),
                     };
 
-                    let mut is_first = true;
-                    for body_line in comment.body.lines() {
-                        let left_prefix = if is_first {
-                            " 💬 Draft "
-                        } else {
-                            "          "
-                        };
-                        let right_prefix = if is_first {
-                            format!(" 💬 Draft Note{}: ", range_info)
-                        } else {
-                            "    ".to_string()
-                        };
-                        is_first = false;
+                    let prefix_style = Style::default()
+                        .fg(THEME.yellow)
+                        .add_modifier(Modifier::BOLD);
+
+                    let right_prefix_first = format!(" 💬 Draft Note{}: ", range_info);
+
+                    let formatted_lines = format_comment_with_suggestions(
+                        &comment.body,
+                        &comment.file_path,
+                        comment.line_num.map(|n| n as u64),
+                        comment.end_line_num.map(|n| n as u64),
+                        comment.old_line_num.map(|n| n as u64),
+                        comment.end_old_line_num.map(|n| n as u64),
+                        &updated_diff_view.all_lines,
+                        &right_prefix_first,
+                        prefix_style,
+                    );
+
+                    for (i, (right_prefix, prefix_style, content_str, content_style)) in
+                        formatted_lines.into_iter().enumerate()
+                    {
+                        let left_prefix = if i == 0 { " 💬 Draft " } else { "          " };
 
                         left_list_lines.push(
                             Line::from(vec![
                                 Span::styled("         ", Style::default()),
-                                Span::styled(
-                                    left_prefix,
-                                    Style::default()
-                                        .fg(THEME.yellow)
-                                        .add_modifier(Modifier::BOLD),
-                                ),
+                                Span::styled(left_prefix, prefix_style),
                             ])
                             .style(comment_style),
                         );
 
                         right_list_lines.push(
                             Line::from(vec![
-                                Span::styled(
-                                    right_prefix,
-                                    Style::default()
-                                        .fg(THEME.yellow)
-                                        .add_modifier(Modifier::BOLD),
-                                ),
-                                Span::styled(body_line, Style::default().fg(THEME.text_normal)),
+                                Span::styled(right_prefix, prefix_style),
+                                Span::styled(content_str, content_style),
                             ])
                             .style(comment_style),
                         );
@@ -3605,38 +3604,61 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 for comment in matching_current {
                     let comment_style = Style::default().fg(THEME.blue).bg(Color::Rgb(20, 30, 45));
 
-                    let mut is_first = true;
-                    for body_line in comment.body.lines() {
-                        let left_prefix = if is_first {
+                    let prefix_style = Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
+
+                    let right_prefix_first = format!(" 💬 @{}: ", comment.author.username);
+
+                    let (start_new, end_new, start_old, end_old, file_path) =
+                        if let Some(ref pos) = comment.position {
+                            let (sn, en, so, eo) = pos.get_line_range();
+                            (
+                                sn,
+                                en,
+                                so,
+                                eo,
+                                pos.new_path
+                                    .as_deref()
+                                    .or(pos.old_path.as_deref())
+                                    .unwrap_or("")
+                                    .to_string(),
+                            )
+                        } else {
+                            (None, None, None, None, String::new())
+                        };
+
+                    let formatted_lines = format_comment_with_suggestions(
+                        &comment.body,
+                        &file_path,
+                        start_new,
+                        end_new,
+                        start_old,
+                        end_old,
+                        &updated_diff_view.all_lines,
+                        &right_prefix_first,
+                        prefix_style,
+                    );
+
+                    for (i, (right_prefix, prefix_style, content_str, content_style)) in
+                        formatted_lines.into_iter().enumerate()
+                    {
+                        let left_prefix = if i == 0 {
                             " 💬 Comment "
                         } else {
                             "            "
                         };
-                        let right_prefix = if is_first {
-                            format!(" 💬 @{}: ", comment.author.username)
-                        } else {
-                            "    ".to_string()
-                        };
-                        is_first = false;
 
                         left_list_lines.push(
                             Line::from(vec![
                                 Span::styled("         ", Style::default()),
-                                Span::styled(
-                                    left_prefix,
-                                    Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
-                                ),
+                                Span::styled(left_prefix, prefix_style),
                             ])
                             .style(comment_style),
                         );
 
                         right_list_lines.push(
                             Line::from(vec![
-                                Span::styled(
-                                    right_prefix,
-                                    Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
-                                ),
-                                Span::styled(body_line, Style::default().fg(THEME.text_normal)),
+                                Span::styled(right_prefix, prefix_style),
+                                Span::styled(content_str, content_style),
                             ])
                             .style(comment_style),
                         );
@@ -3876,24 +3898,30 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         _ => String::new(),
                     };
 
-                    let mut is_first = true;
-                    for body_line in comment.body.lines() {
-                        let prefix = if is_first {
-                            format!(" 💬 Draft Note{}: ", range_info)
-                        } else {
-                            "    ".to_string()
-                        };
-                        is_first = false;
+                    let prefix_style = Style::default()
+                        .fg(THEME.yellow)
+                        .add_modifier(Modifier::BOLD);
 
+                    let right_prefix_first = format!(" 💬 Draft Note{}: ", range_info);
+
+                    let formatted_lines = format_comment_with_suggestions(
+                        &comment.body,
+                        &comment.file_path,
+                        comment.line_num.map(|n| n as u64),
+                        comment.end_line_num.map(|n| n as u64),
+                        comment.old_line_num.map(|n| n as u64),
+                        comment.end_old_line_num.map(|n| n as u64),
+                        &updated_diff_view.all_lines,
+                        &right_prefix_first,
+                        prefix_style,
+                    );
+
+                    for (right_prefix, prefix_style, content_str, content_style) in formatted_lines
+                    {
                         let spans = vec![
                             Span::styled("         ", Style::default()),
-                            Span::styled(
-                                prefix,
-                                Style::default()
-                                    .fg(THEME.yellow)
-                                    .add_modifier(Modifier::BOLD),
-                            ),
-                            Span::styled(body_line, Style::default().fg(THEME.text_normal)),
+                            Span::styled(right_prefix, prefix_style),
+                            Span::styled(content_str, content_style),
                         ];
                         list_lines.push(Line::from(spans).style(comment_style));
                     }
@@ -3924,22 +3952,46 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 for comment in matching_current {
                     let comment_style = Style::default().fg(THEME.blue).bg(Color::Rgb(20, 30, 45));
 
-                    let mut is_first = true;
-                    for body_line in comment.body.lines() {
-                        let prefix = if is_first {
-                            format!(" 💬 @{}: ", comment.author.username)
-                        } else {
-                            "    ".to_string()
-                        };
-                        is_first = false;
+                    let prefix_style = Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
 
+                    let right_prefix_first = format!(" 💬 @{}: ", comment.author.username);
+
+                    let (start_new, end_new, start_old, end_old, file_path) =
+                        if let Some(ref pos) = comment.position {
+                            let (sn, en, so, eo) = pos.get_line_range();
+                            (
+                                sn,
+                                en,
+                                so,
+                                eo,
+                                pos.new_path
+                                    .as_deref()
+                                    .or(pos.old_path.as_deref())
+                                    .unwrap_or("")
+                                    .to_string(),
+                            )
+                        } else {
+                            (None, None, None, None, String::new())
+                        };
+
+                    let formatted_lines = format_comment_with_suggestions(
+                        &comment.body,
+                        &file_path,
+                        start_new,
+                        end_new,
+                        start_old,
+                        end_old,
+                        &updated_diff_view.all_lines,
+                        &right_prefix_first,
+                        prefix_style,
+                    );
+
+                    for (right_prefix, prefix_style, content_str, content_style) in formatted_lines
+                    {
                         let spans = vec![
                             Span::styled("         ", Style::default()),
-                            Span::styled(
-                                prefix,
-                                Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
-                            ),
-                            Span::styled(body_line, Style::default().fg(THEME.text_normal)),
+                            Span::styled(right_prefix, prefix_style),
+                            Span::styled(content_str, content_style),
                         ];
                         list_lines.push(Line::from(spans).style(comment_style));
                     }
@@ -5132,6 +5184,193 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .wrap(ratatui::widgets::Wrap { trim: true });
         f.render_widget(footer_p, popup_layout[1]);
     }
+
+    if app.show_submit_review_prompt.is_some() {
+        let block = Block::default()
+            .title(" Submit Review? ")
+            .title_style(
+                Style::default()
+                    .fg(THEME.header_fg)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(THEME.border_focused))
+            .border_type(BorderType::Double)
+            .style(Style::default().bg(Color::Reset));
+
+        let area = centered_rect_fixed(60, 9, size);
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Min(0),    // Message
+                Constraint::Length(2), // Footer
+            ])
+            .split(area);
+
+        let message_p = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(
+                "You have pending draft comments. Would you like to submit your review now?",
+            ),
+        ])
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(THEME.text_normal))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+
+        let footer_p = Paragraph::new(" y: Yes (Submit) • n: No (Discard & Exit) • Esc: Cancel ")
+            .alignment(Alignment::Center)
+            .style(
+                Style::default()
+                    .fg(THEME.text_muted)
+                    .add_modifier(Modifier::ITALIC),
+            )
+            .wrap(ratatui::widgets::Wrap { trim: true });
+
+        f.render_widget(Clear, area);
+        f.render_widget(block, area);
+        f.render_widget(message_p, chunks[0]);
+        f.render_widget(footer_p, chunks[1]);
+    }
+}
+
+fn format_comment_with_suggestions(
+    body: &str,
+    file_path: &str,
+    start_new: Option<u64>,
+    end_new: Option<u64>,
+    start_old: Option<u64>,
+    end_old: Option<u64>,
+    all_lines: &[crate::app::DiffLine],
+    prefix: &str,
+    prefix_style: Style,
+) -> Vec<(String, Style, String, Style)> {
+    let mut result_lines = Vec::new();
+    let mut in_suggestion = false;
+    let mut is_first = true;
+
+    // Retrieve original lines for suggestion diff
+    let mut original_lines = Vec::new();
+    if let Some(oln) = start_old {
+        let end_o = end_old.unwrap_or(oln);
+        let min_o = oln.min(end_o);
+        let max_o = oln.max(end_o);
+        for dl in all_lines {
+            if &dl.file_path == file_path {
+                if let Some(num) = dl.old_line_num {
+                    if num as u64 >= min_o && num as u64 <= max_o {
+                        if dl.line_type != crate::app::DiffLineType::Addition
+                            && !original_lines.contains(&dl.content)
+                        {
+                            original_lines.push(dl.content.clone());
+                        }
+                    }
+                }
+            }
+        }
+    } else if let Some(nln) = start_new {
+        let end_n = end_new.unwrap_or(nln);
+        let min_n = nln.min(end_n);
+        let max_n = nln.max(end_n);
+        for dl in all_lines {
+            if &dl.file_path == file_path {
+                if let Some(num) = dl.new_line_num {
+                    if num as u64 >= min_n && num as u64 <= max_n {
+                        if dl.line_type != crate::app::DiffLineType::Deletion
+                            && !original_lines.contains(&dl.content)
+                        {
+                            original_lines.push(dl.content.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for body_line in body.lines() {
+        let is_suggestion_start = body_line.trim().starts_with("```suggestion");
+        let is_suggestion_end = in_suggestion && body_line.trim().starts_with("```");
+
+        let current_prefix = if is_first {
+            is_first = false;
+            prefix.to_string()
+        } else {
+            " ".repeat(prefix.len())
+        };
+
+        if is_suggestion_start {
+            in_suggestion = true;
+            result_lines.push((
+                current_prefix.clone(),
+                prefix_style,
+                "┌─── Code Suggestion ───".to_string(),
+                Style::default()
+                    .fg(THEME.green)
+                    .add_modifier(Modifier::BOLD),
+            ));
+
+            // Print original code as DELETIONS (red)
+            for orig in &original_lines {
+                // Strip existing prefix if it starts with space, minus, or plus
+                let clean_orig =
+                    if orig.starts_with(' ') || orig.starts_with('-') || orig.starts_with('+') {
+                        orig.chars().skip(1).collect::<String>()
+                    } else {
+                        orig.clone()
+                    };
+
+                let display_orig = format!("│ - {}", clean_orig);
+                result_lines.push((
+                    " ".repeat(prefix.len()),
+                    prefix_style,
+                    display_orig,
+                    Style::default()
+                        .fg(Color::Rgb(220, 140, 140))
+                        .bg(Color::Rgb(55, 22, 28)),
+                ));
+            }
+        } else if is_suggestion_end {
+            in_suggestion = false;
+            result_lines.push((
+                current_prefix,
+                prefix_style,
+                "└─── End of Suggestion ───".to_string(),
+                Style::default()
+                    .fg(THEME.green)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else if in_suggestion {
+            // Print suggested code as ADDITIONS (green)
+            let display_sugg = format!("│ + {}", body_line);
+            result_lines.push((
+                current_prefix,
+                prefix_style,
+                display_sugg,
+                Style::default()
+                    .fg(Color::Rgb(140, 220, 140))
+                    .bg(Color::Rgb(22, 48, 28)),
+            ));
+        } else {
+            result_lines.push((
+                current_prefix,
+                prefix_style,
+                body_line.to_string(),
+                Style::default().fg(THEME.text_normal),
+            ));
+        }
+    }
+
+    if result_lines.is_empty() {
+        result_lines.push((
+            prefix.to_string(),
+            prefix_style,
+            String::new(),
+            Style::default().fg(THEME.text_normal),
+        ));
+    }
+
+    result_lines
 }
 
 /// helper function to create a centered rect using up certain percentage of the available rect `r`
