@@ -1119,9 +1119,8 @@ pub struct App {
     pub selected_milestone_issues: Option<Vec<crate::gitlab::issues::Issue>>,
     pub selected_milestone_iid: Option<u64>,
     pub terminal_scroll: usize,
-    pub focus_grouping: bool,
-    pub grouping_idx: usize,
     pub group_by_column: Option<String>,
+    pub group_ascending: bool,
     pub group_list_state: ratatui::widgets::ListState,
     pub group_items: Vec<GroupItem>,
 }
@@ -1192,9 +1191,8 @@ impl Default for App {
             selected_milestone_issues: None,
             selected_milestone_iid: None,
             terminal_scroll: 0,
-            focus_grouping: false,
-            grouping_idx: 0,
             group_by_column: None,
+            group_ascending: true,
             group_list_state: ratatui::widgets::ListState::default(),
             group_items: Vec::new(),
         }
@@ -1384,6 +1382,7 @@ impl App {
         items: &'a [crate::gitlab::issues::Issue],
         query: &str,
         enabled_columns: &std::collections::HashMap<Tab, std::collections::HashSet<String>>,
+        ascending: bool,
         group_by_column: &Option<String>,
     ) -> Vec<&'a crate::gitlab::issues::Issue> {
         let default_set = std::collections::HashSet::new();
@@ -1427,10 +1426,11 @@ impl App {
                     "Title" => b.title.clone(),
                     _ => String::new(),
                 };
-                match (val_a.parse::<u64>(), val_b.parse::<u64>()) {
+                let cmp = match (val_a.parse::<u64>(), val_b.parse::<u64>()) {
                     (Ok(a), Ok(b)) => a.cmp(&b),
                     _ => val_a.cmp(&val_b),
-                }
+                };
+                if !ascending { cmp.reverse() } else { cmp }
             });
         }
         list
@@ -1441,6 +1441,7 @@ impl App {
             &self.issues.items,
             &self.search_query,
             &self.enabled_columns,
+            self.group_ascending,
             &self.group_by_column,
         )
     }
@@ -1532,6 +1533,7 @@ impl App {
         items: &'a [crate::gitlab::mr::MergeRequest],
         query: &str,
         enabled_columns: &std::collections::HashMap<Tab, std::collections::HashSet<String>>,
+        ascending: bool,
         group_by_column: &Option<String>,
     ) -> Vec<&'a crate::gitlab::mr::MergeRequest> {
         let default_set = std::collections::HashSet::new();
@@ -1601,10 +1603,11 @@ impl App {
                     "Title" => b.title.clone(),
                     _ => String::new(),
                 };
-                match (val_a.parse::<u64>(), val_b.parse::<u64>()) {
+                let cmp = match (val_a.parse::<u64>(), val_b.parse::<u64>()) {
                     (Ok(a), Ok(b)) => a.cmp(&b),
                     _ => val_a.cmp(&val_b),
-                }
+                };
+                if !ascending { cmp.reverse() } else { cmp }
             });
         }
         list
@@ -1615,6 +1618,7 @@ impl App {
             &self.mrs.items,
             &self.search_query,
             &self.enabled_columns,
+            self.group_ascending,
             &self.group_by_column,
         )
     }
@@ -1667,6 +1671,7 @@ impl App {
         query: &str,
         pipeline_jobs: &std::collections::HashMap<u64, Vec<crate::gitlab::pipelines::Job>>,
         enabled_columns: &std::collections::HashMap<Tab, std::collections::HashSet<String>>,
+        ascending: bool,
         group_by_column: &Option<String>,
     ) -> Vec<&'a crate::gitlab::pipelines::Pipeline> {
         let default_set = std::collections::HashSet::new();
@@ -1686,10 +1691,11 @@ impl App {
                     "ID" => b.id.to_string(),
                     _ => String::new(),
                 };
-                match (val_a.parse::<u64>(), val_b.parse::<u64>()) {
+                let cmp = match (val_a.parse::<u64>(), val_b.parse::<u64>()) {
                     (Ok(a), Ok(b)) => a.cmp(&b),
                     _ => val_a.cmp(&val_b),
-                }
+                };
+                if !ascending { cmp.reverse() } else { cmp }
             });
         }
         list
@@ -1701,6 +1707,7 @@ impl App {
             &self.search_query,
             &self.pipeline_jobs,
             &self.enabled_columns,
+            self.group_ascending,
             &self.group_by_column,
         )
     }
@@ -1749,6 +1756,7 @@ impl App {
         items: &'a [crate::gitlab::pipelines::Job],
         query: &str,
         enabled_columns: &std::collections::HashMap<Tab, std::collections::HashSet<String>>,
+        ascending: bool,
         group_by_column: &Option<String>,
     ) -> Vec<&'a crate::gitlab::pipelines::Job> {
         let default_set = std::collections::HashSet::new();
@@ -1770,10 +1778,11 @@ impl App {
                     "ID" => b.id.to_string(),
                     _ => String::new(),
                 };
-                match (val_a.parse::<u64>(), val_b.parse::<u64>()) {
+                let cmp = match (val_a.parse::<u64>(), val_b.parse::<u64>()) {
                     (Ok(a), Ok(b)) => a.cmp(&b),
                     _ => val_a.cmp(&val_b),
-                }
+                };
+                if !ascending { cmp.reverse() } else { cmp }
             });
         }
         list
@@ -1785,6 +1794,7 @@ impl App {
                 jobs,
                 &self.search_query,
                 &self.enabled_columns,
+                self.group_ascending,
                 &self.group_by_column,
             )
         } else {
@@ -1925,6 +1935,7 @@ impl App {
         items: &'a [crate::gitlab::notifications::Notification],
         query: &str,
         enabled_columns: &std::collections::HashMap<Tab, std::collections::HashSet<String>>,
+        ascending: bool,
         group_by_column: &Option<String>,
     ) -> Vec<&'a crate::gitlab::notifications::Notification> {
         let default_set = std::collections::HashSet::new();
@@ -1948,10 +1959,11 @@ impl App {
                     "Title" => b.title.clone(),
                     _ => String::new(),
                 };
-                match (val_a.parse::<u64>(), val_b.parse::<u64>()) {
+                let cmp = match (val_a.parse::<u64>(), val_b.parse::<u64>()) {
                     (Ok(a), Ok(b)) => a.cmp(&b),
                     _ => val_a.cmp(&val_b),
-                }
+                };
+                if !ascending { cmp.reverse() } else { cmp }
             });
         }
         list
@@ -1962,6 +1974,7 @@ impl App {
             &self.todos.items,
             &self.search_query,
             &self.enabled_columns,
+            self.group_ascending,
             &self.group_by_column,
         )
     }

@@ -1610,6 +1610,9 @@ async fn main() -> Result<()> {
     if let Some(col) = &cache.group_by_column {
         app.group_by_column = Some(col.clone());
     }
+    if cache.group_ascending != app.group_ascending {
+        app.group_ascending = cache.group_ascending;
+    }
 
     if !app.issues.items.is_empty() {
         app.loaded_tabs.insert(app::Tab::Issues);
@@ -1802,6 +1805,7 @@ async fn main() -> Result<()> {
                         .map(|(tab, cols)| (format!("{tab:?}"), cols.iter().cloned().collect()))
                         .collect();
                     cache.group_by_column = app.group_by_column.clone();
+                    cache.group_ascending = app.group_ascending;
                     crate::utils::cache::save_cache(&app.project_context, &cache);
                 }
                 Event::MrsFetched(mrs) => {
@@ -5778,13 +5782,21 @@ async fn main() -> Result<()> {
                     }
 
                     if app.focus_column_checklist {
+                        let cols = app.active_tab.columns();
+                        let group_cols: Vec<&str> = cols
+                            .iter()
+                            .filter(|c| **c != "Show Closed Items" && **c != "Show Merged Items")
+                            .copied()
+                            .collect();
+                        let cols_end = cols.len();
+                        let group_end = cols_end + group_cols.len();
+                        let max_idx = group_end + 1;
+
                         match key_event.code {
-                            KeyCode::Esc | KeyCode::Char('t') | KeyCode::Tab | KeyCode::BackTab => {
+                            KeyCode::Esc | KeyCode::Char(',') => {
                                 app.focus_column_checklist = false;
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                let len = app.active_tab.columns().len();
-                                let max_idx = if len > 0 { len - 1 } else { 0 };
                                 if app.column_checklist_idx < max_idx {
                                     app.column_checklist_idx += 1;
                                 } else {
@@ -5792,8 +5804,6 @@ async fn main() -> Result<()> {
                                 }
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                let len = app.active_tab.columns().len();
-                                let max_idx = if len > 0 { len - 1 } else { 0 };
                                 if app.column_checklist_idx > 0 {
                                     app.column_checklist_idx -= 1;
                                 } else {
@@ -5801,74 +5811,60 @@ async fn main() -> Result<()> {
                                 }
                             }
                             KeyCode::Char(' ') | KeyCode::Enter => {
-                                let cols = app.active_tab.columns();
-                                if let Some(col_name) = cols.get(app.column_checklist_idx) {
-                                    let col_str = col_name.to_string();
-                                    if let Some(set) = app.enabled_columns.get_mut(&app.active_tab)
-                                    {
-                                        if set.contains(&col_str) {
-                                            set.remove(&col_str);
-                                        } else {
-                                            set.insert(col_str);
+                                let idx = app.column_checklist_idx;
+                                if idx < cols_end {
+                                    if let Some(col_name) = cols.get(idx) {
+                                        let col_str = col_name.to_string();
+                                        if let Some(set) =
+                                            app.enabled_columns.get_mut(&app.active_tab)
+                                        {
+                                            if set.contains(&col_str) {
+                                                set.remove(&col_str);
+                                            } else {
+                                                set.insert(col_str);
+                                            }
+                                            app.update_filter_selection();
                                         }
+                                    }
+                                } else if idx < group_end {
+                                    let group_idx = idx - cols_end;
+                                    if let Some(col) = group_cols.get(group_idx) {
+                                        if app.group_by_column.as_deref() == Some(col) {
+                                            app.group_by_column = None;
+                                        } else {
+                                            app.group_by_column = Some(col.to_string());
+                                        }
+                                        app.group_list_state.select(Some(0));
                                         app.update_filter_selection();
-                                        let mut cache =
-                                            crate::utils::cache::load_cache(&app.project_context);
-                                        cache.enabled_columns = app
-                                            .enabled_columns
-                                            .iter()
-                                            .map(|(tab, cols)| {
-                                                (format!("{tab:?}"), cols.iter().cloned().collect())
-                                            })
-                                            .collect();
-                                        cache.group_by_column = app.group_by_column.clone();
-                                        crate::utils::cache::save_cache(
-                                            &app.project_context,
-                                            &cache,
-                                        );
                                     }
-                                }
-                            }
-                            _ => {}
-                        }
-                        continue;
-                    }
-
-                    if app.focus_grouping {
-                        match key_event.code {
-                            KeyCode::Esc | KeyCode::Char(',') => {
-                                app.focus_grouping = false;
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                let len = app.active_tab.columns().len();
-                                let max_idx = if len > 0 { len - 1 } else { 0 };
-                                if app.grouping_idx < max_idx {
-                                    app.grouping_idx += 1;
                                 } else {
-                                    app.grouping_idx = 0;
-                                }
-                            }
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                let len = app.active_tab.columns().len();
-                                let max_idx = if len > 0 { len - 1 } else { 0 };
-                                if app.grouping_idx > 0 {
-                                    app.grouping_idx -= 1;
-                                } else {
-                                    app.grouping_idx = max_idx;
-                                }
-                            }
-                            KeyCode::Char(' ') | KeyCode::Enter => {
-                                let cols = app.active_tab.columns();
-                                if let Some(col_name) = cols.get(app.grouping_idx) {
-                                    let col_str = col_name.to_string();
-                                    if app.group_by_column.as_deref() == Some(col_str.as_str()) {
-                                        app.group_by_column = None;
-                                    } else {
-                                        app.group_by_column = Some(col_str);
-                                    }
-                                    app.group_list_state.select(Some(0));
-                                    app.focus_grouping = false;
+                                    app.group_ascending = idx == group_end;
                                     app.update_filter_selection();
+                                }
+                                let mut cache =
+                                    crate::utils::cache::load_cache(&app.project_context);
+                                cache.enabled_columns = app
+                                    .enabled_columns
+                                    .iter()
+                                    .map(|(tab, cols)| {
+                                        (format!("{tab:?}"), cols.iter().cloned().collect())
+                                    })
+                                    .collect();
+                                cache.group_by_column = app.group_by_column.clone();
+                                cache.group_ascending = app.group_ascending;
+                                crate::utils::cache::save_cache(&app.project_context, &cache);
+                                if let Some(client) = app.gitlab_client.clone() {
+                                    app.start_loading_tab(app.active_tab);
+                                    spawn_refresh_active_tab(
+                                        &client,
+                                        &app.project_context,
+                                        app.active_tab,
+                                        events.sender(),
+                                        app.is_column_visible(
+                                            app.active_tab,
+                                            app.active_tab.show_closed_column_name(),
+                                        ),
+                                    );
                                 }
                             }
                             _ => {}
@@ -5892,19 +5888,9 @@ async fn main() -> Result<()> {
                         continue;
                     }
 
-                    if (key_event.code == KeyCode::Tab
-                        || key_event.code == KeyCode::BackTab
-                        || key_event.code == KeyCode::Char('t'))
-                        && !app.focus_column_checklist
-                    {
+                    if key_event.code == KeyCode::Char(',') && !app.focus_column_checklist {
                         app.focus_column_checklist = true;
                         app.column_checklist_idx = 0;
-                        continue;
-                    }
-
-                    if key_event.code == KeyCode::Char(',') && !app.focus_grouping {
-                        app.focus_grouping = true;
-                        app.grouping_idx = 0;
                         continue;
                     }
 

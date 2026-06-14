@@ -14,6 +14,7 @@ pub struct ProjectCache {
     pub milestones: Vec<crate::gitlab::milestones::Milestone>,
     pub enabled_columns: HashMap<String, Vec<String>>,
     pub group_by_column: Option<String>,
+    pub group_ascending: bool,
 }
 
 fn get_cache_file_path(project_context: &str) -> PathBuf {

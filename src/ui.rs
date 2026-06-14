@@ -744,6 +744,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     &app.issues.items,
                     &app.search_query,
                     &app.enabled_columns,
+                    app.group_ascending,
                     &app.group_by_column,
                 );
 
@@ -1099,6 +1100,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     &app.mrs.items,
                     &app.search_query,
                     &app.enabled_columns,
+                    app.group_ascending,
                     &app.group_by_column,
                 );
 
@@ -1598,6 +1600,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     &app.search_query,
                     &app.pipeline_jobs,
                     &app.enabled_columns,
+                    app.group_ascending,
                     &app.group_by_column,
                 );
 
@@ -1825,6 +1828,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     jobs,
                     &app.search_query,
                     &app.enabled_columns,
+                    app.group_ascending,
                     &app.group_by_column,
                 );
 
@@ -2500,6 +2504,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     &app.todos.items,
                     &app.search_query,
                     &app.enabled_columns,
+                    app.group_ascending,
                     &app.group_by_column,
                 );
 
@@ -5025,6 +5030,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let cols = tab.columns();
         let active_idx = app.column_checklist_idx;
 
+        let group_cols: Vec<&str> = cols
+            .iter()
+            .filter(|c| **c != "Show Closed Items" && **c != "Show Merged Items")
+            .copied()
+            .collect();
+
         let mut columns_list = Vec::new();
         let mut filters_list = Vec::new();
         for (i, col) in cols.iter().enumerate() {
@@ -5035,13 +5046,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
             }
         }
 
-        // Calculate size for the popup based on columns count (no nested borders anymore)
+        let cols_end = cols.len();
+        let group_end = cols_end + group_cols.len();
         let width = 48;
-        let height = if filters_list.is_empty() {
-            (columns_list.len() + 6) as u16
-        } else {
-            (columns_list.len() + filters_list.len() + 7) as u16
-        };
+        let height = (columns_list.len()
+            + filters_list.len()
+            + group_cols.len()
+            + 2
+            + if filters_list.is_empty() { 10 } else { 12 }) as u16;
         let area = centered_rect_fixed(width, height, size);
 
         let checklist_block = Block::default()
@@ -5059,58 +5071,40 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let inner_area = checklist_block.inner(area);
 
-        // Inner layout: List(s) + Footer
+        let mut constraints: Vec<Constraint> = Vec::new();
+        // COLUMNS header + list
+        constraints.push(Constraint::Length(1));
+        constraints.push(Constraint::Length(columns_list.len() as u16));
+        if !filters_list.is_empty() {
+            constraints.push(Constraint::Length(1)); // spacer
+            constraints.push(Constraint::Length(1)); // FILTERS header
+            constraints.push(Constraint::Length(filters_list.len() as u16)); // FILTERS list
+        }
+        constraints.push(Constraint::Length(1)); // spacer
+        constraints.push(Constraint::Length(1)); // GROUP BY header
+        constraints.push(Constraint::Length(group_cols.len() as u16)); // GROUP BY list
+        constraints.push(Constraint::Length(1)); // spacer
+        constraints.push(Constraint::Length(1)); // ORDER header
+        constraints.push(Constraint::Length(2)); // ORDER list
+        constraints.push(Constraint::Min(0));
+
         let popup_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(2), // Footer
-            ])
+            .constraints(constraints)
             .split(inner_area);
 
-        let footer_p = Paragraph::new(" [Spc] Toggle • [Up/Dn] Move • [Tab] Close ")
-            .alignment(Alignment::Center)
-            .style(
-                Style::default()
-                    .fg(THEME.text_muted)
-                    .add_modifier(Modifier::ITALIC),
-            )
-            .wrap(ratatui::widgets::Wrap { trim: true });
-        f.render_widget(footer_p, popup_layout[1]);
+        let mut chunk_idx = 0;
 
-        let lists_area = popup_layout[0];
-
-        let layout_chunks = if filters_list.is_empty() {
-            Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1),                         // Columns Header
-                    Constraint::Length(columns_list.len() as u16), // Columns List
-                    Constraint::Min(0),                            // Spacer
-                ])
-                .split(lists_area)
-        } else {
-            Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1),                         // Columns Header
-                    Constraint::Length(columns_list.len() as u16), // Columns List
-                    Constraint::Length(1),                         // Spacer
-                    Constraint::Length(1),                         // Filters Header
-                    Constraint::Length(filters_list.len() as u16), // Filters List
-                ])
-                .split(lists_area)
-        };
-
-        // Render Columns header
+        // Render COLUMNS header
         let columns_header = Paragraph::new("  COLUMNS").style(
             Style::default()
                 .fg(THEME.header_fg)
                 .add_modifier(Modifier::BOLD),
         );
-        f.render_widget(columns_header, layout_chunks[0]);
+        f.render_widget(columns_header, popup_layout[chunk_idx]);
+        chunk_idx += 1;
 
-        // Render Columns list
+        // Render COLUMNS list
         let col_items: Vec<ListItem> = columns_list
             .iter()
             .map(|&(orig_idx, col)| {
@@ -5130,20 +5124,20 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 ListItem::new(text).style(style)
             })
             .collect();
-        f.render_widget(List::new(col_items), layout_chunks[1]);
+        f.render_widget(List::new(col_items), popup_layout[chunk_idx]);
+        chunk_idx += 1;
 
-        // Render Filters list if present
+        // Render FILTERS section if present
         if !filters_list.is_empty() {
-            // Render spacer
-            f.render_widget(Paragraph::new(""), layout_chunks[2]);
+            chunk_idx += 1; // spacer
 
-            // Render Filters header
             let filters_header = Paragraph::new("  FILTERS").style(
                 Style::default()
                     .fg(THEME.purple)
                     .add_modifier(Modifier::BOLD),
             );
-            f.render_widget(filters_header, layout_chunks[3]);
+            f.render_widget(filters_header, popup_layout[chunk_idx]);
+            chunk_idx += 1;
 
             let filter_items: Vec<ListItem> = filters_list
                 .iter()
@@ -5164,50 +5158,30 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     ListItem::new(text).style(style)
                 })
                 .collect();
-            f.render_widget(List::new(filter_items), layout_chunks[4]);
+            f.render_widget(List::new(filter_items), popup_layout[chunk_idx]);
+            chunk_idx += 1;
         }
-    }
 
-    if app.focus_grouping {
-        let tab = app.active_tab;
-        let cols: Vec<&str> = tab
-            .columns()
-            .into_iter()
-            .filter(|c| *c != "Show Closed Items" && *c != "Show Merged Items")
-            .collect();
-        let active_idx = app.grouping_idx;
+        chunk_idx += 1; // spacer
 
-        let width = 48;
-        let height = (cols.len() + 6) as u16;
-        let area = centered_rect_fixed(width, height, size);
+        // Render GROUP BY header
+        let group_header = Paragraph::new("  GROUP BY").style(
+            Style::default()
+                .fg(THEME.green)
+                .add_modifier(Modifier::BOLD),
+        );
+        f.render_widget(group_header, popup_layout[chunk_idx]);
+        chunk_idx += 1;
 
-        let group_block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
-            .title(format!(" Group By: {} ", tab.title(is_github)))
-            .title_style(
-                Style::default()
-                    .fg(THEME.border_focused)
-                    .add_modifier(Modifier::BOLD),
-            );
-
-        f.render_widget(Clear, area);
-        f.render_widget(group_block.clone(), area);
-
-        let inner_area = group_block.inner(area);
-
-        let popup_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(2)])
-            .split(inner_area);
-
-        let group_items: Vec<ListItem> = cols
+        // Render GROUP BY list
+        let group_items: Vec<ListItem> = group_cols
             .iter()
             .enumerate()
             .map(|(i, col)| {
-                let is_selected = app.group_by_column.as_deref() == Some(*col);
+                let flat_idx = cols_end + i;
+                let is_selected = app.group_by_column.as_deref() == Some(col);
                 let text = format!("  {} {}", if is_selected { "◉" } else { "○" }, col);
-                let is_active = i == active_idx;
+                let is_active = flat_idx == active_idx;
                 let style = if is_active {
                     Style::default()
                         .fg(THEME.bg)
@@ -5221,9 +5195,47 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 ListItem::new(text).style(style)
             })
             .collect();
-        f.render_widget(List::new(group_items), popup_layout[0]);
+        f.render_widget(List::new(group_items), popup_layout[chunk_idx]);
+        chunk_idx += 1;
 
-        let footer_p = Paragraph::new(" [Spc/Enter] Select • [,/Esc] Close ")
+        chunk_idx += 1; // spacer
+
+        // Render ORDER header
+        let order_header = Paragraph::new("  ORDER").style(
+            Style::default()
+                .fg(THEME.yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+        f.render_widget(order_header, popup_layout[chunk_idx]);
+        chunk_idx += 1;
+
+        // Render ORDER list (two items: Ascending / Descending)
+        let order_items: Vec<ListItem> = ["Ascending", "Descending"]
+            .iter()
+            .enumerate()
+            .map(|(i, label)| {
+                let flat_idx = group_end + i;
+                let is_selected = app.group_ascending == (i == 0);
+                let text = format!("  {} {}", if is_selected { "◉" } else { "○" }, label);
+                let is_active = flat_idx == active_idx;
+                let style = if is_active {
+                    Style::default()
+                        .fg(THEME.bg)
+                        .bg(THEME.border_focused)
+                        .add_modifier(Modifier::BOLD)
+                } else if is_selected {
+                    Style::default().fg(THEME.yellow)
+                } else {
+                    Style::default().fg(THEME.text_normal)
+                };
+                ListItem::new(text).style(style)
+            })
+            .collect();
+        f.render_widget(List::new(order_items), popup_layout[chunk_idx]);
+        chunk_idx += 1;
+
+        // Footer
+        let footer_p = Paragraph::new(" [Spc/Enter] Toggle • [,/Esc] Close ")
             .alignment(Alignment::Center)
             .style(
                 Style::default()
@@ -5231,7 +5243,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .add_modifier(Modifier::ITALIC),
             )
             .wrap(ratatui::widgets::Wrap { trim: true });
-        f.render_widget(footer_p, popup_layout[1]);
+        f.render_widget(footer_p, popup_layout[chunk_idx]);
     }
 
     if app.show_submit_review_prompt.is_some() {
