@@ -22,7 +22,11 @@ pub enum Event {
     ReleasesFetched(Vec<crate::gitlab::releases::Release>),
     SelectorItemsFetched(Vec<String>),
     FetchFailed(crate::app::Tab, String),
-    DiffFetched(u64, String),
+    DiffFetched {
+        mr_iid: u64,
+        raw_diff: String,
+        comments: Vec<crate::gitlab::mr::DiscussionNote>,
+    },
     DiffFetchFailed(String),
     TodosFetched(Vec<crate::gitlab::notifications::Notification>),
     JobsTabFetched(u64, Vec<crate::gitlab::pipelines::Job>),

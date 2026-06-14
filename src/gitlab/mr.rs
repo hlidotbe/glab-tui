@@ -62,3 +62,39 @@ pub async fn get_mr(client: &GitlabClient, project_path: &str, iid: u64) -> Resu
     let endpoint = format!("/projects/{}/merge_requests/{}", encoded_path, iid);
     client.fetch_api(&endpoint).await
 }
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct NotePosition {
+    #[serde(default)]
+    pub new_path: Option<String>,
+    #[serde(default)]
+    pub old_path: Option<String>,
+    #[serde(default)]
+    pub new_line: Option<u64>,
+    #[serde(default)]
+    pub old_line: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DiscussionNote {
+    pub id: u64,
+    pub body: String,
+    pub author: Author,
+    pub created_at: String,
+    pub system: bool,
+    #[serde(default)]
+    pub position: Option<NotePosition>,
+}
+
+pub async fn list_mr_notes(
+    client: &GitlabClient,
+    project_path: &str,
+    mr_iid: u64,
+) -> Result<Vec<DiscussionNote>> {
+    let encoded_path = project_path.replace("/", "%2F");
+    let endpoint = format!(
+        "/projects/{}/merge_requests/{}/notes?per_page=100",
+        encoded_path, mr_iid
+    );
+    client.fetch_api(&endpoint).await
+}

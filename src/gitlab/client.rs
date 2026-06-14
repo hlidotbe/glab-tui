@@ -441,6 +441,7 @@ fn gitlab_to_github_endpoint(endpoint: &str) -> String {
     path = path.replace("/jobs/", "/actions/jobs/");
     path = path.replace("/trace", "/logs");
     path = path.replace("/retry", "/rerun");
+    path = path.replace("/notes", "/comments");
     if path.contains("/milestones/") && path.contains("/issues") {
         if let Some(milestone_id) = path
             .split("/milestones/")
@@ -750,7 +751,91 @@ fn translate_release(v: &serde_json::Value) -> serde_json::Value {
 }
 
 fn translate_json_to_gitlab(endpoint: &str, val: serde_json::Value) -> Result<serde_json::Value> {
-    if endpoint.contains("/issues") {
+    if endpoint.contains("/pulls/") && endpoint.contains("/comments") {
+        if let Some(arr) = val.as_array() {
+            let list: Vec<serde_json::Value> = arr
+                .iter()
+                .map(|c| {
+                    let id = c.get("id").cloned().unwrap_or(serde_json::Value::Null);
+                    let body = c.get("body").cloned().unwrap_or(serde_json::Value::Null);
+                    let username = c
+                        .get("user")
+                        .and_then(|u| u.get("login"))
+                        .and_then(|l| l.as_str())
+                        .unwrap_or("unknown");
+                    let author = serde_json::json!({ "username": username });
+                    let created_at = c
+                        .get("created_at")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+
+                    let path = c.get("path").and_then(|p| p.as_str());
+                    let line = c.get("line").and_then(|l| l.as_u64());
+                    let side = c.get("side").and_then(|s| s.as_str()).unwrap_or("RIGHT");
+
+                    let position = if let Some(p) = path {
+                        let (new_line, old_line) = if side == "LEFT" {
+                            (serde_json::Value::Null, serde_json::json!(line))
+                        } else {
+                            (serde_json::json!(line), serde_json::Value::Null)
+                        };
+                        serde_json::json!({
+                            "new_path": p,
+                            "old_path": p,
+                            "new_line": new_line,
+                            "old_line": old_line,
+                            "position_type": "text"
+                        })
+                    } else {
+                        serde_json::Value::Null
+                    };
+
+                    serde_json::json!({
+                        "id": id,
+                        "body": body,
+                        "author": author,
+                        "created_at": created_at,
+                        "system": false,
+                        "position": position
+                    })
+                })
+                .collect();
+            Ok(serde_json::Value::Array(list))
+        } else {
+            Ok(serde_json::Value::Array(vec![]))
+        }
+    } else if endpoint.contains("/issues/") && endpoint.contains("/comments") {
+        if let Some(arr) = val.as_array() {
+            let list: Vec<serde_json::Value> = arr
+                .iter()
+                .map(|c| {
+                    let id = c.get("id").cloned().unwrap_or(serde_json::Value::Null);
+                    let body = c.get("body").cloned().unwrap_or(serde_json::Value::Null);
+                    let username = c
+                        .get("user")
+                        .and_then(|u| u.get("login"))
+                        .and_then(|l| l.as_str())
+                        .unwrap_or("unknown");
+                    let author = serde_json::json!({ "username": username });
+                    let created_at = c
+                        .get("created_at")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null);
+                    serde_json::json!({
+                        "id": id,
+                        "body": body,
+                        "author": author,
+                        "created_at": created_at,
+                        "system": false,
+                        "position": serde_json::Value::Null
+                    })
+                })
+                .collect();
+            Ok(serde_json::Value::Array(list))
+        } else {
+            Ok(serde_json::Value::Array(vec![]))
+        }
+    } else if endpoint.contains("/issues") {
         if val.is_array() {
             if let Some(arr) = val.as_array() {
                 let list: Vec<serde_json::Value> = arr
@@ -960,5 +1045,48 @@ mod tests {
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["iid"], 1);
         assert_eq!(arr[0]["title"], "Normal issue");
+    }
+
+    #[test]
+    fn test_translate_pull_comments_json() {
+        let gh_comments = serde_json::json!([
+            {
+                "id": 1,
+                "body": "a code comment",
+                "path": "src/main.rs",
+                "line": 42,
+                "side": "RIGHT",
+                "user": {"login": "octocat"},
+                "created_at": "2026-06-01T00:00:00Z"
+            },
+            {
+                "id": 2,
+                "body": "another code comment",
+                "path": "src/main.rs",
+                "line": 10,
+                "side": "LEFT",
+                "user": {"login": "octocat"},
+                "created_at": "2026-06-01T00:00:00Z"
+            }
+        ]);
+
+        let gl_notes =
+            translate_json_to_gitlab("/repos/owner/repo/pulls/123/comments", gh_comments).unwrap();
+        let arr = gl_notes.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+
+        assert_eq!(arr[0]["id"], 1);
+        assert_eq!(arr[0]["body"], "a code comment");
+        assert_eq!(arr[0]["author"]["username"], "octocat");
+        assert_eq!(arr[0]["position"]["new_path"], "src/main.rs");
+        assert_eq!(arr[0]["position"]["new_line"], 42);
+        assert!(arr[0]["position"]["old_line"].is_null());
+
+        assert_eq!(arr[1]["id"], 2);
+        assert_eq!(arr[1]["body"], "another code comment");
+        assert_eq!(arr[1]["author"]["username"], "octocat");
+        assert_eq!(arr[1]["position"]["new_path"], "src/main.rs");
+        assert_eq!(arr[1]["position"]["old_line"], 10);
+        assert!(arr[1]["position"]["new_line"].is_null());
     }
 }

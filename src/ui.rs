@@ -3527,31 +3527,120 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         _ => String::new(),
                     };
 
-                    left_list_lines.push(
-                        Line::from(vec![
-                            Span::styled("         ", Style::default()),
-                            Span::styled(
-                                " 💬 Draft Note ",
-                                Style::default()
-                                    .fg(THEME.yellow)
-                                    .add_modifier(Modifier::BOLD),
-                            ),
-                        ])
-                        .style(comment_style),
-                    );
+                    let mut is_first = true;
+                    for body_line in comment.body.lines() {
+                        let left_prefix = if is_first {
+                            " 💬 Draft "
+                        } else {
+                            "          "
+                        };
+                        let right_prefix = if is_first {
+                            format!(" 💬 Draft Note{}: ", range_info)
+                        } else {
+                            "    ".to_string()
+                        };
+                        is_first = false;
 
-                    right_list_lines.push(
-                        Line::from(vec![
-                            Span::styled(
-                                format!(" 💬 Draft Note:{} ", range_info),
-                                Style::default()
-                                    .fg(THEME.yellow)
-                                    .add_modifier(Modifier::BOLD),
-                            ),
-                            Span::styled(&comment.body, Style::default().fg(THEME.text_normal)),
-                        ])
-                        .style(comment_style),
-                    );
+                        left_list_lines.push(
+                            Line::from(vec![
+                                Span::styled("         ", Style::default()),
+                                Span::styled(
+                                    left_prefix,
+                                    Style::default()
+                                        .fg(THEME.yellow)
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                            ])
+                            .style(comment_style),
+                        );
+
+                        right_list_lines.push(
+                            Line::from(vec![
+                                Span::styled(
+                                    right_prefix,
+                                    Style::default()
+                                        .fg(THEME.yellow)
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                                Span::styled(body_line, Style::default().fg(THEME.text_normal)),
+                            ])
+                            .style(comment_style),
+                        );
+                    }
+                }
+
+                let matching_current: Vec<_> =
+                    app.current_comments
+                        .iter()
+                        .filter(|c| {
+                            if c.system {
+                                return false;
+                            }
+                            if let Some(ref pos) = c.position {
+                                let path_matches = sline.left.as_ref().map_or(false, |l| {
+                                    pos.old_path.as_deref() == Some(&l.file_path)
+                                }) || sline.right.as_ref().map_or(false, |r| {
+                                    pos.new_path.as_deref() == Some(&r.file_path)
+                                });
+
+                                path_matches
+                                    && ((pos.new_line.is_some()
+                                        && sline
+                                            .right
+                                            .as_ref()
+                                            .and_then(|r| r.new_line_num.map(|n| n as u64))
+                                            == pos.new_line)
+                                        || (pos.old_line.is_some()
+                                            && sline
+                                                .left
+                                                .as_ref()
+                                                .and_then(|l| l.old_line_num.map(|n| n as u64))
+                                                == pos.old_line))
+                            } else {
+                                false
+                            }
+                        })
+                        .collect();
+
+                for comment in matching_current {
+                    let comment_style = Style::default().fg(THEME.blue).bg(Color::Rgb(20, 30, 45));
+
+                    let mut is_first = true;
+                    for body_line in comment.body.lines() {
+                        let left_prefix = if is_first {
+                            " 💬 Comment "
+                        } else {
+                            "            "
+                        };
+                        let right_prefix = if is_first {
+                            format!(" 💬 @{}: ", comment.author.username)
+                        } else {
+                            "    ".to_string()
+                        };
+                        is_first = false;
+
+                        left_list_lines.push(
+                            Line::from(vec![
+                                Span::styled("         ", Style::default()),
+                                Span::styled(
+                                    left_prefix,
+                                    Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+                                ),
+                            ])
+                            .style(comment_style),
+                        );
+
+                        right_list_lines.push(
+                            Line::from(vec![
+                                Span::styled(
+                                    right_prefix,
+                                    Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+                                ),
+                                Span::styled(body_line, Style::default().fg(THEME.text_normal)),
+                            ])
+                            .style(comment_style),
+                        );
+                    }
                 }
             }
         } else {
@@ -3761,6 +3850,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 }
                 list_lines.push(Line::from(line_spans));
 
+                // COMMENTS OVERLAY
                 let matching_comments: Vec<_> = app
                     .draft_comments
                     .iter()
@@ -3786,17 +3876,73 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         _ => String::new(),
                     };
 
-                    let spans = vec![
-                        Span::styled("         ", Style::default()),
-                        Span::styled(
-                            format!(" 💬 Draft Note:{} ", range_info),
-                            Style::default()
-                                .fg(THEME.yellow)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(&comment.body, Style::default().fg(THEME.text_normal)),
-                    ];
-                    list_lines.push(Line::from(spans).style(comment_style));
+                    let mut is_first = true;
+                    for body_line in comment.body.lines() {
+                        let prefix = if is_first {
+                            format!(" 💬 Draft Note{}: ", range_info)
+                        } else {
+                            "    ".to_string()
+                        };
+                        is_first = false;
+
+                        let spans = vec![
+                            Span::styled("         ", Style::default()),
+                            Span::styled(
+                                prefix,
+                                Style::default()
+                                    .fg(THEME.yellow)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(body_line, Style::default().fg(THEME.text_normal)),
+                        ];
+                        list_lines.push(Line::from(spans).style(comment_style));
+                    }
+                }
+
+                let matching_current: Vec<_> = app
+                    .current_comments
+                    .iter()
+                    .filter(|c| {
+                        if c.system {
+                            return false;
+                        }
+                        if let Some(ref pos) = c.position {
+                            let path_matches = pos.new_path.as_deref() == Some(&line.file_path)
+                                || pos.old_path.as_deref() == Some(&line.file_path);
+
+                            path_matches
+                                && ((pos.new_line.is_some()
+                                    && pos.new_line.map(|l| l as u32) == line.new_line_num)
+                                    || (pos.old_line.is_some()
+                                        && pos.old_line.map(|l| l as u32) == line.old_line_num))
+                        } else {
+                            false
+                        }
+                    })
+                    .collect();
+
+                for comment in matching_current {
+                    let comment_style = Style::default().fg(THEME.blue).bg(Color::Rgb(20, 30, 45));
+
+                    let mut is_first = true;
+                    for body_line in comment.body.lines() {
+                        let prefix = if is_first {
+                            format!(" 💬 @{}: ", comment.author.username)
+                        } else {
+                            "    ".to_string()
+                        };
+                        is_first = false;
+
+                        let spans = vec![
+                            Span::styled("         ", Style::default()),
+                            Span::styled(
+                                prefix,
+                                Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(body_line, Style::default().fg(THEME.text_normal)),
+                        ];
+                        list_lines.push(Line::from(spans).style(comment_style));
+                    }
                 }
             }
         }
