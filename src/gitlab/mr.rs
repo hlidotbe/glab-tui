@@ -126,6 +126,12 @@ pub struct DiscussionNote {
     pub system: bool,
     #[serde(default)]
     pub position: Option<NotePosition>,
+    #[serde(default)]
+    pub discussion_id: Option<String>,
+    #[serde(default)]
+    pub resolved: Option<bool>,
+    #[serde(default)]
+    pub resolvable: Option<bool>,
 }
 
 pub async fn list_mr_notes(

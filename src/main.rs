@@ -1886,6 +1886,7 @@ async fn main() -> Result<()> {
                     app.diff_loading = false;
                     app.diff_view = Some(crate::app::DiffView::new(mr_iid, raw_diff));
                     app.current_comments = comments;
+                    app.last_fetched_mr_iid = Some(mr_iid);
                     app.in_review_mode = true;
                     if let Some(pos) = app
                         .terminal_commands
@@ -2517,6 +2518,132 @@ async fn main() -> Result<()> {
                                             });
                                         }
                                     }
+                                    crate::app::TextInputAction::ReplyToComment {
+                                        mr_iid,
+                                        comment_id,
+                                        ref discussion_id,
+                                    } => {
+                                        if !value.trim().is_empty() {
+                                            let client = app.gitlab_client.clone();
+                                            let project_context = app.project_context.clone();
+                                            let tx = events.sender();
+                                            let is_github =
+                                                client.as_ref().map_or(false, |c| c.is_github);
+                                            let discussion_id_clone = discussion_id.clone();
+                                            let value_clone = value.clone();
+
+                                            let _ = tx.send(Event::CommandStarted(format!(
+                                                "Replying to comment ID {} in MR #{}",
+                                                comment_id, mr_iid
+                                            )));
+
+                                            tokio::spawn(async move {
+                                                if let Some(client) = client {
+                                                    let output = if is_github {
+                                                        let payload = serde_json::json!({
+                                                            "body": value_clone,
+                                                            "in_reply_to": comment_id,
+                                                        });
+                                                        let temp_path =
+                                                            std::env::temp_dir().join(format!(
+                                                                "glab-tui-reply-{}.json",
+                                                                comment_id
+                                                            ));
+                                                        let _ = std::fs::write(
+                                                            &temp_path,
+                                                            serde_json::to_string(&payload)
+                                                                .unwrap(),
+                                                        );
+                                                        let temp_str =
+                                                            temp_path.to_string_lossy().to_string();
+
+                                                        let res = tokio::process::Command::new(
+                                                            "gh",
+                                                        )
+                                                        .args([
+                                                            "api",
+                                                            &format!(
+                                                                "repos/{}/pulls/{}/comments",
+                                                                project_context, mr_iid
+                                                            ),
+                                                            "--input",
+                                                            &temp_str,
+                                                            "-X",
+                                                            "POST",
+                                                        ])
+                                                        .output()
+                                                        .await;
+                                                        let _ = std::fs::remove_file(&temp_path);
+                                                        res
+                                                    } else {
+                                                        let encoded_path =
+                                                            project_context.replace("/", "%2F");
+                                                        let payload = serde_json::json!({
+                                                            "body": value_clone,
+                                                        });
+                                                        let temp_path =
+                                                            std::env::temp_dir().join(format!(
+                                                                "glab-tui-reply-{}.json",
+                                                                comment_id
+                                                            ));
+                                                        let _ = std::fs::write(
+                                                            &temp_path,
+                                                            serde_json::to_string(&payload)
+                                                                .unwrap(),
+                                                        );
+                                                        let temp_str =
+                                                            temp_path.to_string_lossy().to_string();
+
+                                                        let res = tokio::process::Command::new("glab")
+                                                            .args([
+                                                                "api",
+                                                                &format!(
+                                                                    "projects/{}/merge_requests/{}/discussions/{}/notes",
+                                                                    encoded_path, mr_iid, discussion_id_clone
+                                                                ),
+                                                                "--input",
+                                                                &temp_str,
+                                                                "-X",
+                                                                "POST"
+                                                            ])
+                                                            .output()
+                                                            .await;
+                                                        let _ = std::fs::remove_file(&temp_path);
+                                                        res
+                                                    };
+
+                                                    match output {
+                                                        Ok(out) if out.status.success() => {
+                                                            let _ =
+                                                                tx.send(Event::CommandCompleted(
+                                                                    app::Tab::MergeRequests,
+                                                                    Ok(()),
+                                                                ));
+                                                        }
+                                                        Ok(out) => {
+                                                            let err = String::from_utf8_lossy(
+                                                                &out.stderr,
+                                                            )
+                                                            .trim()
+                                                            .to_string();
+                                                            let _ =
+                                                                tx.send(Event::CommandCompleted(
+                                                                    app::Tab::MergeRequests,
+                                                                    Err(err),
+                                                                ));
+                                                        }
+                                                        Err(e) => {
+                                                            let _ =
+                                                                tx.send(Event::CommandCompleted(
+                                                                    app::Tab::MergeRequests,
+                                                                    Err(e.to_string()),
+                                                                ));
+                                                        }
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
                                     crate::app::TextInputAction::SubmitReviewFinal {
                                         mr_iid,
                                         status,
@@ -3060,7 +3187,12 @@ async fn main() -> Result<()> {
                                     // Close selector, go back to EditMenu (it is already in app.edit_menu)
                                 }
                                 KeyCode::Char('f') | KeyCode::Char('/') | KeyCode::Char('i') => {
-                                    selector.is_filtering = true;
+                                    let has_filter = selector.field_type != "comment_action_select"
+                                        && selector.field_type != "review_submit_status"
+                                        && selector.field_type != "description_edit_choice";
+                                    if has_filter {
+                                        selector.is_filtering = true;
+                                    }
                                     app.selector = Some(selector);
                                 }
                                 KeyCode::Char('j') | KeyCode::Down => {
@@ -3454,6 +3586,410 @@ async fn main() -> Result<()> {
                                                     status,
                                                 },
                                         });
+                                        continue;
+                                    }
+
+                                    if field_type == "comment_select" {
+                                        let filtered_items = selector.get_filtered_items();
+                                        let mut selected_val =
+                                            selector.selected_items.iter().next().cloned();
+                                        if selected_val.is_none() && !filtered_items.is_empty() {
+                                            selected_val =
+                                                Some(filtered_items[selector.cursor_idx].clone());
+                                        }
+
+                                        if let Some(val) = selected_val {
+                                            if let Some(id_str) = val
+                                                .strip_prefix("ID: ")
+                                                .and_then(|s| s.split(" |").next())
+                                            {
+                                                if let Ok(comment_id) = id_str.parse::<u64>() {
+                                                    if let Some(comment) = app
+                                                        .current_comments
+                                                        .iter()
+                                                        .find(|c| c.id == comment_id)
+                                                        .cloned()
+                                                    {
+                                                        let is_github = app
+                                                            .gitlab_client
+                                                            .as_ref()
+                                                            .map_or(false, |c| c.is_github);
+
+                                                        let mut actions =
+                                                            vec!["Reply to Thread".to_string()];
+
+                                                        if !is_github {
+                                                            let is_resolved =
+                                                                comment.resolved.unwrap_or(false);
+                                                            if is_resolved {
+                                                                actions.push(
+                                                                    "Unresolve Thread".to_string(),
+                                                                );
+                                                            } else {
+                                                                actions.push(
+                                                                    "Resolve Thread".to_string(),
+                                                                );
+                                                            }
+                                                        }
+
+                                                        actions.push("Edit Comment".to_string());
+                                                        actions.push("Delete Comment".to_string());
+
+                                                        app.selector = Some(crate::app::Selector {
+                                                            title: format!(
+                                                                " Actions for Comment {} ",
+                                                                comment_id
+                                                            ),
+                                                            all_items: actions,
+                                                            selected_items:
+                                                                std::collections::HashSet::new(),
+                                                            cursor_idx: 0,
+                                                            search_query: String::new(),
+                                                            is_filtering: false,
+                                                            is_loading: false,
+                                                            entity_iid: comment_id,
+                                                            entity_type: selector
+                                                                .entity_iid
+                                                                .to_string(), // Store MR IID as string
+                                                            field_type: "comment_action_select"
+                                                                .to_string(),
+                                                            multi_select: false,
+                                                            state: ListState::default(),
+                                                        });
+                                                        continue;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        app.selector = None;
+                                        continue;
+                                    }
+
+                                    if field_type == "comment_action_select" {
+                                        let filtered_items = selector.get_filtered_items();
+                                        let mut selected_val =
+                                            selector.selected_items.iter().next().cloned();
+                                        if selected_val.is_none() && !filtered_items.is_empty() {
+                                            selected_val =
+                                                Some(filtered_items[selector.cursor_idx].clone());
+                                        }
+
+                                        app.selector = None;
+
+                                        if let Some(action_str) = selected_val {
+                                            let comment_id = selector.entity_iid;
+                                            let mr_iid =
+                                                selector.entity_type.parse::<u64>().unwrap_or(0);
+
+                                            let comment = app
+                                                .current_comments
+                                                .iter()
+                                                .find(|c| c.id == comment_id)
+                                                .cloned();
+
+                                            if let Some(comment) = comment {
+                                                match action_str.as_str() {
+                                                    "Reply to Thread" => {
+                                                        let discussion_id = comment
+                                                            .discussion_id
+                                                            .clone()
+                                                            .unwrap_or_else(|| {
+                                                                comment.id.to_string()
+                                                            });
+                                                        app.text_input = Some(crate::app::TextInput {
+                                                            title: format!(" Reply to @{} ", comment.author.username),
+                                                            value: String::new(),
+                                                            cursor_idx: 0,
+                                                            action: crate::app::TextInputAction::ReplyToComment {
+                                                                mr_iid,
+                                                                comment_id,
+                                                                discussion_id,
+                                                            },
+                                                        });
+                                                    }
+                                                    "Resolve Thread" | "Unresolve Thread" => {
+                                                        let is_resolve =
+                                                            action_str == "Resolve Thread";
+                                                        let client = app.gitlab_client.clone();
+                                                        let project_context =
+                                                            app.project_context.clone();
+                                                        let tx = events.sender();
+                                                        let discussion_id = comment
+                                                            .discussion_id
+                                                            .clone()
+                                                            .unwrap_or_default();
+
+                                                        let status_desc = if is_resolve {
+                                                            "Resolving"
+                                                        } else {
+                                                            "Unresolving"
+                                                        };
+                                                        let _ = tx.send(Event::CommandStarted(
+                                                            format!(
+                                                                "{} thread MR #{}",
+                                                                status_desc, mr_iid
+                                                            ),
+                                                        ));
+
+                                                        tokio::spawn(async move {
+                                                            if let Some(client) = client {
+                                                                let encoded_path = project_context
+                                                                    .replace("/", "%2F");
+                                                                let res_str = if is_resolve {
+                                                                    "true"
+                                                                } else {
+                                                                    "false"
+                                                                };
+                                                                let output = tokio::process::Command::new("glab")
+                                                                    .args([
+                                                                        "api",
+                                                                        &format!(
+                                                                            "projects/{}/merge_requests/{}/discussions/{}?resolved={}",
+                                                                            encoded_path, mr_iid, discussion_id, res_str
+                                                                        ),
+                                                                        "-X",
+                                                                        "PUT",
+                                                                    ])
+                                                                    .output()
+                                                                    .await;
+
+                                                                match output {
+                                                                    Ok(out)
+                                                                        if out.status.success() =>
+                                                                    {
+                                                                        let _ = tx.send(Event::CommandCompleted(
+                                                                            app::Tab::MergeRequests,
+                                                                            Ok(()),
+                                                                        ));
+                                                                    }
+                                                                    Ok(out) => {
+                                                                        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                                                                        let _ = tx.send(Event::CommandCompleted(
+                                                                            app::Tab::MergeRequests,
+                                                                            Err(err),
+                                                                        ));
+                                                                    }
+                                                                    Err(e) => {
+                                                                        let _ = tx.send(Event::CommandCompleted(
+                                                                            app::Tab::MergeRequests,
+                                                                            Err(e.to_string()),
+                                                                        ));
+                                                                    }
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                    "Edit Comment" => {
+                                                        let client = app.gitlab_client.clone();
+                                                        let project_context =
+                                                            app.project_context.clone();
+                                                        let tx = events.sender();
+
+                                                        app.status_message = Some(
+                                                            "Opening editor to edit comment..."
+                                                                .to_string(),
+                                                        );
+
+                                                        let is_github = client
+                                                            .as_ref()
+                                                            .map_or(false, |c| c.is_github);
+                                                        let ext = std::path::Path::new(
+                                                            comment
+                                                                .position
+                                                                .as_ref()
+                                                                .and_then(|p| p.new_path.as_ref())
+                                                                .map(|s| s.as_str())
+                                                                .unwrap_or("md"),
+                                                        )
+                                                        .extension()
+                                                        .and_then(|s| s.to_str())
+                                                        .unwrap_or("md");
+                                                        let suffix = format!(".{}", ext);
+
+                                                        let new_body = edit_in_editor_with_suffix(
+                                                            &comment.body,
+                                                            &suffix,
+                                                            &mut terminal,
+                                                        );
+                                                        if let Some(body) = new_body {
+                                                            if body != comment.body
+                                                                && !body.trim().is_empty()
+                                                            {
+                                                                let _ = tx.send(
+                                                                    Event::CommandStarted(format!(
+                                                                        "Editing comment MR #{}",
+                                                                        mr_iid
+                                                                    )),
+                                                                );
+
+                                                                tokio::spawn(async move {
+                                                                    if let Some(client) = client {
+                                                                        let output = if is_github {
+                                                                            let endpoint =
+                                                                                if comment
+                                                                                    .position
+                                                                                    .is_some()
+                                                                                {
+                                                                                    format!("repos/{}/pulls/comments/{}", project_context, comment_id)
+                                                                                } else {
+                                                                                    format!("repos/{}/issues/comments/{}", project_context, comment_id)
+                                                                                };
+                                                                            let payload = serde_json::json!({ "body": body });
+                                                                            let temp_path = std::env::temp_dir().join(format!("glab-tui-edit-{}.json", comment_id));
+                                                                            let _ = std::fs::write(&temp_path, serde_json::to_string(&payload).unwrap());
+                                                                            let temp_str = temp_path.to_string_lossy().to_string();
+
+                                                                            let res = tokio::process::Command::new("gh")
+                                                                                .args(["api", &endpoint, "--input", &temp_str, "-X", "PATCH"])
+                                                                                .output()
+                                                                                .await;
+                                                                            let _ = std::fs::remove_file(&temp_path);
+                                                                            res
+                                                                        } else {
+                                                                            let encoded_path =
+                                                                                project_context
+                                                                                    .replace(
+                                                                                        "/", "%2F",
+                                                                                    );
+                                                                            let payload = serde_json::json!({ "body": body });
+                                                                            let temp_path = std::env::temp_dir().join(format!("glab-tui-edit-{}.json", comment_id));
+                                                                            let _ = std::fs::write(&temp_path, serde_json::to_string(&payload).unwrap());
+                                                                            let temp_str = temp_path.to_string_lossy().to_string();
+
+                                                                            let res = tokio::process::Command::new("glab")
+                                                                                .args([
+                                                                                    "api",
+                                                                                    &format!("projects/{}/merge_requests/{}/notes/{}", encoded_path, mr_iid, comment_id),
+                                                                                    "--input",
+                                                                                    &temp_str,
+                                                                                    "-X",
+                                                                                    "PUT"
+                                                                                ])
+                                                                                .output()
+                                                                                .await;
+                                                                            let _ = std::fs::remove_file(&temp_path);
+                                                                            res
+                                                                        };
+
+                                                                        match output {
+                                                                            Ok(out)
+                                                                                if out
+                                                                                    .status
+                                                                                    .success() =>
+                                                                            {
+                                                                                let _ = tx.send(Event::CommandCompleted(
+                                                                                    app::Tab::MergeRequests,
+                                                                                    Ok(()),
+                                                                                ));
+                                                                            }
+                                                                            Ok(out) => {
+                                                                                let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                                                                                let _ = tx.send(Event::CommandCompleted(
+                                                                                    app::Tab::MergeRequests,
+                                                                                    Err(err),
+                                                                                ));
+                                                                            }
+                                                                            Err(e) => {
+                                                                                let _ = tx.send(Event::CommandCompleted(
+                                                                                    app::Tab::MergeRequests,
+                                                                                    Err(e.to_string()),
+                                                                                ));
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                });
+                                                            }
+                                                        }
+                                                    }
+                                                    "Delete Comment" => {
+                                                        let client = app.gitlab_client.clone();
+                                                        let project_context =
+                                                            app.project_context.clone();
+                                                        let tx = events.sender();
+                                                        let is_github = client
+                                                            .as_ref()
+                                                            .map_or(false, |c| c.is_github);
+
+                                                        let _ = tx.send(Event::CommandStarted(
+                                                            format!(
+                                                                "Deleting comment MR #{}",
+                                                                mr_iid
+                                                            ),
+                                                        ));
+
+                                                        tokio::spawn(async move {
+                                                            if let Some(client) = client {
+                                                                let output = if is_github {
+                                                                    let endpoint = if comment
+                                                                        .position
+                                                                        .is_some()
+                                                                    {
+                                                                        format!(
+                                                                            "repos/{}/pulls/comments/{}",
+                                                                            project_context,
+                                                                            comment_id
+                                                                        )
+                                                                    } else {
+                                                                        format!(
+                                                                            "repos/{}/issues/comments/{}",
+                                                                            project_context,
+                                                                            comment_id
+                                                                        )
+                                                                    };
+                                                                    tokio::process::Command::new(
+                                                                        "gh",
+                                                                    )
+                                                                    .args([
+                                                                        "api", &endpoint, "-X",
+                                                                        "DELETE",
+                                                                    ])
+                                                                    .output()
+                                                                    .await
+                                                                } else {
+                                                                    let encoded_path =
+                                                                        project_context
+                                                                            .replace("/", "%2F");
+                                                                    tokio::process::Command::new("glab")
+                                                                        .args([
+                                                                            "api",
+                                                                            &format!("projects/{}/merge_requests/{}/notes/{}", encoded_path, mr_iid, comment_id),
+                                                                            "-X",
+                                                                            "DELETE"
+                                                                        ])
+                                                                        .output()
+                                                                        .await
+                                                                };
+
+                                                                match output {
+                                                                    Ok(out)
+                                                                        if out.status.success() =>
+                                                                    {
+                                                                        let _ = tx.send(Event::CommandCompleted(
+                                                                            app::Tab::MergeRequests,
+                                                                            Ok(()),
+                                                                        ));
+                                                                    }
+                                                                    Ok(out) => {
+                                                                        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                                                                        let _ = tx.send(Event::CommandCompleted(
+                                                                            app::Tab::MergeRequests,
+                                                                            Err(err),
+                                                                        ));
+                                                                    }
+                                                                    Err(e) => {
+                                                                        let _ = tx.send(Event::CommandCompleted(
+                                                                            app::Tab::MergeRequests,
+                                                                            Err(e.to_string()),
+                                                                        ));
+                                                                    }
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                        }
                                         continue;
                                     }
 
@@ -4853,6 +5389,144 @@ async fn main() -> Result<()> {
                                 }
                                 app.diff_view = Some(diff_view);
                             }
+                            KeyCode::Char('a') => {
+                                if !diff_view.focus_on_files {
+                                    let sline = if diff_view.side_by_side {
+                                        diff_view
+                                            .side_by_side_lines
+                                            .get(diff_view.cursor_idx)
+                                            .cloned()
+                                    } else {
+                                        diff_view.lines.get(diff_view.cursor_idx).map(|l| {
+                                            crate::app::SideBySideLine {
+                                                left: Some(l.clone()),
+                                                right: Some(l.clone()),
+                                                line_type: l.line_type.clone(),
+                                            }
+                                        })
+                                    };
+
+                                    if let Some(sline) = sline {
+                                        let matching_current: Vec<_> = app
+                                            .current_comments
+                                            .iter()
+                                            .filter(|c| {
+                                                if c.system {
+                                                    return false;
+                                                }
+                                                if let Some(ref pos) = c.position {
+                                                    let path_matches =
+                                                        sline.left.as_ref().map_or(false, |l| {
+                                                            pos.old_path.as_deref()
+                                                                == Some(&l.file_path)
+                                                        }) || sline.right.as_ref().map_or(
+                                                            false,
+                                                            |r| {
+                                                                pos.new_path.as_deref()
+                                                                    == Some(&r.file_path)
+                                                            },
+                                                        );
+
+                                                    path_matches
+                                                        && ((pos.new_line.is_some()
+                                                            && sline.right.as_ref().and_then(
+                                                                |r| {
+                                                                    r.new_line_num.map(|n| n as u64)
+                                                                },
+                                                            ) == pos.new_line)
+                                                            || (pos.old_line.is_some()
+                                                                && sline.left.as_ref().and_then(
+                                                                    |l| {
+                                                                        l.old_line_num
+                                                                            .map(|n| n as u64)
+                                                                    },
+                                                                ) == pos.old_line))
+                                                } else {
+                                                    false
+                                                }
+                                            })
+                                            .collect();
+
+                                        if matching_current.is_empty() {
+                                            app.status_message = Some(
+                                                "No comments on this line to interact with."
+                                                    .to_string(),
+                                            );
+                                        } else if matching_current.len() == 1 {
+                                            let comment = matching_current[0];
+                                            let comment_id = comment.id;
+                                            let is_github = app
+                                                .gitlab_client
+                                                .as_ref()
+                                                .map_or(false, |c| c.is_github);
+
+                                            let mut actions = vec!["Reply to Thread".to_string()];
+
+                                            if !is_github {
+                                                let is_resolved = comment.resolved.unwrap_or(false);
+                                                if is_resolved {
+                                                    actions.push("Unresolve Thread".to_string());
+                                                } else {
+                                                    actions.push("Resolve Thread".to_string());
+                                                }
+                                            }
+
+                                            actions.push("Edit Comment".to_string());
+                                            actions.push("Delete Comment".to_string());
+
+                                            app.selector = Some(crate::app::Selector {
+                                                title: format!(
+                                                    " Actions for Comment {} ",
+                                                    comment_id
+                                                ),
+                                                all_items: actions,
+                                                selected_items: std::collections::HashSet::new(),
+                                                cursor_idx: 0,
+                                                search_query: String::new(),
+                                                is_filtering: false,
+                                                is_loading: false,
+                                                entity_iid: comment_id,
+                                                entity_type: diff_view.mr_iid.to_string(),
+                                                field_type: "comment_action_select".to_string(),
+                                                multi_select: false,
+                                                state: ListState::default(),
+                                            });
+                                        } else {
+                                            let items: Vec<String> = matching_current
+                                                .iter()
+                                                .map(|c| {
+                                                    let clean_body = c.body.replace('\n', " ");
+                                                    let truncated = if clean_body.len() > 40 {
+                                                        format!("{}...", &clean_body[..40])
+                                                    } else {
+                                                        clean_body
+                                                    };
+                                                    format!(
+                                                        "ID: {} | @{}: {}",
+                                                        c.id, c.author.username, truncated
+                                                    )
+                                                })
+                                                .collect();
+
+                                            app.selector = Some(crate::app::Selector {
+                                                title: " Select Comment to Interact ".to_string(),
+                                                all_items: items,
+                                                selected_items: std::collections::HashSet::new(),
+                                                cursor_idx: 0,
+                                                search_query: String::new(),
+                                                is_filtering: false,
+                                                is_loading: false,
+                                                entity_iid: diff_view.mr_iid,
+                                                entity_type: "mr".to_string(),
+                                                field_type: "comment_select".to_string(),
+                                                multi_select: false,
+                                                state: ListState::default(),
+                                            });
+                                        }
+                                    }
+                                }
+                                app.diff_view = Some(diff_view);
+                            }
                             KeyCode::Char('c') => {
                                 if let Some(range) = diff_view.get_comment_range() {
                                     app.text_input = Some(crate::app::TextInput {
@@ -4882,16 +5556,14 @@ async fn main() -> Result<()> {
                                     if let Some(body) = comment_content {
                                         if !body.trim().is_empty() {
                                             if app.in_review_mode {
-                                                app.draft_comments.push(
-                                                    crate::app::DraftComment {
-                                                        file_path: range.file_path.clone(),
-                                                        line_num: range.line_num,
-                                                        old_line_num: range.old_line_num,
-                                                        end_line_num: range.end_line_num,
-                                                        end_old_line_num: range.end_old_line_num,
-                                                        body,
-                                                    },
-                                                );
+                                                app.draft_comments.push(crate::app::DraftComment {
+                                                    file_path: range.file_path.clone(),
+                                                    line_num: range.line_num,
+                                                    old_line_num: range.old_line_num,
+                                                    end_line_num: range.end_line_num,
+                                                    end_old_line_num: range.end_old_line_num,
+                                                    body,
+                                                });
                                                 app.status_message = Some(format!(
                                                     "Added draft comment. ({} pending)",
                                                     app.draft_comments.len()
@@ -4946,22 +5618,18 @@ async fn main() -> Result<()> {
                                 }
                                 app.diff_view = Some(diff_view);
                             }
-                            KeyCode::Char('p') => {
-                                if in_selection {
-                                    diff_view.selection_start = None;
-                                    diff_view.selection_end = None;
-                                }
-                                app.in_review_mode = !app.in_review_mode;
-                                app.status_message = Some(format!(
-                                    "Review mode: {}. ({} pending comments)",
-                                    if app.in_review_mode { "ON" } else { "OFF" },
-                                    app.draft_comments.len()
-                                ));
-                                app.diff_view = Some(diff_view);
-                            }
                             KeyCode::Char('r') => {
+                                let is_github =
+                                    app.gitlab_client.as_ref().map_or(false, |c| c.is_github);
                                 app.selector = Some(crate::app::Selector {
-                                    title: " Submit Pull Request Review ".to_string(),
+                                    title: format!(
+                                        " Submit {} Review ",
+                                        if is_github {
+                                            "Pull Request"
+                                        } else {
+                                            "Merge Request"
+                                        }
+                                    ),
                                     all_items: vec![
                                         "Approve".to_string(),
                                         "Request Changes".to_string(),
@@ -4982,7 +5650,8 @@ async fn main() -> Result<()> {
                             }
                             KeyCode::Char('e') => {
                                 if let Some(range) = diff_view.get_comment_range() {
-                                    let content = range.lines
+                                    let content = range
+                                        .lines
                                         .iter()
                                         .map(|l| {
                                             let c = l.content.as_str();
@@ -4998,19 +5667,20 @@ async fn main() -> Result<()> {
                                         .collect::<Vec<_>>()
                                         .join("\n");
 
-                                    app.status_message = Some(
-                                        "Opening editor for code suggestion...".to_string(),
-                                    );
+                                    app.status_message =
+                                        Some("Opening editor for code suggestion...".to_string());
                                     let ext = std::path::Path::new(&range.file_path)
                                         .extension()
                                         .and_then(|s| s.to_str())
                                         .unwrap_or("md");
                                     let suffix = format!(".{}", ext);
-                                    let editor_content =
-                                        edit_in_editor_with_suffix(&content, &suffix, &mut terminal);
+                                    let editor_content = edit_in_editor_with_suffix(
+                                        &content,
+                                        &suffix,
+                                        &mut terminal,
+                                    );
                                     if let Some(suggestion) = editor_content {
-                                        let body =
-                                            format!("```suggestion\n{}\n```", suggestion);
+                                        let body = format!("```suggestion\n{}\n```", suggestion);
 
                                         if app.in_review_mode {
                                             app.draft_comments.push(crate::app::DraftComment {

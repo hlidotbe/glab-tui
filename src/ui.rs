@@ -1474,6 +1474,22 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 Style::default().fg(THEME.yellow),
                             ),
                         ]));
+                        if Some(mr.iid) == app.last_fetched_mr_iid {
+                            let unresolved_count = app.unresolved_threads_count();
+                            text.push(Line::from(vec![
+                                Span::styled("Threads:   ", Style::default().fg(THEME.text_muted)),
+                                Span::styled(
+                                    format!("{} unresolved", unresolved_count),
+                                    Style::default()
+                                        .fg(if unresolved_count > 0 {
+                                            THEME.red
+                                        } else {
+                                            THEME.green
+                                        })
+                                        .add_modifier(Modifier::BOLD),
+                                ),
+                            ]));
+                        }
                         text.push(Line::from(""));
                         let mut label_spans = vec![Span::styled(
                             "Labels:    ",
@@ -2970,10 +2986,15 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .border_style(Style::default().fg(THEME.border_focused))
             .style(Style::default().bg(Color::Reset));
 
+        let pr_label = if app.gitlab_client.as_ref().map_or(true, |c| c.is_github) {
+            "Pull Request"
+        } else {
+            "Merge Request"
+        };
         let text = vec![
             Line::from(""),
             Line::from(Span::styled(
-                "   Fetching Pull Request / Merge Request Diff...",
+                format!("   Fetching {pr_label} Diff..."),
                 Style::default().fg(THEME.text_normal),
             )),
             Line::from(Span::styled(
@@ -2995,16 +3016,28 @@ pub fn render(f: &mut Frame, app: &mut App) {
     if let Some(diff_view) = app.diff_view.take() {
         let area = centered_rect(95, 95, size);
 
+        let unresolved_count = app.unresolved_threads_count();
+        let unresolved_suffix = if unresolved_count > 0 {
+            format!(" [🔴 Unresolved Threads: {}] ", unresolved_count)
+        } else {
+            String::new()
+        };
+
         let title_suffix = if app.in_review_mode {
             format!(" [REVIEW MODE: ON ({} pending)] ", app.draft_comments.len())
         } else {
             String::new()
         };
 
+        let pr_label = if app.gitlab_client.as_ref().map_or(true, |c| c.is_github) {
+            "Pull Request"
+        } else {
+            "Merge Request"
+        };
         let outer_block = Block::default()
             .title(format!(
-                " Pull Request / Merge Request Diff #{}{} ",
-                diff_view.mr_iid, title_suffix
+                " {pr_label} Diff #{}{}{} ",
+                diff_view.mr_iid, unresolved_suffix, title_suffix
             ))
             .title_style(
                 Style::default()
@@ -3060,7 +3093,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 "  "
             };
 
-            let display_str = format!(" {}{}{}", indent, indicator, node.name);
+            let unresolved_count = app.unresolved_threads_count_for_path(&node.path_id);
+            let count_suffix = if unresolved_count > 0 {
+                format!(" (🔴 {})", unresolved_count)
+            } else {
+                String::new()
+            };
+
+            let display_str = format!(" {}{}{}{}", indent, indicator, node.name, count_suffix);
 
             let item_style = if is_selected {
                 if diff_view.focus_on_files {
@@ -3558,15 +3598,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .style(comment_style),
                         );
 
-                        let mut spans = vec![
-                            Span::styled(right_prefix, prefix_style),
-                        ];
+                        let mut spans = vec![Span::styled(right_prefix, prefix_style)];
                         for (style, text) in content_spans {
                             spans.push(Span::styled(text, style));
                         }
-                        right_list_lines.push(
-                            Line::from(spans).style(comment_style),
-                        );
+                        right_list_lines.push(Line::from(spans).style(comment_style));
                     }
                 }
 
@@ -3657,15 +3693,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .style(comment_style),
                         );
 
-                        let mut spans = vec![
-                            Span::styled(right_prefix, prefix_style),
-                        ];
+                        let mut spans = vec![Span::styled(right_prefix, prefix_style)];
                         for (style, text) in content_spans {
                             spans.push(Span::styled(text, style));
                         }
-                        right_list_lines.push(
-                            Line::from(spans).style(comment_style),
-                        );
+                        right_list_lines.push(Line::from(spans).style(comment_style));
                     }
                 }
             }
@@ -3920,8 +3952,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         prefix_style,
                     );
 
-                    for (right_prefix, prefix_style, content_spans) in formatted_lines
-                    {
+                    for (right_prefix, prefix_style, content_spans) in formatted_lines {
                         let mut spans = vec![
                             Span::styled("         ", Style::default()),
                             Span::styled(right_prefix, prefix_style),
@@ -3992,8 +4023,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         prefix_style,
                     );
 
-                    for (right_prefix, prefix_style, content_spans) in formatted_lines
-                    {
+                    for (right_prefix, prefix_style, content_spans) in formatted_lines {
                         let mut spans = vec![
                             Span::styled("         ", Style::default()),
                             Span::styled(right_prefix, prefix_style),
@@ -4007,7 +4037,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             }
         }
 
-        let footer_p = Paragraph::new(" Esc/q: Exit • d: Toggle Diff Layout • Tab: Toggle Focus • h/l/Left/Right: Switch Panels • j/k/↑/↓: Navigate • J/K: Scroll Down/Up • v: Select Lines • c: Comment • e: Suggest Code • p: Toggle Review Mode • r: Submit Review ")
+        let footer_p = Paragraph::new(" Esc/q: Exit • d: Toggle Diff Layout • Tab: Toggle Focus • h/l/Left/Right: Switch Panels • j/k/↑/↓: Navigate • J/K: Scroll Down/Up • v: Select Lines • c: Comment • e: Suggest Code • a: Comment Actions • r: Submit Review ")
             .alignment(Alignment::Center)
             .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC))
             .wrap(ratatui::widgets::Wrap { trim: true });
@@ -4248,18 +4278,34 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let area = centered_rect(50, 60, size);
 
+        let has_filter = selector.field_type != "comment_action_select"
+            && selector.field_type != "review_submit_status"
+            && selector.field_type != "description_edit_choice";
+
+        let constraints = if has_filter {
+            vec![
+                Constraint::Length(3), // Search/Filter
+                Constraint::Min(0),    // List of items
+                Constraint::Length(3), // Help/Info footer
+            ]
+        } else {
+            vec![
+                Constraint::Min(0),    // List of items
+                Constraint::Length(3), // Help/Info footer
+            ]
+        };
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints(
-                [
-                    Constraint::Length(3), // Search/Filter
-                    Constraint::Min(0),    // List of items
-                    Constraint::Length(3), // Help/Info footer
-                ]
-                .as_ref(),
-            )
+            .constraints(constraints)
             .split(area);
+
+        let (search_chunk, list_chunk, footer_chunk) = if has_filter {
+            (Some(chunks[0]), chunks[1], chunks[2])
+        } else {
+            (None, chunks[0], chunks[1])
+        };
 
         let border_color_search = if selector.is_filtering {
             THEME.border_focused
@@ -4295,8 +4341,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let footer_text = if selector.is_filtering {
             "  Esc/Enter: Stop filtering • Backspace: Delete  "
-        } else {
+        } else if has_filter {
             "  j/k: Navigate • Space: Toggle • Enter: Save & Exit • f: Filter • Esc: Back  "
+        } else {
+            "  j/k: Navigate • Space: Toggle • Enter: Save & Exit • Esc: Back  "
         };
         let footer_p = Paragraph::new(footer_text)
             .style(
@@ -4309,7 +4357,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         f.render_widget(Clear, area);
         f.render_widget(block, area);
-        f.render_widget(search_p, chunks[0]);
+
+        if let Some(sc) = search_chunk {
+            f.render_widget(search_p, sc);
+        }
 
         if selector.is_loading {
             let p = Paragraph::new("\n  Loading options from GitLab...")
@@ -4320,7 +4371,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .add_modifier(Modifier::ITALIC),
                 )
                 .wrap(ratatui::widgets::Wrap { trim: true });
-            f.render_widget(p, chunks[1]);
+            f.render_widget(p, list_chunk);
         } else {
             let filtered_items = selector.get_filtered_items_with_indices();
             if filtered_items.is_empty() {
@@ -4332,7 +4383,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .add_modifier(Modifier::ITALIC),
                     )
                     .wrap(ratatui::widgets::Wrap { trim: true });
-                f.render_widget(p, chunks[1]);
+                f.render_widget(p, list_chunk);
             } else {
                 let items: Vec<ListItem> = filtered_items
                     .iter()
@@ -4405,11 +4456,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let list = List::new(items).style(Style::default().bg(Color::Reset));
                 let mut state = selector.state.clone();
-                f.render_stateful_widget(list, chunks[1], &mut state);
+                f.render_stateful_widget(list, list_chunk, &mut state);
                 selector.state = state;
             }
         }
-        f.render_widget(footer_p, chunks[2]);
+        f.render_widget(footer_p, footer_chunk);
     }
 
     if let Some(text_input) = &app.text_input {
@@ -4757,11 +4808,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 category: "Diff View",
                 key: "c",
                 action: "Add Comment on Line",
-            },
-            Shortcut {
-                category: "Diff View",
-                key: "p",
-                action: "Toggle Review Mode (draft comments)",
             },
             Shortcut {
                 category: "Diff View",
@@ -5327,12 +5373,18 @@ fn format_comment_with_suggestions(
                 let prefix_fg = Color::Rgb(255, 100, 100);
 
                 let mut spans = vec![(
-                    Style::default().fg(prefix_fg).bg(code_bg).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(prefix_fg)
+                        .bg(code_bg)
+                        .add_modifier(Modifier::BOLD),
                     "│ - ".to_string(),
                 )];
 
                 // Strip leading space/minus/plus if present
-                let clean_content = if orig.content.starts_with(' ') || orig.content.starts_with('-') || orig.content.starts_with('+') {
+                let clean_content = if orig.content.starts_with(' ')
+                    || orig.content.starts_with('-')
+                    || orig.content.starts_with('+')
+                {
                     if orig.content.len() > 1 {
                         orig.content[1..].to_string()
                     } else {
@@ -5344,20 +5396,14 @@ fn format_comment_with_suggestions(
 
                 if let Some(ref highlighted) = orig.syntax_highlighted {
                     for (span_style, text) in highlighted {
-                        let merged = span_style
-                            .fg(span_style.fg.unwrap_or(code_fg))
-                            .bg(code_bg);
+                        let merged = span_style.fg(span_style.fg.unwrap_or(code_fg)).bg(code_bg);
                         spans.push((merged, text.clone()));
                     }
                 } else {
                     spans.push((Style::default().fg(code_fg).bg(code_bg), clean_content));
                 }
 
-                result_lines.push((
-                    " ".repeat(prefix.len()),
-                    prefix_style,
-                    spans,
-                ));
+                result_lines.push((" ".repeat(prefix.len()), prefix_style, spans));
             }
         } else if is_suggestion_end {
             in_suggestion = false;
@@ -5378,7 +5424,10 @@ fn format_comment_with_suggestions(
             let prefix_fg = Color::Rgb(80, 220, 80);
 
             let mut spans = vec![(
-                Style::default().fg(prefix_fg).bg(code_bg).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(prefix_fg)
+                    .bg(code_bg)
+                    .add_modifier(Modifier::BOLD),
                 "│ + ".to_string(),
             )];
 
@@ -5387,25 +5436,25 @@ fn format_comment_with_suggestions(
 
             if let Some(ref hl) = highlighted {
                 for (span_style, text) in hl {
-                    let merged = span_style
-                        .fg(span_style.fg.unwrap_or(code_fg))
-                        .bg(code_bg);
+                    let merged = span_style.fg(span_style.fg.unwrap_or(code_fg)).bg(code_bg);
                     spans.push((merged, text.clone()));
                 }
             } else {
-                spans.push((Style::default().fg(code_fg).bg(code_bg), body_line.to_string()));
+                spans.push((
+                    Style::default().fg(code_fg).bg(code_bg),
+                    body_line.to_string(),
+                ));
             }
 
-            result_lines.push((
-                current_prefix,
-                prefix_style,
-                spans,
-            ));
+            result_lines.push((current_prefix, prefix_style, spans));
         } else {
             result_lines.push((
                 current_prefix,
                 prefix_style,
-                vec![(Style::default().fg(THEME.text_normal), body_line.to_string())],
+                vec![(
+                    Style::default().fg(THEME.text_normal),
+                    body_line.to_string(),
+                )],
             ));
         }
     }
@@ -5616,16 +5665,14 @@ mod tests {
     fn test_format_comment_with_suggestions() {
         let body = "This is a comment\n```suggestion\nnew line content\n```\noutside suggestion";
         let file_path = "src/app.rs";
-        let all_lines = vec![
-            crate::app::DiffLine {
-                content: "old line content".to_string(),
-                line_type: crate::app::DiffLineType::Deletion,
-                file_path: "src/app.rs".to_string(),
-                old_line_num: Some(1),
-                new_line_num: None,
-                syntax_highlighted: None,
-            }
-        ];
+        let all_lines = vec![crate::app::DiffLine {
+            content: "old line content".to_string(),
+            line_type: crate::app::DiffLineType::Deletion,
+            file_path: "src/app.rs".to_string(),
+            old_line_num: Some(1),
+            new_line_num: None,
+            syntax_highlighted: None,
+        }];
         let prefix = "prefix";
         let prefix_style = Style::default();
 
@@ -5652,4 +5699,3 @@ mod tests {
         assert_eq!(formatted[5].2[0].1, "outside suggestion");
     }
 }
-

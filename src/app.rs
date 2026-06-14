@@ -772,12 +772,20 @@ impl DiffView {
                 let min_idx = s.min(e);
                 let max_idx = s.max(e);
                 if self.side_by_side {
-                    if min_idx >= self.side_by_side_lines.len() || max_idx >= self.side_by_side_lines.len() {
+                    if min_idx >= self.side_by_side_lines.len()
+                        || max_idx >= self.side_by_side_lines.len()
+                    {
                         return None;
                     }
-                    let has_any_right = self.side_by_side_lines[min_idx..=max_idx]
-                        .iter()
-                        .any(|sline| sline.right.as_ref().map_or(false, |r| r.new_line_num.is_some()));
+                    let has_any_right =
+                        self.side_by_side_lines[min_idx..=max_idx]
+                            .iter()
+                            .any(|sline| {
+                                sline
+                                    .right
+                                    .as_ref()
+                                    .map_or(false, |r| r.new_line_num.is_some())
+                            });
 
                     if has_any_right {
                         // Gather only right side lines (new file)
@@ -822,14 +830,17 @@ impl DiffView {
                         return None;
                     }
                     let lines = &self.lines[min_idx..=max_idx];
-                    let has_any_addition_or_normal = lines
-                        .iter()
-                        .any(|line| line.line_type != DiffLineType::Deletion && line.new_line_num.is_some());
+                    let has_any_addition_or_normal = lines.iter().any(|line| {
+                        line.line_type != DiffLineType::Deletion && line.new_line_num.is_some()
+                    });
 
                     if has_any_addition_or_normal {
                         let filtered_lines: Vec<DiffLine> = lines
                             .iter()
-                            .filter(|line| line.line_type != DiffLineType::Deletion && line.new_line_num.is_some())
+                            .filter(|line| {
+                                line.line_type != DiffLineType::Deletion
+                                    && line.new_line_num.is_some()
+                            })
                             .cloned()
                             .collect();
                         let start_line = filtered_lines.first()?;
@@ -845,7 +856,10 @@ impl DiffView {
                     } else {
                         let filtered_lines: Vec<DiffLine> = lines
                             .iter()
-                            .filter(|line| line.line_type == DiffLineType::Deletion && line.old_line_num.is_some())
+                            .filter(|line| {
+                                line.line_type == DiffLineType::Deletion
+                                    && line.old_line_num.is_some()
+                            })
                             .cloned()
                             .collect();
                         let start_line = filtered_lines.first()?;
@@ -1017,6 +1031,11 @@ pub enum TextInputAction {
         mr_iid: u64,
         status: String,
     },
+    ReplyToComment {
+        mr_iid: u64,
+        comment_id: u64,
+        discussion_id: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -1077,6 +1096,7 @@ pub struct App {
     pub help_search_query: String,
     pub diff_view: Option<DiffView>,
     pub current_comments: Vec<crate::gitlab::mr::DiscussionNote>,
+    pub last_fetched_mr_iid: Option<u64>,
     pub show_submit_review_prompt: Option<u64>,
     pub diff_loading: bool,
     pub todos: StatefulTable<crate::gitlab::notifications::Notification>,
@@ -1138,6 +1158,7 @@ impl Default for App {
             help_search_query: String::new(),
             diff_view: None,
             current_comments: Vec::new(),
+            last_fetched_mr_iid: None,
             show_submit_review_prompt: None,
             diff_loading: false,
             todos: StatefulTable::with_items(vec![]),
@@ -1198,6 +1219,68 @@ impl App {
     }
 
     pub fn tick(&mut self) {}
+
+    pub fn unresolved_threads_count(&self) -> usize {
+        use std::collections::HashMap;
+        let mut thread_resolved: HashMap<String, bool> = HashMap::new();
+
+        for c in &self.current_comments {
+            if c.system {
+                continue;
+            }
+            if c.resolvable.unwrap_or(false) {
+                if let Some(ref disc_id) = c.discussion_id {
+                    let is_resolved = c.resolved.unwrap_or(false);
+                    let entry = thread_resolved.entry(disc_id.clone()).or_insert(true);
+                    if !is_resolved {
+                        *entry = false;
+                    }
+                }
+            }
+        }
+
+        thread_resolved
+            .values()
+            .filter(|&&resolved| !resolved)
+            .count()
+    }
+
+    pub fn unresolved_threads_count_for_path(&self, path: &str) -> usize {
+        use std::collections::HashMap;
+        let mut thread_resolved: HashMap<String, bool> = HashMap::new();
+
+        for c in &self.current_comments {
+            if c.system {
+                continue;
+            }
+            if c.resolvable.unwrap_or(false) {
+                if let Some(ref pos) = c.position {
+                    let matches_path = |file_path: &str| {
+                        file_path == path
+                            || file_path.starts_with(&format!("{}/", path))
+                            || path == "root"
+                            || path.is_empty()
+                    };
+                    let path_matches = pos.old_path.as_deref().map_or(false, matches_path)
+                        || pos.new_path.as_deref().map_or(false, matches_path);
+                    if path_matches {
+                        if let Some(ref disc_id) = c.discussion_id {
+                            let is_resolved = c.resolved.unwrap_or(false);
+                            let entry = thread_resolved.entry(disc_id.clone()).or_insert(true);
+                            if !is_resolved {
+                                *entry = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        thread_resolved
+            .values()
+            .filter(|&&resolved| !resolved)
+            .count()
+    }
 
     pub fn quit(&mut self) {
         self.running = false;
@@ -2623,5 +2706,124 @@ diff --git a/foo.txt b/foo.txt
         assert_eq!(range_2.lines[0].content, "-deleted line 2");
         assert_eq!(range_2.lines[1].content, "-deleted line 3");
     }
-}
 
+    #[test]
+    fn test_unresolved_threads_count() {
+        use crate::gitlab::mr::{Author, DiscussionNote, NotePosition};
+
+        let author = Author {
+            username: "tester".to_string(),
+        };
+
+        let mut app = App::new();
+
+        // 1. Thread 1: unresolved
+        let note1 = DiscussionNote {
+            id: 1,
+            body: "note 1".to_string(),
+            author: author.clone(),
+            created_at: "now".to_string(),
+            system: false,
+            position: Some(NotePosition {
+                old_path: Some("src/main.rs".to_string()),
+                new_path: Some("src/main.rs".to_string()),
+                old_line: None,
+                new_line: Some(10),
+                start_line: None,
+                line_range: None,
+            }),
+            discussion_id: Some("thread_1".to_string()),
+            resolved: Some(false),
+            resolvable: Some(true),
+        };
+
+        // 2. Thread 2: resolved
+        let note2 = DiscussionNote {
+            id: 2,
+            body: "note 2".to_string(),
+            author: author.clone(),
+            created_at: "now".to_string(),
+            system: false,
+            position: Some(NotePosition {
+                old_path: Some("src/main.rs".to_string()),
+                new_path: Some("src/main.rs".to_string()),
+                old_line: None,
+                new_line: Some(20),
+                start_line: None,
+                line_range: None,
+            }),
+            discussion_id: Some("thread_2".to_string()),
+            resolved: Some(true),
+            resolvable: Some(true),
+        };
+
+        // 3. Thread 3: unresolved because one reply is unresolved
+        let note3_1 = DiscussionNote {
+            id: 3,
+            body: "note 3.1".to_string(),
+            author: author.clone(),
+            created_at: "now".to_string(),
+            system: false,
+            position: Some(NotePosition {
+                old_path: Some("src/lib.rs".to_string()),
+                new_path: Some("src/lib.rs".to_string()),
+                old_line: None,
+                new_line: Some(5),
+                start_line: None,
+                line_range: None,
+            }),
+            discussion_id: Some("thread_3".to_string()),
+            resolved: Some(true),
+            resolvable: Some(true),
+        };
+        let note3_2 = DiscussionNote {
+            id: 4,
+            body: "note 3.2".to_string(),
+            author: author.clone(),
+            created_at: "now".to_string(),
+            system: false,
+            position: Some(NotePosition {
+                old_path: Some("src/lib.rs".to_string()),
+                new_path: Some("src/lib.rs".to_string()),
+                old_line: None,
+                new_line: Some(5),
+                start_line: None,
+                line_range: None,
+            }),
+            discussion_id: Some("thread_3".to_string()),
+            resolved: Some(false),
+            resolvable: Some(true),
+        };
+
+        // System comment (should be ignored)
+        let note_system = DiscussionNote {
+            id: 5,
+            body: "system note".to_string(),
+            author: author.clone(),
+            created_at: "now".to_string(),
+            system: true,
+            position: None,
+            discussion_id: Some("thread_system".to_string()),
+            resolved: Some(false),
+            resolvable: Some(true),
+        };
+
+        app.current_comments = vec![note1, note2, note3_1, note3_2, note_system];
+
+        // Total unresolved threads should be 2 (thread_1 and thread_3)
+        assert_eq!(app.unresolved_threads_count(), 2);
+
+        // Path filtering
+        // src/main.rs has thread_1 (unresolved) and thread_2 (resolved) -> 1 unresolved
+        assert_eq!(app.unresolved_threads_count_for_path("src/main.rs"), 1);
+
+        // src/lib.rs has thread_3 (unresolved) -> 1 unresolved
+        assert_eq!(app.unresolved_threads_count_for_path("src/lib.rs"), 1);
+
+        // src directory should capture both src/main.rs and src/lib.rs -> 2 unresolved
+        assert_eq!(app.unresolved_threads_count_for_path("src"), 2);
+
+        // unrelated path
+        assert_eq!(app.unresolved_threads_count_for_path("other.txt"), 0);
+    }
+}

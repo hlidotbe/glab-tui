@@ -792,13 +792,21 @@ fn translate_json_to_gitlab(endpoint: &str, val: serde_json::Value) -> Result<se
                         serde_json::Value::Null
                     };
 
+                    let in_reply_to_id = c.get("in_reply_to_id").and_then(|v| v.as_u64());
+                    let disc_id = in_reply_to_id
+                        .map(|rid| rid.to_string())
+                        .unwrap_or_else(|| id.as_u64().unwrap_or(0).to_string());
+
                     serde_json::json!({
                         "id": id,
                         "body": body,
                         "author": author,
                         "created_at": created_at,
                         "system": false,
-                        "position": position
+                        "position": position,
+                        "discussion_id": disc_id,
+                        "resolved": false,
+                        "resolvable": true
                     })
                 })
                 .collect();
