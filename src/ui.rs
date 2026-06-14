@@ -3545,7 +3545,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         prefix_style,
                     );
 
-                    for (i, (right_prefix, prefix_style, content_str, content_style)) in
+                    for (i, (right_prefix, prefix_style, content_spans)) in
                         formatted_lines.into_iter().enumerate()
                     {
                         let left_prefix = if i == 0 { " 💬 Draft " } else { "          " };
@@ -3558,12 +3558,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .style(comment_style),
                         );
 
+                        let mut spans = vec![
+                            Span::styled(right_prefix, prefix_style),
+                        ];
+                        for (style, text) in content_spans {
+                            spans.push(Span::styled(text, style));
+                        }
                         right_list_lines.push(
-                            Line::from(vec![
-                                Span::styled(right_prefix, prefix_style),
-                                Span::styled(content_str, content_style),
-                            ])
-                            .style(comment_style),
+                            Line::from(spans).style(comment_style),
                         );
                     }
                 }
@@ -3638,7 +3640,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         prefix_style,
                     );
 
-                    for (i, (right_prefix, prefix_style, content_str, content_style)) in
+                    for (i, (right_prefix, prefix_style, content_spans)) in
                         formatted_lines.into_iter().enumerate()
                     {
                         let left_prefix = if i == 0 {
@@ -3655,12 +3657,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .style(comment_style),
                         );
 
+                        let mut spans = vec![
+                            Span::styled(right_prefix, prefix_style),
+                        ];
+                        for (style, text) in content_spans {
+                            spans.push(Span::styled(text, style));
+                        }
                         right_list_lines.push(
-                            Line::from(vec![
-                                Span::styled(right_prefix, prefix_style),
-                                Span::styled(content_str, content_style),
-                            ])
-                            .style(comment_style),
+                            Line::from(spans).style(comment_style),
                         );
                     }
                 }
@@ -3916,13 +3920,15 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         prefix_style,
                     );
 
-                    for (right_prefix, prefix_style, content_str, content_style) in formatted_lines
+                    for (right_prefix, prefix_style, content_spans) in formatted_lines
                     {
-                        let spans = vec![
+                        let mut spans = vec![
                             Span::styled("         ", Style::default()),
                             Span::styled(right_prefix, prefix_style),
-                            Span::styled(content_str, content_style),
                         ];
+                        for (style, text) in content_spans {
+                            spans.push(Span::styled(text, style));
+                        }
                         list_lines.push(Line::from(spans).style(comment_style));
                     }
                 }
@@ -3986,13 +3992,15 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         prefix_style,
                     );
 
-                    for (right_prefix, prefix_style, content_str, content_style) in formatted_lines
+                    for (right_prefix, prefix_style, content_spans) in formatted_lines
                     {
-                        let spans = vec![
+                        let mut spans = vec![
                             Span::styled("         ", Style::default()),
                             Span::styled(right_prefix, prefix_style),
-                            Span::styled(content_str, content_style),
                         ];
+                        for (style, text) in content_spans {
+                            spans.push(Span::styled(text, style));
+                        }
                         list_lines.push(Line::from(spans).style(comment_style));
                     }
                 }
@@ -5245,13 +5253,13 @@ fn format_comment_with_suggestions(
     all_lines: &[crate::app::DiffLine],
     prefix: &str,
     prefix_style: Style,
-) -> Vec<(String, Style, String, Style)> {
+) -> Vec<(String, Style, Vec<(Style, String)>)> {
     let mut result_lines = Vec::new();
     let mut in_suggestion = false;
     let mut is_first = true;
 
     // Retrieve original lines for suggestion diff
-    let mut original_lines = Vec::new();
+    let mut original_lines: Vec<crate::app::DiffLine> = Vec::new();
     if let Some(oln) = start_old {
         let end_o = end_old.unwrap_or(oln);
         let min_o = oln.min(end_o);
@@ -5261,9 +5269,9 @@ fn format_comment_with_suggestions(
                 if let Some(num) = dl.old_line_num {
                     if num as u64 >= min_o && num as u64 <= max_o {
                         if dl.line_type != crate::app::DiffLineType::Addition
-                            && !original_lines.contains(&dl.content)
+                            && !original_lines.iter().any(|ol| ol.content == dl.content)
                         {
-                            original_lines.push(dl.content.clone());
+                            original_lines.push(dl.clone());
                         }
                     }
                 }
@@ -5278,9 +5286,9 @@ fn format_comment_with_suggestions(
                 if let Some(num) = dl.new_line_num {
                     if num as u64 >= min_n && num as u64 <= max_n {
                         if dl.line_type != crate::app::DiffLineType::Deletion
-                            && !original_lines.contains(&dl.content)
+                            && !original_lines.iter().any(|ol| ol.content == dl.content)
                         {
-                            original_lines.push(dl.content.clone());
+                            original_lines.push(dl.clone());
                         }
                     }
                 }
@@ -5304,30 +5312,51 @@ fn format_comment_with_suggestions(
             result_lines.push((
                 current_prefix.clone(),
                 prefix_style,
-                "┌─── Code Suggestion ───".to_string(),
-                Style::default()
-                    .fg(THEME.green)
-                    .add_modifier(Modifier::BOLD),
+                vec![(
+                    Style::default()
+                        .fg(THEME.green)
+                        .add_modifier(Modifier::BOLD),
+                    "┌─── Code Suggestion ───".to_string(),
+                )],
             ));
 
             // Print original code as DELETIONS (red)
             for orig in &original_lines {
-                // Strip existing prefix if it starts with space, minus, or plus
-                let clean_orig =
-                    if orig.starts_with(' ') || orig.starts_with('-') || orig.starts_with('+') {
-                        orig.chars().skip(1).collect::<String>()
-                    } else {
-                        orig.clone()
-                    };
+                let code_fg = Color::Rgb(220, 140, 140);
+                let code_bg = Color::Rgb(55, 22, 28);
+                let prefix_fg = Color::Rgb(255, 100, 100);
 
-                let display_orig = format!("│ - {}", clean_orig);
+                let mut spans = vec![(
+                    Style::default().fg(prefix_fg).bg(code_bg).add_modifier(Modifier::BOLD),
+                    "│ - ".to_string(),
+                )];
+
+                // Strip leading space/minus/plus if present
+                let clean_content = if orig.content.starts_with(' ') || orig.content.starts_with('-') || orig.content.starts_with('+') {
+                    if orig.content.len() > 1 {
+                        orig.content[1..].to_string()
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    orig.content.clone()
+                };
+
+                if let Some(ref highlighted) = orig.syntax_highlighted {
+                    for (span_style, text) in highlighted {
+                        let merged = span_style
+                            .fg(span_style.fg.unwrap_or(code_fg))
+                            .bg(code_bg);
+                        spans.push((merged, text.clone()));
+                    }
+                } else {
+                    spans.push((Style::default().fg(code_fg).bg(code_bg), clean_content));
+                }
+
                 result_lines.push((
                     " ".repeat(prefix.len()),
                     prefix_style,
-                    display_orig,
-                    Style::default()
-                        .fg(Color::Rgb(220, 140, 140))
-                        .bg(Color::Rgb(55, 22, 28)),
+                    spans,
                 ));
             }
         } else if is_suggestion_end {
@@ -5335,28 +5364,48 @@ fn format_comment_with_suggestions(
             result_lines.push((
                 current_prefix,
                 prefix_style,
-                "└─── End of Suggestion ───".to_string(),
-                Style::default()
-                    .fg(THEME.green)
-                    .add_modifier(Modifier::BOLD),
+                vec![(
+                    Style::default()
+                        .fg(THEME.green)
+                        .add_modifier(Modifier::BOLD),
+                    "└─── End of Suggestion ───".to_string(),
+                )],
             ));
         } else if in_suggestion {
             // Print suggested code as ADDITIONS (green)
-            let display_sugg = format!("│ + {}", body_line);
+            let code_fg = Color::Rgb(140, 220, 140);
+            let code_bg = Color::Rgb(22, 48, 28);
+            let prefix_fg = Color::Rgb(80, 220, 80);
+
+            let mut spans = vec![(
+                Style::default().fg(prefix_fg).bg(code_bg).add_modifier(Modifier::BOLD),
+                "│ + ".to_string(),
+            )];
+
+            // Highlight body_line syntax
+            let highlighted = crate::app::highlight_line_syntax(file_path, body_line, None);
+
+            if let Some(ref hl) = highlighted {
+                for (span_style, text) in hl {
+                    let merged = span_style
+                        .fg(span_style.fg.unwrap_or(code_fg))
+                        .bg(code_bg);
+                    spans.push((merged, text.clone()));
+                }
+            } else {
+                spans.push((Style::default().fg(code_fg).bg(code_bg), body_line.to_string()));
+            }
+
             result_lines.push((
                 current_prefix,
                 prefix_style,
-                display_sugg,
-                Style::default()
-                    .fg(Color::Rgb(140, 220, 140))
-                    .bg(Color::Rgb(22, 48, 28)),
+                spans,
             ));
         } else {
             result_lines.push((
                 current_prefix,
                 prefix_style,
-                body_line.to_string(),
-                Style::default().fg(THEME.text_normal),
+                vec![(Style::default().fg(THEME.text_normal), body_line.to_string())],
             ));
         }
     }
@@ -5365,8 +5414,7 @@ fn format_comment_with_suggestions(
         result_lines.push((
             prefix.to_string(),
             prefix_style,
-            String::new(),
-            Style::default().fg(THEME.text_normal),
+            vec![(Style::default().fg(THEME.text_normal), String::new())],
         ));
     }
 
@@ -5563,4 +5611,45 @@ mod tests {
         assert!(cell_str.contains("bug"));
         assert!(cell_str.contains("backend"));
     }
+
+    #[test]
+    fn test_format_comment_with_suggestions() {
+        let body = "This is a comment\n```suggestion\nnew line content\n```\noutside suggestion";
+        let file_path = "src/app.rs";
+        let all_lines = vec![
+            crate::app::DiffLine {
+                content: "old line content".to_string(),
+                line_type: crate::app::DiffLineType::Deletion,
+                file_path: "src/app.rs".to_string(),
+                old_line_num: Some(1),
+                new_line_num: None,
+                syntax_highlighted: None,
+            }
+        ];
+        let prefix = "prefix";
+        let prefix_style = Style::default();
+
+        let formatted = format_comment_with_suggestions(
+            body,
+            file_path,
+            None,
+            None,
+            Some(1),
+            Some(1),
+            &all_lines,
+            prefix,
+            prefix_style,
+        );
+
+        assert_eq!(formatted.len(), 6);
+        assert_eq!(formatted[0].2[0].1, "This is a comment");
+        assert_eq!(formatted[1].2[0].1, "┌─── Code Suggestion ───");
+        assert_eq!(formatted[2].2[0].1, "│ - ");
+        assert_eq!(formatted[2].2[1].1, "old line content");
+        assert_eq!(formatted[3].2[0].1, "│ + ");
+        assert_eq!(formatted[3].2[1].1, "new line content");
+        assert_eq!(formatted[4].2[0].1, "└─── End of Suggestion ───");
+        assert_eq!(formatted[5].2[0].1, "outside suggestion");
+    }
 }
+

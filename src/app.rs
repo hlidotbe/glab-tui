@@ -24,7 +24,7 @@ fn file_extension(file_path: &str) -> Option<&str> {
 }
 
 /// Highlight a single line's content using syntect, returning colored spans.
-fn highlight_line_syntax(
+pub fn highlight_line_syntax(
     file_path: &str,
     line_content: &str,
     ext: Option<&str>,
