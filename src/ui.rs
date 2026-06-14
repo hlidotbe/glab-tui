@@ -2739,7 +2739,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     for col in cols {
                         if app.is_column_visible(Tab::Milestones, &col) {
                             let val = match col {
-                                "IID" => m.iid.to_string(),
+                                "ID" => m.iid.to_string(),
                                 "Title" => m.title.clone(),
                                 "State" => m.state.clone(),
                                 "Start Date" => {

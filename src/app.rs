@@ -170,7 +170,7 @@ impl Tab {
             Tab::Runners => vec!["ID", "Description", "Status", "Active"],
             Tab::Releases => vec!["Tag", "Release Name", "Date"],
             Tab::Todos => vec!["State", "Project", "Type", "ID", "Title"],
-            Tab::Milestones => vec!["IID", "Title", "State", "Start Date", "Due Date"],
+            Tab::Milestones => vec!["ID", "Title", "State", "Start Date", "Due Date"],
             Tab::Terminal => vec![],
         }
     }
@@ -184,7 +184,7 @@ impl Tab {
             Tab::Runners => vec!["ID", "Description", "Status", "Active"],
             Tab::Releases => vec!["Tag", "Release Name", "Date"],
             Tab::Todos => vec!["State", "Project", "Type", "ID", "Title"],
-            Tab::Milestones => vec!["IID", "Title", "State", "Due Date"],
+            Tab::Milestones => vec!["ID", "Title", "State", "Due Date"],
             Tab::Terminal => vec![],
         }
     }
@@ -1962,7 +1962,7 @@ impl App {
                         matches = true;
                     }
                 };
-                if enabled_cols.contains("IID") {
+                if enabled_cols.contains("ID") {
                     check_match(&item.iid.to_string());
                     check_match(&format!("#{}", item.iid));
                 }
