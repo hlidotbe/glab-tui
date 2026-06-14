@@ -4577,14 +4577,35 @@ async fn main() -> Result<()> {
                     if let Some(mut diff_view) = app.diff_view.take() {
                         let in_selection = diff_view.selection_start.is_some();
                         match key_event.code {
-                            KeyCode::Esc | KeyCode::Char('q') => {
+                            KeyCode::Esc => {
+                                if in_selection {
+                                    diff_view.selection_start = None;
+                                    diff_view.selection_end = None;
+                                } else if !diff_view.focus_on_files {
+                                    diff_view.focus_on_files = true;
+                                } else {
+                                    if !app.draft_comments.is_empty() {
+                                        app.show_submit_review_prompt = Some(diff_view.mr_iid);
+                                    } else {
+                                        app.diff_view = None;
+                                        continue;
+                                    }
+                                }
+                                app.diff_view = Some(diff_view);
+                            }
+                            KeyCode::Char('q') => {
                                 if in_selection {
                                     diff_view.selection_start = None;
                                     diff_view.selection_end = None;
                                 } else {
-                                    app.diff_view = None;
-                                    continue;
+                                    if !app.draft_comments.is_empty() {
+                                        app.show_submit_review_prompt = Some(diff_view.mr_iid);
+                                    } else {
+                                        app.diff_view = None;
+                                        continue;
+                                    }
                                 }
+                                app.diff_view = Some(diff_view);
                             }
                             KeyCode::Tab => {
                                 diff_view.focus_on_files = !diff_view.focus_on_files;
