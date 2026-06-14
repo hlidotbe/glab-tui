@@ -15,7 +15,7 @@ A terminal user interface (TUI) for GitLab and GitHub, built on top of [`glab`](
 - **Runners** — list runners, pause/resume, edit descriptions, and monitor live performance/queue metrics
 - **Releases** — browse project releases and view details in the terminal
 - **Multi-colored Labels** — table columns render labels with their individual unique hashed colors, preserving search highlights
-- **Columns Config Modal** — press `Tab` or `t` to open a centered popup overlay to toggle column visibility, group by any column, and set sort order
+- **Columns Config Modal** — press `,` to open a centered popup overlay to toggle column visibility, group by any column, and set sort order
 - **Value-based Column Filtering** — filter table rows by specific column values from the configure popup
 - **Live Search** — fuzzy-filter across all visible columns by pressing `f`
 - **Inline editing** — full edit menus with searchable multi-select selectors for labels, assignees, reviewers, and milestones
@@ -122,8 +122,8 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 |---|---|
 | `l` / `→` | Next tab |
 | `h` / `←` | Previous tab |
-| `Tab` / `t` | Open column configure popup (toggle, group, order) |
-| `,` / `Esc` | Close configure popup |
+| `,` | Toggle column configure popup (toggle columns, group, order) |
+| `Esc` | Close configure popup |
 | `j` / `↓` | Move selection down |
 | `k` / `↑` | Move selection up |
 | `f` | Open search / filter bar |
