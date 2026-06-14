@@ -4007,7 +4007,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             }
         }
 
-        let footer_p = Paragraph::new(" Esc/q: Exit • d: Toggle Diff Layout • Tab: Toggle Focus • h/l/Left/Right: Switch Panels • j/k/↑/↓: Navigate • J/K: Next/Prev Hunk • V: Select Lines • c: Comment • e: Suggest Code • p: Toggle Review Mode • r: Submit Review ")
+        let footer_p = Paragraph::new(" Esc/q: Exit • d: Toggle Diff Layout • Tab: Toggle Focus • h/l/Left/Right: Switch Panels • j/k/↑/↓: Navigate • J/K: Scroll Down/Up • v: Select Lines • c: Comment • e: Suggest Code • p: Toggle Review Mode • r: Submit Review ")
             .alignment(Alignment::Center)
             .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC))
             .wrap(ratatui::widgets::Wrap { trim: true });

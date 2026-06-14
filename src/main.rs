@@ -288,9 +288,17 @@ fn editor_name() -> String {
 }
 
 fn edit_in_editor(current_val: &str, terminal: &mut AppTerminal) -> Option<String> {
+    edit_in_editor_with_suffix(current_val, ".md", terminal)
+}
+
+fn edit_in_editor_with_suffix(
+    current_val: &str,
+    suffix: &str,
+    terminal: &mut AppTerminal,
+) -> Option<String> {
     let editor = editor_name();
 
-    let mut tmp = tempfile::Builder::new().suffix(".md").tempfile().ok()?;
+    let mut tmp = tempfile::Builder::new().suffix(suffix).tempfile().ok()?;
     std::io::Write::write_all(&mut tmp, current_val.as_bytes()).ok()?;
     let file_path = tmp.into_temp_path();
 
@@ -1878,6 +1886,7 @@ async fn main() -> Result<()> {
                     app.diff_loading = false;
                     app.diff_view = Some(crate::app::DiffView::new(mr_iid, raw_diff));
                     app.current_comments = comments;
+                    app.in_review_mode = true;
                     if let Some(pos) = app
                         .terminal_commands
                         .iter()
@@ -4801,8 +4810,7 @@ async fn main() -> Result<()> {
                                     diff_view.lines.len()
                                 };
                                 if active_len > 0 {
-                                    let scroll_amount =
-                                        diff_view.viewport_height.saturating_sub(2).max(1);
+                                    let scroll_amount = 10;
                                     let new_idx =
                                         (diff_view.cursor_idx + scroll_amount).min(active_len - 1);
                                     if in_selection && !diff_view.focus_on_files {
@@ -4816,8 +4824,7 @@ async fn main() -> Result<()> {
                                 app.diff_view = Some(diff_view);
                             }
                             KeyCode::Char('K') => {
-                                let scroll_amount =
-                                    diff_view.viewport_height.saturating_sub(2).max(1);
+                                let scroll_amount = 10;
                                 let new_idx = diff_view.cursor_idx.saturating_sub(scroll_amount);
                                 if in_selection && !diff_view.focus_on_files {
                                     diff_view.selection_end = Some(new_idx);
@@ -4828,7 +4835,7 @@ async fn main() -> Result<()> {
                                 }
                                 app.diff_view = Some(diff_view);
                             }
-                            KeyCode::Char('V') => {
+                            KeyCode::Char('v') | KeyCode::Char('V') => {
                                 if !diff_view.focus_on_files {
                                     if in_selection {
                                         diff_view.selection_start = None;
@@ -4994,8 +5001,13 @@ async fn main() -> Result<()> {
                                     app.status_message = Some(
                                         "Opening editor for code suggestion...".to_string(),
                                     );
+                                    let ext = std::path::Path::new(&range.file_path)
+                                        .extension()
+                                        .and_then(|s| s.to_str())
+                                        .unwrap_or("md");
+                                    let suffix = format!(".{}", ext);
                                     let editor_content =
-                                        edit_in_editor(&content, &mut terminal);
+                                        edit_in_editor_with_suffix(&content, &suffix, &mut terminal);
                                     if let Some(suggestion) = editor_content {
                                         let body =
                                             format!("```suggestion\n{}\n```", suggestion);
