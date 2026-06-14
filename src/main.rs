@@ -4826,180 +4826,95 @@ async fn main() -> Result<()> {
                                 app.diff_view = Some(diff_view);
                             }
                             KeyCode::Char('c') => {
-                                let line_opt = if diff_view.side_by_side {
-                                    diff_view
-                                        .side_by_side_lines
-                                        .get(diff_view.cursor_idx)
-                                        .and_then(|sline| {
-                                            sline.right.as_ref().or(sline.left.as_ref()).cloned()
-                                        })
-                                } else {
-                                    diff_view.lines.get(diff_view.cursor_idx).cloned()
-                                };
-                                if let Some(line) = line_opt {
-                                    let can_comment = match line.line_type {
-                                        crate::app::DiffLineType::Addition
-                                        | crate::app::DiffLineType::Deletion
-                                        | crate::app::DiffLineType::Normal => true,
-                                        _ => false,
-                                    };
-                                    if can_comment {
-                                        let (end_line_num, end_old_line_num) = diff_view
-                                            .selection_start
-                                            .zip(diff_view.selection_end)
-                                            .and_then(|(s, e)| {
-                                                if s != e {
-                                                    let start_line = if diff_view.side_by_side {
-                                                        diff_view
-                                                            .side_by_side_lines
-                                                            .get(s.min(e))
-                                                            .and_then(|sline| {
-                                                            sline
-                                                                .right
-                                                                .as_ref()
-                                                                .or(sline.left.as_ref())
-                                                                .cloned()
-                                                        })?
-                                                    } else {
-                                                        diff_view.lines.get(s.min(e))?.clone()
-                                                    };
-                                                    let end_line = if diff_view.side_by_side {
-                                                        diff_view
-                                                            .side_by_side_lines
-                                                            .get(s.max(e))
-                                                            .and_then(|sline| {
-                                                            sline
-                                                                .right
-                                                                .as_ref()
-                                                                .or(sline.left.as_ref())
-                                                                .cloned()
-                                                        })?
-                                                    } else {
-                                                        diff_view.lines.get(s.max(e))?.clone()
-                                                    };
-                                                    Some((
-                                                        end_line.new_line_num,
-                                                        end_line.old_line_num,
-                                                    ))
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .unwrap_or((None, None));
-
-                                        app.text_input = Some(crate::app::TextInput {
-                                            title: format!(" Add Comment to {} ", line.file_path),
-                                            value: String::new(),
-                                            cursor_idx: 0,
-                                            action: crate::app::TextInputAction::AddReviewComment {
-                                                mr_iid: diff_view.mr_iid,
-                                                file_path: line.file_path.clone(),
-                                                line_num: line.new_line_num,
-                                                old_line_num: line.old_line_num,
-                                                end_line_num,
-                                                end_old_line_num,
-                                            },
-                                        });
-                                        // Clear selection after starting a comment
-                                        diff_view.selection_start = None;
-                                        diff_view.selection_end = None;
-                                    }
+                                if let Some(range) = diff_view.get_comment_range() {
+                                    app.text_input = Some(crate::app::TextInput {
+                                        title: format!(" Add Comment to {} ", range.file_path),
+                                        value: String::new(),
+                                        cursor_idx: 0,
+                                        action: crate::app::TextInputAction::AddReviewComment {
+                                            mr_iid: diff_view.mr_iid,
+                                            file_path: range.file_path,
+                                            line_num: range.line_num,
+                                            old_line_num: range.old_line_num,
+                                            end_line_num: range.end_line_num,
+                                            end_old_line_num: range.end_old_line_num,
+                                        },
+                                    });
+                                    // Clear selection after starting a comment
+                                    diff_view.selection_start = None;
+                                    diff_view.selection_end = None;
                                 }
                                 app.diff_view = Some(diff_view);
                             }
                             KeyCode::Char('C') => {
-                                if let Some(line) = diff_view.lines.get(diff_view.cursor_idx) {
-                                    let can_comment = match line.line_type {
-                                        crate::app::DiffLineType::Addition
-                                        | crate::app::DiffLineType::Deletion
-                                        | crate::app::DiffLineType::Normal => true,
-                                        _ => false,
-                                    };
-                                    if can_comment {
-                                        let (end_line_num, end_old_line_num) = diff_view
-                                            .selection_start
-                                            .zip(diff_view.selection_end)
-                                            .and_then(|(s, e)| {
-                                                if s != e {
-                                                    let end_line = diff_view.lines.get(s.max(e))?;
-                                                    Some((
-                                                        end_line.new_line_num,
-                                                        end_line.old_line_num,
-                                                    ))
+                                if let Some(range) = diff_view.get_comment_range() {
+                                    app.status_message =
+                                        Some("Opening editor for comment...".to_string());
+                                    let comment_content = edit_in_editor("", &mut terminal);
+                                    if let Some(body) = comment_content {
+                                        if !body.trim().is_empty() {
+                                            if app.in_review_mode {
+                                                app.draft_comments.push(
+                                                    crate::app::DraftComment {
+                                                        file_path: range.file_path.clone(),
+                                                        line_num: range.line_num,
+                                                        old_line_num: range.old_line_num,
+                                                        end_line_num: range.end_line_num,
+                                                        end_old_line_num: range.end_old_line_num,
+                                                        body,
+                                                    },
+                                                );
+                                                app.status_message = Some(format!(
+                                                    "Added draft comment. ({} pending)",
+                                                    app.draft_comments.len()
+                                                ));
+                                            } else {
+                                                let cli = app_cli(&app);
+                                                let mut args = if cli.is_github {
+                                                    vec![
+                                                        "pr".to_string(),
+                                                        "comment".to_string(),
+                                                        diff_view.mr_iid.to_string(),
+                                                        "--body".to_string(),
+                                                        body,
+                                                    ]
                                                 } else {
-                                                    None
-                                                }
-                                            })
-                                            .unwrap_or((None, None));
-
-                                        app.status_message =
-                                            Some("Opening editor for comment...".to_string());
-                                        let comment_content = edit_in_editor("", &mut terminal);
-                                        if let Some(body) = comment_content {
-                                            if !body.trim().is_empty() {
-                                                if app.in_review_mode {
-                                                    app.draft_comments.push(
-                                                        crate::app::DraftComment {
-                                                            file_path: line.file_path.clone(),
-                                                            line_num: line.new_line_num,
-                                                            old_line_num: line.old_line_num,
-                                                            end_line_num,
-                                                            end_old_line_num,
-                                                            body,
-                                                        },
-                                                    );
-                                                    app.status_message = Some(format!(
-                                                        "Added draft comment. ({} pending)",
-                                                        app.draft_comments.len()
-                                                    ));
-                                                } else {
-                                                    let cli = app_cli(&app);
-                                                    let mut args = if cli.is_github {
-                                                        vec![
-                                                            "pr".to_string(),
-                                                            "comment".to_string(),
-                                                            diff_view.mr_iid.to_string(),
-                                                            "--body".to_string(),
-                                                            body,
-                                                        ]
-                                                    } else {
-                                                        vec![
-                                                            "mr".to_string(),
-                                                            "note".to_string(),
-                                                            "create".to_string(),
-                                                            diff_view.mr_iid.to_string(),
-                                                            "--file-path".to_string(),
-                                                            line.file_path.clone(),
-                                                            "-m".to_string(),
-                                                            body,
-                                                        ]
-                                                    };
-                                                    if !cli.is_github {
-                                                        if let Some(ln) = line.new_line_num {
-                                                            args.push("--line".to_string());
-                                                            args.push(ln.to_string());
-                                                        } else if let Some(old_line) =
-                                                            line.old_line_num
-                                                        {
-                                                            args.push("--old-line".to_string());
-                                                            args.push(old_line.to_string());
-                                                        }
+                                                    vec![
+                                                        "mr".to_string(),
+                                                        "note".to_string(),
+                                                        "create".to_string(),
+                                                        diff_view.mr_iid.to_string(),
+                                                        "--file-path".to_string(),
+                                                        range.file_path.clone(),
+                                                        "-m".to_string(),
+                                                        body,
+                                                    ]
+                                                };
+                                                if !cli.is_github {
+                                                    if let Some(ln) = range.line_num {
+                                                        args.push("--line".to_string());
+                                                        args.push(ln.to_string());
+                                                    } else if let Some(old_line) =
+                                                        range.old_line_num
+                                                    {
+                                                        args.push("--old-line".to_string());
+                                                        args.push(old_line.to_string());
                                                     }
-                                                    run_cli(
-                                                        &cli,
-                                                        &args,
-                                                        &mut terminal,
-                                                        events.sender(),
-                                                        app.active_tab,
-                                                    )
-                                                    .await;
                                                 }
+                                                run_cli(
+                                                    &cli,
+                                                    &args,
+                                                    &mut terminal,
+                                                    events.sender(),
+                                                    app.active_tab,
+                                                )
+                                                .await;
                                             }
                                         }
-                                        // Clear selection after starting a comment
-                                        diff_view.selection_start = None;
-                                        diff_view.selection_end = None;
                                     }
+                                    // Clear selection after starting a comment
+                                    diff_view.selection_start = None;
+                                    diff_view.selection_end = None;
                                 }
                                 app.diff_view = Some(diff_view);
                             }
@@ -5038,169 +4953,88 @@ async fn main() -> Result<()> {
                                 app.diff_view = Some(diff_view);
                             }
                             KeyCode::Char('e') => {
-                                let line_opt = if diff_view.side_by_side {
-                                    diff_view
-                                        .side_by_side_lines
-                                        .get(diff_view.cursor_idx)
-                                        .and_then(|sline| {
-                                            sline.right.as_ref().or(sline.left.as_ref()).cloned()
-                                        })
-                                } else {
-                                    diff_view.lines.get(diff_view.cursor_idx).cloned()
-                                };
-                                if let Some(line) = line_opt {
-                                    let can_suggest = match line.line_type {
-                                        crate::app::DiffLineType::Addition
-                                        | crate::app::DiffLineType::Deletion
-                                        | crate::app::DiffLineType::Normal => true,
-                                        _ => false,
-                                    };
-                                    if can_suggest {
-                                        let content = if let (Some(s), Some(e)) =
-                                            (diff_view.selection_start, diff_view.selection_end)
-                                        {
-                                            let (s, e) = (s.min(e), s.max(e));
-                                            let selected_lines: Vec<crate::app::DiffLine> =
-                                                if diff_view.side_by_side {
-                                                    diff_view.side_by_side_lines[s..=e]
-                                                        .iter()
-                                                        .filter_map(|sline| {
-                                                            sline
-                                                                .right
-                                                                .as_ref()
-                                                                .or(sline.left.as_ref())
-                                                                .cloned()
-                                                        })
-                                                        .collect()
-                                                } else {
-                                                    diff_view.lines[s..=e].to_vec()
-                                                };
-                                            selected_lines
-                                                .iter()
-                                                .map(|l| {
-                                                    let c = l.content.as_str();
-                                                    if c.starts_with('+')
-                                                        || c.starts_with('-')
-                                                        || c.starts_with(' ')
-                                                    {
-                                                        if c.len() > 1 { &c[1..] } else { "" }
-                                                    } else {
-                                                        c
-                                                    }
-                                                })
-                                                .collect::<Vec<_>>()
-                                                .join("\n")
-                                        } else {
-                                            let c = line.content.as_str();
+                                if let Some(range) = diff_view.get_comment_range() {
+                                    let content = range.lines
+                                        .iter()
+                                        .map(|l| {
+                                            let c = l.content.as_str();
                                             if c.starts_with('+')
                                                 || c.starts_with('-')
                                                 || c.starts_with(' ')
                                             {
-                                                if c.len() > 1 {
-                                                    c[1..].to_string()
-                                                } else {
-                                                    String::new()
-                                                }
+                                                if c.len() > 1 { &c[1..] } else { "" }
                                             } else {
-                                                c.to_string()
+                                                c
                                             }
-                                        };
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join("\n");
 
-                                        app.status_message = Some(
-                                            "Opening editor for code suggestion...".to_string(),
-                                        );
-                                        let editor_content =
-                                            edit_in_editor(&content, &mut terminal);
-                                        if let Some(suggestion) = editor_content {
-                                            let (end_line_num, end_old_line_num) = diff_view
-                                                .selection_start
-                                                .zip(diff_view.selection_end)
-                                                .and_then(|(s, e)| {
-                                                    if s != e {
-                                                        let end_line = if diff_view.side_by_side {
-                                                            diff_view
-                                                                .side_by_side_lines
-                                                                .get(s.max(e))
-                                                                .and_then(|sline| {
-                                                                    sline
-                                                                        .right
-                                                                        .as_ref()
-                                                                        .or(sline.left.as_ref())
-                                                                        .cloned()
-                                                                })?
-                                                        } else {
-                                                            diff_view.lines.get(s.max(e))?.clone()
-                                                        };
-                                                        Some((
-                                                            end_line.new_line_num,
-                                                            end_line.old_line_num,
-                                                        ))
-                                                    } else {
-                                                        None
-                                                    }
-                                                })
-                                                .unwrap_or((None, None));
+                                    app.status_message = Some(
+                                        "Opening editor for code suggestion...".to_string(),
+                                    );
+                                    let editor_content =
+                                        edit_in_editor(&content, &mut terminal);
+                                    if let Some(suggestion) = editor_content {
+                                        let body =
+                                            format!("```suggestion\n{}\n```", suggestion);
 
-                                            let body =
-                                                format!("```suggestion\n{}\n```", suggestion);
-
-                                            if app.in_review_mode {
-                                                app.draft_comments.push(crate::app::DraftComment {
-                                                    file_path: line.file_path.clone(),
-                                                    line_num: line.new_line_num,
-                                                    old_line_num: line.old_line_num,
-                                                    end_line_num,
-                                                    end_old_line_num,
+                                        if app.in_review_mode {
+                                            app.draft_comments.push(crate::app::DraftComment {
+                                                file_path: range.file_path.clone(),
+                                                line_num: range.line_num,
+                                                old_line_num: range.old_line_num,
+                                                end_line_num: range.end_line_num,
+                                                end_old_line_num: range.end_old_line_num,
+                                                body,
+                                            });
+                                            app.status_message = Some(format!(
+                                                "Added suggestion draft. ({} pending)",
+                                                app.draft_comments.len()
+                                            ));
+                                        } else {
+                                            let cli = app_cli(&app);
+                                            let mut args = if cli.is_github {
+                                                vec![
+                                                    "pr".to_string(),
+                                                    "comment".to_string(),
+                                                    diff_view.mr_iid.to_string(),
+                                                    "--body".to_string(),
                                                     body,
-                                                });
-                                                app.status_message = Some(format!(
-                                                    "Added suggestion draft. ({} pending)",
-                                                    app.draft_comments.len()
-                                                ));
+                                                ]
                                             } else {
-                                                let cli = app_cli(&app);
-                                                let mut args = if cli.is_github {
-                                                    vec![
-                                                        "pr".to_string(),
-                                                        "comment".to_string(),
-                                                        diff_view.mr_iid.to_string(),
-                                                        "--body".to_string(),
-                                                        body,
-                                                    ]
-                                                } else {
-                                                    vec![
-                                                        "mr".to_string(),
-                                                        "note".to_string(),
-                                                        "create".to_string(),
-                                                        diff_view.mr_iid.to_string(),
-                                                        "--file-path".to_string(),
-                                                        line.file_path.clone(),
-                                                        "-m".to_string(),
-                                                        body,
-                                                    ]
-                                                };
-                                                if !cli.is_github {
-                                                    if let Some(ln) = line.new_line_num {
-                                                        args.push("--line".to_string());
-                                                        args.push(ln.to_string());
-                                                    } else if let Some(oln) = line.old_line_num {
-                                                        args.push("--old-line".to_string());
-                                                        args.push(oln.to_string());
-                                                    }
+                                                vec![
+                                                    "mr".to_string(),
+                                                    "note".to_string(),
+                                                    "create".to_string(),
+                                                    diff_view.mr_iid.to_string(),
+                                                    "--file-path".to_string(),
+                                                    range.file_path.clone(),
+                                                    "-m".to_string(),
+                                                    body,
+                                                ]
+                                            };
+                                            if !cli.is_github {
+                                                if let Some(ln) = range.line_num {
+                                                    args.push("--line".to_string());
+                                                    args.push(ln.to_string());
+                                                } else if let Some(oln) = range.old_line_num {
+                                                    args.push("--old-line".to_string());
+                                                    args.push(oln.to_string());
                                                 }
-                                                run_cli(
-                                                    &cli,
-                                                    &args,
-                                                    &mut terminal,
-                                                    events.sender(),
-                                                    app.active_tab,
-                                                )
-                                                .await;
                                             }
+                                            run_cli(
+                                                &cli,
+                                                &args,
+                                                &mut terminal,
+                                                events.sender(),
+                                                app.active_tab,
+                                            )
+                                            .await;
                                         }
-                                        diff_view.selection_start = None;
-                                        diff_view.selection_end = None;
                                     }
+                                    diff_view.selection_start = None;
+                                    diff_view.selection_end = None;
                                 }
                                 app.diff_view = Some(diff_view);
                             }

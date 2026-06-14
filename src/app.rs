@@ -763,6 +763,146 @@ impl DiffView {
             }
         }
     }
+
+    pub fn get_comment_range(&self) -> Option<CommentRange> {
+        let selection = self.selection_start.zip(self.selection_end);
+
+        if let Some((s, e)) = selection {
+            if s != e {
+                let min_idx = s.min(e);
+                let max_idx = s.max(e);
+                if self.side_by_side {
+                    if min_idx >= self.side_by_side_lines.len() || max_idx >= self.side_by_side_lines.len() {
+                        return None;
+                    }
+                    let has_any_right = self.side_by_side_lines[min_idx..=max_idx]
+                        .iter()
+                        .any(|sline| sline.right.as_ref().map_or(false, |r| r.new_line_num.is_some()));
+
+                    if has_any_right {
+                        // Gather only right side lines (new file)
+                        let right_lines: Vec<DiffLine> = self.side_by_side_lines[min_idx..=max_idx]
+                            .iter()
+                            .filter_map(|sline| sline.right.clone())
+                            .collect();
+
+                        let start_line = right_lines.first()?;
+                        let end_line = right_lines.last()?;
+
+                        return Some(CommentRange {
+                            file_path: start_line.file_path.clone(),
+                            line_num: start_line.new_line_num,
+                            old_line_num: None,
+                            end_line_num: end_line.new_line_num,
+                            end_old_line_num: None,
+                            lines: right_lines,
+                        });
+                    } else {
+                        // Gather only left side lines (old file / deletions)
+                        let left_lines: Vec<DiffLine> = self.side_by_side_lines[min_idx..=max_idx]
+                            .iter()
+                            .filter_map(|sline| sline.left.clone())
+                            .collect();
+
+                        let start_line = left_lines.first()?;
+                        let end_line = left_lines.last()?;
+
+                        return Some(CommentRange {
+                            file_path: start_line.file_path.clone(),
+                            line_num: None,
+                            old_line_num: start_line.old_line_num,
+                            end_line_num: None,
+                            end_old_line_num: end_line.old_line_num,
+                            lines: left_lines,
+                        });
+                    }
+                } else {
+                    // Unified view range
+                    if min_idx >= self.lines.len() || max_idx >= self.lines.len() {
+                        return None;
+                    }
+                    let lines = &self.lines[min_idx..=max_idx];
+                    let has_any_addition_or_normal = lines
+                        .iter()
+                        .any(|line| line.line_type != DiffLineType::Deletion && line.new_line_num.is_some());
+
+                    if has_any_addition_or_normal {
+                        let filtered_lines: Vec<DiffLine> = lines
+                            .iter()
+                            .filter(|line| line.line_type != DiffLineType::Deletion && line.new_line_num.is_some())
+                            .cloned()
+                            .collect();
+                        let start_line = filtered_lines.first()?;
+                        let end_line = filtered_lines.last()?;
+                        return Some(CommentRange {
+                            file_path: start_line.file_path.clone(),
+                            line_num: start_line.new_line_num,
+                            old_line_num: None,
+                            end_line_num: end_line.new_line_num,
+                            end_old_line_num: None,
+                            lines: filtered_lines,
+                        });
+                    } else {
+                        let filtered_lines: Vec<DiffLine> = lines
+                            .iter()
+                            .filter(|line| line.line_type == DiffLineType::Deletion && line.old_line_num.is_some())
+                            .cloned()
+                            .collect();
+                        let start_line = filtered_lines.first()?;
+                        let end_line = filtered_lines.last()?;
+                        return Some(CommentRange {
+                            file_path: start_line.file_path.clone(),
+                            line_num: None,
+                            old_line_num: start_line.old_line_num,
+                            end_line_num: None,
+                            end_old_line_num: end_line.old_line_num,
+                            lines: filtered_lines,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Single line (no selection)
+        let sline_opt = if self.side_by_side {
+            let sline = self.side_by_side_lines.get(self.cursor_idx)?;
+            // Prefer right (new file) if it has a line number
+            if let Some(ref r) = sline.right {
+                if r.new_line_num.is_some() {
+                    Some(r.clone())
+                } else if let Some(ref l) = sline.left {
+                    Some(l.clone())
+                } else {
+                    Some(r.clone())
+                }
+            } else {
+                sline.left.clone()
+            }
+        } else {
+            self.lines.get(self.cursor_idx).cloned()
+        };
+
+        let line = sline_opt?;
+        if line.line_type == DiffLineType::Deletion {
+            Some(CommentRange {
+                file_path: line.file_path.clone(),
+                line_num: None,
+                old_line_num: line.old_line_num,
+                end_line_num: None,
+                end_old_line_num: None,
+                lines: vec![line],
+            })
+        } else {
+            Some(CommentRange {
+                file_path: line.file_path.clone(),
+                line_num: line.new_line_num,
+                old_line_num: None,
+                end_line_num: None,
+                end_old_line_num: None,
+                lines: vec![line],
+            })
+        }
+    }
 }
 
 pub fn build_side_by_side_lines(lines: &[DiffLine]) -> Vec<SideBySideLine> {
@@ -827,6 +967,16 @@ fn parse_hunk_header(header: &str) -> Option<(u32, u32)> {
     } else {
         None
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct CommentRange {
+    pub file_path: String,
+    pub line_num: Option<u32>,
+    pub old_line_num: Option<u32>,
+    pub end_line_num: Option<u32>,
+    pub end_old_line_num: Option<u32>,
+    pub lines: Vec<DiffLine>,
 }
 
 #[derive(Clone, Debug)]
@@ -2413,4 +2563,65 @@ index abcdef..ffffff 100644
         assert!(!app.in_review_mode);
         assert!(app.draft_comments.is_empty());
     }
+
+    #[test]
+    fn test_get_comment_range() {
+        let diff_content = "\
+diff --git a/foo.txt b/foo.txt
+index 123456..789012 100644
+--- a/foo.txt
++++ b/foo.txt
+@@ -1,3 +1,3 @@
+ normal line 1
+-deleted line 1
+-deleted line 2
++added line 1
++added line 2
+ normal line 2
+";
+        let mut diff_view = DiffView::new(42, diff_content.to_string());
+        diff_view.side_by_side = true;
+        diff_view.update_active_lines();
+
+        // Let's test selection spanning rows 6 to 7
+        diff_view.selection_start = Some(6);
+        diff_view.selection_end = Some(7);
+
+        let range = diff_view.get_comment_range().unwrap();
+        assert_eq!(range.file_path, "foo.txt");
+        assert_eq!(range.line_num, Some(2)); // added line 1 is new line 2
+        assert_eq!(range.end_line_num, Some(3)); // added line 2 is new line 3
+        assert_eq!(range.old_line_num, None);
+        assert_eq!(range.end_old_line_num, None);
+        assert_eq!(range.lines.len(), 2);
+        assert_eq!(range.lines[0].content, "+added line 1");
+        assert_eq!(range.lines[1].content, "+added line 2");
+
+        let diff_content_2 = "\
+diff --git a/foo.txt b/foo.txt
+--- a/foo.txt
++++ b/foo.txt
+@@ -1,4 +1,2 @@
+-deleted line 1
+-deleted line 2
+-deleted line 3
++added line 1
+";
+        let mut diff_view_2 = DiffView::new(42, diff_content_2.to_string());
+        diff_view_2.side_by_side = true;
+        diff_view_2.update_active_lines();
+
+        // Selecting rows 5 to 6 (which are purely deletions)
+        diff_view_2.selection_start = Some(5);
+        diff_view_2.selection_end = Some(6);
+        let range_2 = diff_view_2.get_comment_range().unwrap();
+        assert_eq!(range_2.line_num, None);
+        assert_eq!(range_2.end_line_num, None);
+        assert_eq!(range_2.old_line_num, Some(2)); // deleted line 2
+        assert_eq!(range_2.end_old_line_num, Some(3)); // deleted line 3
+        assert_eq!(range_2.lines.len(), 2);
+        assert_eq!(range_2.lines[0].content, "-deleted line 2");
+        assert_eq!(range_2.lines[1].content, "-deleted line 3");
+    }
 }
+
