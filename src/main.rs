@@ -2244,6 +2244,7 @@ async fn main() -> Result<()> {
 
                     if is_refresh
                         && app.text_input.is_none()
+                        && app.date_picker.is_none()
                         && app.edit_menu.is_none()
                         && app.selector.is_none()
                     {
@@ -2257,6 +2258,73 @@ async fn main() -> Result<()> {
                                     app.active_tab,
                                     events.sender(),
                                 );
+                            }
+                        }
+                        continue;
+                    }
+
+                    if let Some(mut date_picker) = app.date_picker.take() {
+                        match key_event.code {
+                            KeyCode::Esc | KeyCode::Char('q') => {
+                                // Cancel date picker
+                            }
+                            KeyCode::Char('h') | KeyCode::Left => {
+                                date_picker.move_day(-1);
+                                app.date_picker = Some(date_picker);
+                            }
+                            KeyCode::Char('l') | KeyCode::Right => {
+                                date_picker.move_day(1);
+                                app.date_picker = Some(date_picker);
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                date_picker.move_day(-7);
+                                app.date_picker = Some(date_picker);
+                            }
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                date_picker.move_day(7);
+                                app.date_picker = Some(date_picker);
+                            }
+                            KeyCode::Char('[') | KeyCode::PageUp => {
+                                date_picker.move_month(-1);
+                                app.date_picker = Some(date_picker);
+                            }
+                            KeyCode::Char(']') | KeyCode::PageDown => {
+                                date_picker.move_month(1);
+                                app.date_picker = Some(date_picker);
+                            }
+                            KeyCode::Enter => {
+                                let selected_val = date_picker.value_string();
+                                match date_picker.action {
+                                    crate::app::DatePickerAction::EditField {
+                                        entity_iid,
+                                        entity_type,
+                                        field_type,
+                                    } => {
+                                        let active_tab = app.active_tab;
+                                        apply_field_text_change(
+                                            &mut app,
+                                            &entity_type,
+                                            entity_iid,
+                                            &field_type,
+                                            selected_val,
+                                            &mut terminal,
+                                            events.sender(),
+                                            active_tab,
+                                        )
+                                        .await;
+                                        rebuild_edit_menu(&mut app, &entity_type, entity_iid);
+                                    }
+                                    crate::app::DatePickerAction::EditNewField { field_idx } => {
+                                        if let Some(ref mut menu) = app.edit_menu {
+                                            if field_idx < menu.fields.len() {
+                                                menu.fields[field_idx].1 = selected_val;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                app.date_picker = Some(date_picker);
                             }
                         }
                         continue;
@@ -5221,8 +5289,38 @@ async fn main() -> Result<()> {
                                     continue;
                                 }
 
+                                if field_name == "Due Date" {
+                                    let current_val = if entity_iid == 0 {
+                                        menu.fields[menu.selected_idx].1.clone()
+                                    } else {
+                                        app.issues
+                                            .items
+                                            .iter()
+                                            .find(|i| i.iid == entity_iid)
+                                            .and_then(|i| i.due_date.clone())
+                                            .unwrap_or_default()
+                                    };
+                                    let action = if entity_iid == 0 {
+                                        crate::app::DatePickerAction::EditNewField {
+                                            field_idx: menu.selected_idx,
+                                        }
+                                    } else {
+                                        crate::app::DatePickerAction::EditField {
+                                            entity_iid,
+                                            entity_type: entity_type.clone(),
+                                            field_type: "due_date".to_string(),
+                                        }
+                                    };
+                                    app.date_picker = Some(crate::app::DatePicker::new(
+                                        format!(" Select {}", field_name),
+                                        &current_val,
+                                        action,
+                                    ));
+                                    app.edit_menu = Some(menu);
+                                    continue;
+                                }
+
                                 if field_name == "Title"
-                                    || field_name == "Due Date"
                                     || field_name == "Weight"
                                     || field_name == "Branch / Ref"
                                     || field_name == "Variables"
@@ -5235,7 +5333,6 @@ async fn main() -> Result<()> {
                                         let field_type = match field_name.as_str() {
                                             "Title" => "title",
                                             "Target Branch" => "target_branch",
-                                            "Due Date" => "due_date",
                                             "Weight" => "weight",
                                             _ => "",
                                         };
@@ -5264,13 +5361,6 @@ async fn main() -> Result<()> {
                                                 .find(|m| m.iid == entity_iid)
                                                 .map(|m| m.target_branch.clone())
                                                 .unwrap_or_default(),
-                                            "due_date" => app
-                                                .issues
-                                                .items
-                                                .iter()
-                                                .find(|i| i.iid == entity_iid)
-                                                .and_then(|i| i.due_date.clone())
-                                                .unwrap_or_default(),
                                             "weight" => "0".to_string(),
                                             _ => String::new(),
                                         }
@@ -5284,7 +5374,6 @@ async fn main() -> Result<()> {
                                         let field_type = match field_name.as_str() {
                                             "Title" => "title",
                                             "Target Branch" => "target_branch",
-                                            "Due Date" => "due_date",
                                             "Weight" => "weight",
                                             _ => "",
                                         };

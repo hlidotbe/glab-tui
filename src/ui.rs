@@ -4672,6 +4672,130 @@ pub fn render(f: &mut Frame, app: &mut App) {
         f.render_widget(footer_p, chunks[1]);
     }
 
+    if let Some(date_picker) = &app.date_picker {
+        let block = Block::default()
+            .title(format!(" {} ", date_picker.title))
+            .title_style(
+                Style::default()
+                    .fg(THEME.header_fg)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(THEME.border_focused))
+            .style(Style::default().bg(Color::Reset));
+
+        // 36 columns wide, 11 rows high
+        let area = centered_rect_fixed(36, 11, size);
+        let inner_area = block.inner(area);
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(
+                [
+                    Constraint::Length(1), // Month/Year line
+                    Constraint::Min(0),    // Grid of days
+                    Constraint::Length(1), // Footer keys
+                ]
+                .as_ref(),
+            )
+            .split(inner_area);
+
+        let month_str = match date_picker.month {
+            1 => "January",
+            2 => "February",
+            3 => "March",
+            4 => "April",
+            5 => "May",
+            6 => "June",
+            7 => "July",
+            8 => "August",
+            9 => "September",
+            10 => "October",
+            11 => "November",
+            12 => "December",
+            _ => "",
+        };
+        let header_str = format!("◀  {} {}  ▶", month_str, date_picker.year);
+        let header_p = Paragraph::new(header_str)
+            .alignment(Alignment::Center)
+            .style(
+                Style::default()
+                    .fg(THEME.header_fg)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        // Weekday headers
+        let weekday_headers = vec!["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+        let col_headers = weekday_headers
+            .into_iter()
+            .map(|h| Cell::from(Line::from(h).alignment(Alignment::Center)));
+        let table_header = Row::new(col_headers).style(Style::default().fg(THEME.text_muted));
+
+        // Calculate days grid
+        let first_date =
+            chrono::NaiveDate::from_ymd_opt(date_picker.year, date_picker.month, 1).unwrap();
+        use chrono::Datelike;
+        let start_weekday = first_date.weekday().num_days_from_sunday(); // 0 = Sunday, 1 = Monday, etc.
+        let total_days = crate::app::days_in_month(date_picker.year, date_picker.month);
+
+        let mut rows = Vec::new();
+        for r in 0..6 {
+            let mut row_cells = Vec::new();
+            for c in 0..7 {
+                let cell_idx = r * 7 + c;
+                let day_num = (cell_idx as i32) - (start_weekday as i32) + 1;
+                if day_num >= 1 && day_num <= total_days as i32 {
+                    let is_selected = day_num as u32 == date_picker.day;
+                    let style = if is_selected {
+                        Style::default()
+                            .bg(THEME.highlight_bg)
+                            .fg(THEME.header_fg)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(THEME.text_normal)
+                    };
+                    row_cells.push(Cell::from(
+                        Line::from(day_num.to_string())
+                            .alignment(Alignment::Center)
+                            .style(style),
+                    ));
+                } else {
+                    row_cells.push(Cell::from(""));
+                }
+            }
+            rows.push(Row::new(row_cells));
+        }
+
+        let widths = [
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(4),
+        ];
+
+        let table = Table::new(rows, widths)
+            .header(table_header)
+            .column_spacing(1);
+
+        let footer_p = Paragraph::new("←↓↑→/hjkl: Move • [/]: Month • Enter: Set")
+            .style(
+                Style::default()
+                    .fg(THEME.text_muted)
+                    .bg(Color::Reset)
+                    .add_modifier(Modifier::ITALIC),
+            )
+            .alignment(Alignment::Center);
+
+        f.render_widget(Clear, area);
+        f.render_widget(block, area);
+        f.render_widget(header_p, chunks[0]);
+        f.render_widget(table, chunks[1]);
+        f.render_widget(footer_p, chunks[2]);
+    }
+
     if app.show_help {
         struct Shortcut {
             category: &'static str,

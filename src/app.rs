@@ -1053,6 +1053,99 @@ pub struct TextInput {
     pub action: TextInputAction,
 }
 
+#[derive(Clone, Debug)]
+pub struct DatePicker {
+    pub title: String,
+    pub year: i32,
+    pub month: u32,
+    pub day: u32,
+    pub action: DatePickerAction,
+}
+
+#[derive(Clone, Debug)]
+pub enum DatePickerAction {
+    EditField {
+        entity_iid: u64,
+        entity_type: String,
+        field_type: String,
+    },
+    EditNewField {
+        field_idx: usize,
+    },
+}
+
+pub fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30,
+    }
+}
+
+impl DatePicker {
+    pub fn new(title: String, initial_date_str: &str, action: DatePickerAction) -> Self {
+        use chrono::Datelike;
+        let parsed_date = chrono::NaiveDate::parse_from_str(initial_date_str.trim(), "%Y-%m-%d")
+            .ok()
+            .or_else(|| {
+                let now = chrono::Local::now();
+                chrono::NaiveDate::from_ymd_opt(now.year(), now.month(), now.day())
+            })
+            .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(2026, 7, 3).unwrap());
+
+        Self {
+            title,
+            year: parsed_date.year(),
+            month: parsed_date.month(),
+            day: parsed_date.day(),
+            action,
+        }
+    }
+
+    pub fn value_string(&self) -> String {
+        format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)
+    }
+
+    pub fn move_day(&mut self, offset: i32) {
+        use chrono::Datelike;
+        if let Some(current_date) = chrono::NaiveDate::from_ymd_opt(self.year, self.month, self.day)
+        {
+            let duration = chrono::Duration::days(offset as i64);
+            if let Some(new_date) = current_date.checked_add_signed(duration) {
+                self.year = new_date.year();
+                self.month = new_date.month();
+                self.day = new_date.day();
+            }
+        }
+    }
+
+    pub fn move_month(&mut self, offset: i32) {
+        let mut new_month = self.month as i32 + offset;
+        let mut new_year = self.year;
+        while new_month > 12 {
+            new_month -= 12;
+            new_year += 1;
+        }
+        while new_month < 1 {
+            new_month += 12;
+            new_year -= 1;
+        }
+        self.year = new_year;
+        self.month = new_month as u32;
+        let max_days = days_in_month(self.year, self.month);
+        if self.day > max_days {
+            self.day = max_days;
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TerminalCommand {
     pub timestamp: String,
@@ -1091,6 +1184,7 @@ pub struct App {
     pub edit_menu: Option<EditMenu>,
     pub selector: Option<Selector>,
     pub text_input: Option<TextInput>,
+    pub date_picker: Option<DatePicker>,
     pub jobs_list_state: TableState,
     pub job_trace_scroll: u16,
     pub issues_scroll: u16,
@@ -1157,6 +1251,7 @@ impl Default for App {
             edit_menu: None,
             selector: None,
             text_input: None,
+            date_picker: None,
             jobs_list_state: TableState::default(),
             job_trace_scroll: 0,
             issues_scroll: 0,
@@ -2778,6 +2873,36 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_date_picker_navigation() {
+        let mut dp = DatePicker::new(
+            "Select Date".to_string(),
+            "2026-07-03",
+            DatePickerAction::EditNewField { field_idx: 0 },
+        );
+
+        assert_eq!(dp.year, 2026);
+        assert_eq!(dp.month, 7);
+        assert_eq!(dp.day, 3);
+        assert_eq!(dp.value_string(), "2026-07-03");
+
+        // Move day forward by 1
+        dp.move_day(1);
+        assert_eq!(dp.value_string(), "2026-07-04");
+
+        // Move day backward by 5
+        dp.move_day(-5);
+        assert_eq!(dp.value_string(), "2026-06-29");
+
+        // Move month forward by 1
+        dp.move_month(1);
+        assert_eq!(dp.value_string(), "2026-07-29");
+
+        // Move month backward by 2
+        dp.move_month(-2);
+        assert_eq!(dp.value_string(), "2026-05-29");
+    }
 
     #[test]
     fn test_selector_fuzzy_matching() {
