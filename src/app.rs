@@ -150,6 +150,7 @@ impl Tab {
                 "Assignees",
                 "Labels",
                 "Milestone",
+                "Due Date",
                 "Author",
             ],
             Tab::MergeRequests => vec![
@@ -182,7 +183,7 @@ impl Tab {
 
     pub fn default_columns(&self) -> Vec<&'static str> {
         match self {
-            Tab::Issues => vec!["ID", "State", "Title", "Labels"],
+            Tab::Issues => vec!["ID", "State", "Title", "Labels", "Due Date"],
             Tab::MergeRequests => vec!["ID", "State", "Status", "Title", "Labels"],
             Tab::Pipelines => vec!["ID", "Status", "Stages", "Ref"],
             Tab::Jobs => vec!["ID", "Stage", "Status", "Name", "Matrix"],

@@ -537,6 +537,7 @@ fn translate_issue(v: &serde_json::Value) -> serde_json::Value {
         "milestone": milestone,
         "assignees": assignees,
         "description": description,
+        "due_date": serde_json::Value::Null,
     })
 }
 
@@ -1038,6 +1039,7 @@ mod tests {
         assert_eq!(gl_issue["milestone"]["title"], "v1.0");
         assert_eq!(gl_issue["assignees"][0]["username"], "octocat");
         assert_eq!(gl_issue["description"], "Issue description");
+        assert_eq!(gl_issue["due_date"], serde_json::Value::Null);
     }
 
     #[test]

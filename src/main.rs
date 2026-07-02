@@ -398,6 +398,13 @@ async fn apply_field_text_change(
                     .flag("--due-date", flag_value)
                     .build();
                 run_cli(&cli, &args, terminal, tx.clone(), tab).await;
+                if let Some(item) = app.issues.items.iter_mut().find(|i| i.iid == iid) {
+                    item.due_date = if flag_value.is_empty() {
+                        None
+                    } else {
+                        Some(flag_value.to_string())
+                    };
+                }
             }
         }
         "weight" => {
@@ -854,7 +861,10 @@ fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
                     ("Assignees".to_string(), assignees),
                     ("Milestone".to_string(), milestone),
                     ("Confidential".to_string(), "Toggle/Set".to_string()),
-                    ("Due Date".to_string(), "Set".to_string()),
+                    (
+                        "Due Date".to_string(),
+                        issue.due_date.clone().unwrap_or_else(|| "Set".to_string()),
+                    ),
                     ("Weight".to_string(), "Set".to_string()),
                     (
                         "Description".to_string(),
@@ -5254,7 +5264,13 @@ async fn main() -> Result<()> {
                                                 .find(|m| m.iid == entity_iid)
                                                 .map(|m| m.target_branch.clone())
                                                 .unwrap_or_default(),
-                                            "due_date" => "".to_string(),
+                                            "due_date" => app
+                                                .issues
+                                                .items
+                                                .iter()
+                                                .find(|i| i.iid == entity_iid)
+                                                .and_then(|i| i.due_date.clone())
+                                                .unwrap_or_default(),
                                             "weight" => "0".to_string(),
                                             _ => String::new(),
                                         }
@@ -6187,7 +6203,13 @@ async fn main() -> Result<()> {
                                                     "Confidential".to_string(),
                                                     "Toggle/Set".to_string(),
                                                 ),
-                                                ("Due Date".to_string(), "Set".to_string()),
+                                                (
+                                                    "Due Date".to_string(),
+                                                    issue
+                                                        .due_date
+                                                        .clone()
+                                                        .unwrap_or_else(|| "Set".to_string()),
+                                                ),
                                                 ("Weight".to_string(), "Set".to_string()),
                                                 (
                                                     "Description".to_string(),

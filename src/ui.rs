@@ -823,6 +823,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Alignment::Left,
                         ));
                     }
+                    if app.is_column_visible(Tab::Issues, "Due Date") {
+                        let due_str = i.due_date.as_deref().unwrap_or("—");
+                        cells.push(render_fuzzy_cell(
+                            due_str,
+                            &app.search_query,
+                            is_selected,
+                            false,
+                            Style::default().fg(THEME.yellow),
+                            Alignment::Left,
+                        ));
+                    }
                     if app.is_column_visible(Tab::Issues, "Author") {
                         let author_str = format!("@{}", i.author.username);
                         cells.push(render_fuzzy_cell(
@@ -868,6 +879,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 if app.is_column_visible(Tab::Issues, "Milestone") {
                     header_cells.push(Cell::from("Milestone"));
                     widths.push(Constraint::Length(18));
+                }
+                if app.is_column_visible(Tab::Issues, "Due Date") {
+                    header_cells.push(Cell::from("Due Date"));
+                    widths.push(Constraint::Length(12));
                 }
                 if app.is_column_visible(Tab::Issues, "Author") {
                     header_cells.push(Cell::from("Author"));
@@ -943,6 +958,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Span::styled("Milestone: ", Style::default().fg(THEME.text_muted)),
                             Span::styled(milestone, Style::default().fg(THEME.purple)),
                         ]));
+                        if let Some(due) = &issue.due_date {
+                            text.push(Line::from(vec![
+                                Span::styled("Due Date:  ", Style::default().fg(THEME.text_muted)),
+                                Span::styled(due, Style::default().fg(THEME.yellow)),
+                            ]));
+                        }
                         text.push(Line::from(vec![
                             Span::styled("State:     ", Style::default().fg(THEME.text_muted)),
                             Span::styled(

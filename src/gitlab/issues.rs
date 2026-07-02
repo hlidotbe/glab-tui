@@ -32,6 +32,8 @@ pub struct Issue {
     #[serde(default)]
     pub assignees: Vec<Assignee>,
     pub description: Option<String>,
+    #[serde(default)]
+    pub due_date: Option<String>,
 }
 
 pub async fn list_issues(
@@ -52,4 +54,39 @@ pub async fn get_issue(client: &GitlabClient, project_path: &str, iid: u64) -> R
     let encoded_path = project_path.replace("/", "%2F");
     let endpoint = format!("/projects/{}/issues/{}", encoded_path, iid);
     client.fetch_api(&endpoint).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_issue_due_date() {
+        let json_data = r#"{
+            "iid": 42,
+            "title": "Test Issue",
+            "state": "opened",
+            "labels": ["bug"],
+            "updated_at": "2026-07-03T00:00:00Z",
+            "author": { "username": "testuser" },
+            "due_date": "2026-07-15"
+        }"#;
+
+        let issue: Issue = serde_json::from_str(json_data).unwrap();
+        assert_eq!(issue.iid, 42);
+        assert_eq!(issue.due_date, Some("2026-07-15".to_string()));
+
+        let json_no_due_date = r#"{
+            "iid": 43,
+            "title": "Test Issue No Due Date",
+            "state": "opened",
+            "labels": [],
+            "updated_at": "2026-07-03T00:00:00Z",
+            "author": { "username": "testuser" }
+        }"#;
+
+        let issue_no_due: Issue = serde_json::from_str(json_no_due_date).unwrap();
+        assert_eq!(issue_no_due.iid, 43);
+        assert_eq!(issue_no_due.due_date, None);
+    }
 }
