@@ -2166,7 +2166,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     let mut row_cells = Vec::new();
                     if app.is_column_visible(Tab::Runners, "ID") {
                         row_cells.push(render_fuzzy_cell(
-                            &r.id.to_string(),
+                            &format!("#{}", r.id),
                             &app.search_query,
                             is_row_highlighted,
                             false,
@@ -2208,7 +2208,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             is_row_highlighted,
                             false,
                             Style::default().fg(if r.active { THEME.green } else { THEME.red }),
-                            Alignment::Left,
+                            Alignment::Center,
                         ));
                     }
                     let row_style = if is_row_highlighted {
@@ -2224,7 +2224,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 if app.is_column_visible(Tab::Runners, "ID") {
                     header_cells.push(Cell::from("ID"));
-                    widths.push(Constraint::Length(12));
+                    widths.push(Constraint::Length(10));
                 }
                 if app.is_column_visible(Tab::Runners, "Description") {
                     header_cells.push(Cell::from("Description"));
@@ -2234,11 +2234,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     header_cells.push(Cell::from(
                         Line::from("Status").alignment(Alignment::Center),
                     ));
-                    widths.push(Constraint::Length(14));
+                    widths.push(Constraint::Length(12));
                 }
                 if app.is_column_visible(Tab::Runners, "Active") {
-                    header_cells.push(Cell::from("Active"));
-                    widths.push(Constraint::Length(10));
+                    header_cells.push(Cell::from(
+                        Line::from("Active").alignment(Alignment::Center),
+                    ));
+                    widths.push(Constraint::Length(8));
                 }
 
                 if widths.is_empty() {
@@ -2247,7 +2249,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let table = Table::new(rows, widths)
                     .header(Row::new(header_cells).style(header_style).height(1))
-                    .block(main_block)
+                    .block(main_block.clone())
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
 
@@ -2255,7 +2257,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
-                    .title(" Performance Dashboard ")
+                    .title(" Runner Details ")
                     .title_style(
                         Style::default()
                             .fg(THEME.text_muted)
@@ -2269,7 +2271,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         text.push(Line::from(vec![
                             Span::styled("Runner ID:   ", Style::default().fg(THEME.text_muted)),
                             Span::styled(
-                                r.id.to_string(),
+                                format!("#{}", r.id),
                                 Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
                             ),
                         ]));
@@ -2298,93 +2300,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             ),
                         ]));
 
-                        text.push(Line::from(""));
-                        text.push(Line::from(vec![Span::styled(
-                            "── Performance & Queue Metrics ──",
-                            Style::default()
-                                .fg(THEME.header_fg)
-                                .add_modifier(Modifier::BOLD),
-                        )]));
-                        text.push(Line::from(""));
-
-                        // Deterministic metrics generation
-                        let runner_hash = r.id;
-                        let active_jobs = (runner_hash % 8) as usize + 1;
-                        let max_capacity = ((runner_hash % 4) as usize + 2) * 4; // 8, 12, 16, 20
-                        let queue_depth = (runner_hash % 5) as usize;
-                        let utilization = (active_jobs * 100) / max_capacity;
-                        let wait_time = (runner_hash % 50) as usize + 10;
-
-                        // Build a beautiful gauge for active jobs
-                        let mut gauge_chars = String::new();
-                        let filled = (active_jobs * 10) / max_capacity;
-                        for idx in 0..10 {
-                            if idx < filled {
-                                gauge_chars.push('■');
-                            } else {
-                                gauge_chars.push('□');
-                            }
-                        }
-
-                        text.push(Line::from(vec![
-                            Span::styled("Active Jobs: ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(
-                                format!("{}  ", gauge_chars),
-                                Style::default().fg(THEME.green),
-                            ),
-                            Span::styled(
-                                format!("{}/{}", active_jobs, max_capacity),
-                                Style::default()
-                                    .fg(THEME.text_normal)
-                                    .add_modifier(Modifier::BOLD),
-                            ),
-                        ]));
-
-                        let util_color = if utilization > 80 {
-                            THEME.red
-                        } else if utilization > 50 {
-                            THEME.yellow
-                        } else {
-                            THEME.green
-                        };
-                        text.push(Line::from(vec![
-                            Span::styled("Utilization: ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(
-                                format!("{}%", utilization),
-                                Style::default().fg(util_color).add_modifier(Modifier::BOLD),
-                            ),
-                        ]));
-
-                        let q_color = if queue_depth > 3 {
-                            THEME.red
-                        } else if queue_depth > 0 {
-                            THEME.yellow
-                        } else {
-                            THEME.green
-                        };
-                        text.push(Line::from(vec![
-                            Span::styled("Queue Depth: ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(
-                                format!("{} jobs waiting", queue_depth),
-                                Style::default().fg(q_color).add_modifier(Modifier::BOLD),
-                            ),
-                        ]));
-
-                        let wait_color = if wait_time > 45 {
-                            THEME.red
-                        } else if wait_time > 25 {
-                            THEME.yellow
-                        } else {
-                            THEME.green
-                        };
-                        text.push(Line::from(vec![
-                            Span::styled("Avg Wait:    ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(
-                                format!("{} seconds", wait_time),
-                                Style::default().fg(wait_color),
-                            ),
-                        ]));
-
                         f.render_widget(
                             Paragraph::new(text)
                                 .block(preview_block)
@@ -2396,7 +2311,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     }
                 } else {
                     f.render_widget(
-                        Paragraph::new("Select an item to view details...")
+                        Paragraph::new("Select a runner to view details...")
                             .block(preview_block)
                             .style(Style::default().fg(THEME.text_muted)),
                         middle_chunks[2],
@@ -2883,11 +2798,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     middle_chunks[2],
                 );
             } else {
-                let is_github = app
-                    .gitlab_client
-                    .as_ref()
-                    .map(|c| c.is_github)
-                    .unwrap_or(false);
                 let default_set = std::collections::HashSet::new();
                 let mut filtered_milestones = App::filter_milestones_list(
                     &app.milestones.items,
@@ -2908,58 +2818,102 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     },
                 );
 
-                let header_cells = Tab::Milestones
-                    .columns(is_github)
-                    .into_iter()
-                    .filter(|col| app.is_column_visible(Tab::Milestones, col))
-                    .map(|h| Cell::from(h).style(Style::default().add_modifier(Modifier::BOLD)));
-                let header = Row::new(header_cells)
-                    .style(header_style)
-                    .height(1)
-                    .bottom_margin(1);
-
                 let rows = filtered_milestones.iter().enumerate().map(|(idx, m)| {
-                    let mut cells = Vec::new();
-                    let cols = Tab::Milestones.columns(is_github);
-                    for col in cols {
-                        if app.is_column_visible(Tab::Milestones, &col) {
-                            let val = match col {
-                                "ID" => m.iid.to_string(),
-                                "Title" => m.title.clone(),
-                                "State" => m.state.clone(),
-                                "Start Date" => {
-                                    m.start_date.clone().unwrap_or_else(|| "N/A".to_string())
-                                }
-                                "Due Date" => {
-                                    m.due_date.clone().unwrap_or_else(|| "N/A".to_string())
-                                }
-                                _ => "".to_string(),
-                            };
-                            cells.push(Cell::from(val));
-                        }
-                    }
                     let is_selected = app.milestones.state.selected() == Some(idx);
+                    let mut cells = Vec::new();
+                    if app.is_column_visible(Tab::Milestones, "ID") {
+                        cells.push(render_fuzzy_cell(
+                            &format!("#{}", m.iid),
+                            &app.search_query,
+                            is_selected,
+                            false,
+                            Style::default().fg(THEME.text_normal),
+                            Alignment::Left,
+                        ));
+                    }
+                    if app.is_column_visible(Tab::Milestones, "Title") {
+                        cells.push(render_fuzzy_cell(
+                            &truncate(&m.title, 100),
+                            &app.search_query,
+                            is_selected,
+                            false,
+                            Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+                            Alignment::Left,
+                        ));
+                    }
+                    if app.is_column_visible(Tab::Milestones, "State") {
+                        cells.push(render_fuzzy_cell(
+                            &m.state,
+                            &app.search_query,
+                            is_selected,
+                            false,
+                            Style::default().fg(if m.state == "active" {
+                                THEME.green
+                            } else {
+                                THEME.yellow
+                            }),
+                            Alignment::Left,
+                        ));
+                    }
+                    if app.is_column_visible(Tab::Milestones, "Start Date") {
+                        cells.push(render_fuzzy_cell(
+                            m.start_date.as_deref().unwrap_or("N/A"),
+                            &app.search_query,
+                            is_selected,
+                            false,
+                            Style::default().fg(THEME.text_normal),
+                            Alignment::Left,
+                        ));
+                    }
+                    if app.is_column_visible(Tab::Milestones, "Due Date") {
+                        cells.push(render_fuzzy_cell(
+                            m.due_date.as_deref().unwrap_or("N/A"),
+                            &app.search_query,
+                            is_selected,
+                            false,
+                            Style::default().fg(THEME.yellow),
+                            Alignment::Left,
+                        ));
+                    }
                     let row_style = if is_selected {
                         Style::default().bg(THEME.highlight_bg)
                     } else {
-                        Style::default().fg(THEME.text_normal)
+                        Style::default()
                     };
-                    Row::new(cells).style(row_style)
+                    Row::new(cells).style(row_style).height(1)
                 });
 
-                let table = Table::new(
-                    rows,
-                    [
-                        Constraint::Percentage(10),
-                        Constraint::Percentage(40),
-                        Constraint::Percentage(20),
-                        Constraint::Percentage(30),
-                    ],
-                )
-                .header(header)
-                .block(main_block.clone())
-                .row_highlight_style(highlight_style)
-                .highlight_symbol(" ❯ ");
+                let mut header_cells = Vec::new();
+                let mut widths = Vec::new();
+                if app.is_column_visible(Tab::Milestones, "ID") {
+                    header_cells.push(Cell::from("ID"));
+                    widths.push(Constraint::Length(10));
+                }
+                if app.is_column_visible(Tab::Milestones, "Title") {
+                    header_cells.push(Cell::from("Title"));
+                    widths.push(Constraint::Fill(1));
+                }
+                if app.is_column_visible(Tab::Milestones, "State") {
+                    header_cells.push(Cell::from("State"));
+                    widths.push(Constraint::Length(10));
+                }
+                if app.is_column_visible(Tab::Milestones, "Start Date") {
+                    header_cells.push(Cell::from("Start Date"));
+                    widths.push(Constraint::Length(12));
+                }
+                if app.is_column_visible(Tab::Milestones, "Due Date") {
+                    header_cells.push(Cell::from("Due Date"));
+                    widths.push(Constraint::Length(12));
+                }
+                if widths.is_empty() {
+                    widths.push(Constraint::Min(0));
+                }
+
+                let table = Table::new(rows, widths)
+                    .header(Row::new(header_cells).style(header_style).height(1))
+                    .block(main_block.clone())
+                    .row_highlight_style(highlight_style)
+                    .highlight_symbol(" ❯ ");
 
                 f.render_stateful_widget(table, content_area, &mut app.milestones.state);
 
