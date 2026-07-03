@@ -174,7 +174,14 @@ impl Tab {
                 "Assets",
             ],
             Tab::Todos => vec!["State", "Project", "Type", "ID", "Title"],
-            Tab::Milestones => vec!["ID", "Title", "State", "Start Date", "Due Date"],
+            Tab::Milestones => {
+                let mut cols = vec!["ID", "Title", "State"];
+                if !is_github {
+                    cols.push("Start Date");
+                }
+                cols.push("Due Date");
+                cols
+            }
             Tab::Terminal => vec![],
         }
     }
@@ -194,7 +201,14 @@ impl Tab {
             Tab::Runners => vec!["ID", "Description", "Status", "Active"],
             Tab::Releases => vec!["Tag", "Release Name", "Date"],
             Tab::Todos => vec!["State", "Project", "Type", "ID", "Title"],
-            Tab::Milestones => vec!["ID", "Title", "State", "Due Date"],
+            Tab::Milestones => {
+                let mut cols = vec!["ID", "Title", "State"];
+                if !is_github {
+                    cols.push("Start Date");
+                }
+                cols.push("Due Date");
+                cols
+            }
             Tab::Terminal => vec![],
         }
     }
@@ -1319,13 +1333,16 @@ impl App {
     }
 
     pub fn is_column_visible(&self, tab: Tab, col: &str) -> bool {
-        if tab == Tab::Issues && col == "Due Date" {
-            let is_github = self
-                .gitlab_client
-                .as_ref()
-                .map(|c| c.is_github)
-                .unwrap_or(false);
-            if is_github {
+        let is_github = self
+            .gitlab_client
+            .as_ref()
+            .map(|c| c.is_github)
+            .unwrap_or(false);
+        if is_github {
+            if tab == Tab::Issues && col == "Due Date" {
+                return false;
+            }
+            if tab == Tab::Milestones && col == "Start Date" {
                 return false;
             }
         }
