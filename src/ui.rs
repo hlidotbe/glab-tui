@@ -4297,18 +4297,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Style::default().fg(THEME.text_muted).bg(item_bg)
                 };
 
-                let val_style = if is_selected {
-                    Style::default()
-                        .fg(THEME.text_normal)
-                        .bg(item_bg)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(THEME.text_normal).bg(item_bg)
-                };
-
-                let (display_val, display_style) = if val.is_empty() {
-                    if is_selected {
-                        let action_hint = match label.as_str() {
+                let mut val_spans = Vec::new();
+                if val.is_empty() {
+                    let action_hint = if is_selected {
+                        match label.as_str() {
                             "Labels"
                             | "Assignees"
                             | "Reviewers"
@@ -4319,25 +4311,26 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             | "Source Branch"
                             | "Target Branch" => " <Enter to select>",
                             "Description" => " <Enter to edit>",
-                            "Description ($EDITOR)" => " <Enter to open editor>",
                             _ => " <Enter to edit>",
-                        };
-                        (
-                            format!("{} ▋", action_hint),
-                            Style::default()
-                                .fg(THEME.text_muted)
-                                .bg(item_bg)
-                                .add_modifier(Modifier::ITALIC),
-                        )
+                        }
                     } else {
-                        (
-                            " <empty>".to_string(),
-                            Style::default()
-                                .fg(THEME.border)
-                                .bg(item_bg)
-                                .add_modifier(Modifier::ITALIC),
-                        )
-                    }
+                        " <empty>"
+                    };
+                    let hint_style = if is_selected {
+                        Style::default()
+                            .fg(THEME.text_muted)
+                            .bg(item_bg)
+                            .add_modifier(Modifier::ITALIC)
+                    } else {
+                        Style::default()
+                            .fg(THEME.border)
+                            .bg(item_bg)
+                            .add_modifier(Modifier::ITALIC)
+                    };
+                    val_spans.push(Span::styled(
+                        if is_selected { format!("{} ▋", action_hint) } else { action_hint.to_string() },
+                        hint_style,
+                    ));
                 } else {
                     let truncated = if val.len() > 50 {
                         let mut s = val[..47].to_string();
@@ -4346,17 +4339,62 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     } else {
                         val.clone()
                     };
-                    (truncated, val_style)
-                };
+                    match label.as_str() {
+                        "Labels" => {
+                            let parts: Vec<&str> = truncated.split(',').collect();
+                            for (idx, part) in parts.iter().enumerate() {
+                                if idx > 0 {
+                                    val_spans.push(Span::styled(", ", Style::default().fg(THEME.text_normal).bg(item_bg)));
+                                }
+                                let trimmed = part.trim();
+                                let label_color = get_label_color(trimmed);
+                                let mut style = Style::default().fg(label_color).bg(item_bg).add_modifier(Modifier::BOLD);
+                                if is_selected {
+                                    style = style.add_modifier(Modifier::UNDERLINED);
+                                }
+                                val_spans.push(Span::styled(trimmed.to_string(), style));
+                            }
+                        }
+                        "Assignees" | "Reviewers" => {
+                            let parts: Vec<&str> = truncated.split(',').collect();
+                            for (idx, part) in parts.iter().enumerate() {
+                                if idx > 0 {
+                                    val_spans.push(Span::styled(", ", Style::default().fg(THEME.text_normal).bg(item_bg)));
+                                }
+                                let trimmed = part.trim();
+                                let mut style = Style::default().fg(THEME.blue).bg(item_bg);
+                                if is_selected {
+                                    style = style.add_modifier(Modifier::BOLD);
+                                }
+                                val_spans.push(Span::styled(trimmed.to_string(), style));
+                            }
+                        }
+                        _ => {
+                            let val_fg = match label.as_str() {
+                                "Milestone" => THEME.purple,
+                                "Due Date" => THEME.yellow,
+                                "Status (Draft/Ready)" | "Source Branch" | "Target Branch" => THEME.purple,
+                                "Confidential" => if val.to_lowercase() == "yes" { THEME.red } else { THEME.green },
+                                _ => THEME.text_normal,
+                            };
+                            let mut style = Style::default().fg(val_fg).bg(item_bg);
+                            if is_selected {
+                                style = style.add_modifier(Modifier::BOLD);
+                            }
+                            val_spans.push(Span::styled(truncated, style));
+                        }
+                    }
+                }
 
-                let line = Line::from(vec![
+                let mut line_spans = vec![
                     Span::styled(
                         format!("  {:label_width$} ", label, label_width = label_width),
                         label_style,
                     ),
                     Span::styled(" ❯ ", sep_style),
-                    Span::styled(display_val, display_style),
-                ]);
+                ];
+                line_spans.extend(val_spans);
+                let line = Line::from(line_spans);
 
                 ListItem::new(line).style(Style::default().bg(item_bg))
             })

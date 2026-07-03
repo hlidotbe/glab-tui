@@ -2328,10 +2328,13 @@ async fn main() -> Result<()> {
                     }
 
                     if let Some(mut text_input) = app.text_input.take() {
-                        if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                        if key_event
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL)
                             && key_event.code == KeyCode::Char('e')
                         {
-                            if let Some(new_val) = edit_in_editor(&text_input.value, &mut terminal) {
+                            if let Some(new_val) = edit_in_editor(&text_input.value, &mut terminal)
+                            {
                                 text_input.value = new_val.clone();
                                 text_input.cursor_idx = new_val.len();
                             }
@@ -5226,7 +5229,9 @@ async fn main() -> Result<()> {
                                 }
 
                                 if field_name == "Description" {
-                                    let current_val = if entity_iid == 0 || entity_type.starts_with("new_") {
+                                    let current_val = if entity_iid == 0
+                                        || entity_type.starts_with("new_")
+                                    {
                                         let raw_val = menu.fields[menu.selected_idx].1.clone();
                                         if raw_val.trim().is_empty() {
                                             let template_type = if entity_type == "new_mr" {
@@ -5255,17 +5260,18 @@ async fn main() -> Result<()> {
                                                 .unwrap_or_default()
                                         }
                                     };
-                                    let action = if entity_iid == 0 || entity_type.starts_with("new_") {
-                                        crate::app::TextInputAction::EditNewField {
-                                            field_idx: menu.selected_idx,
-                                        }
-                                    } else {
-                                        crate::app::TextInputAction::EditField {
-                                            entity_iid,
-                                            entity_type: entity_type.clone(),
-                                            field_type: "description".to_string(),
-                                        }
-                                    };
+                                    let action =
+                                        if entity_iid == 0 || entity_type.starts_with("new_") {
+                                            crate::app::TextInputAction::EditNewField {
+                                                field_idx: menu.selected_idx,
+                                            }
+                                        } else {
+                                            crate::app::TextInputAction::EditField {
+                                                entity_iid,
+                                                entity_type: entity_type.clone(),
+                                                field_type: "description".to_string(),
+                                            }
+                                        };
                                     app.text_input = Some(crate::app::TextInput {
                                         title: " Edit Description ".to_string(),
                                         value: current_val.clone(),
