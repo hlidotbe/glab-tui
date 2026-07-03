@@ -872,10 +872,6 @@ fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
                 "Description".to_string(),
                 issue.description.clone().unwrap_or_default(),
             ));
-            fields.push((
-                "Description ($EDITOR)".to_string(),
-                format!("Open in {}", editor_name()),
-            ));
 
             app.edit_menu = Some(crate::app::EditMenu {
                 title: format!("Edit Issue #{}", issue.iid),
@@ -947,10 +943,6 @@ fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
                     (
                         "Description".to_string(),
                         mr.description.clone().unwrap_or_default(),
-                    ),
-                    (
-                        "Description ($EDITOR)".to_string(),
-                        format!("Open in {}", editor_name()),
                     ),
                 ],
                 selected_idx,
@@ -2336,6 +2328,16 @@ async fn main() -> Result<()> {
                     }
 
                     if let Some(mut text_input) = app.text_input.take() {
+                        if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                            && key_event.code == KeyCode::Char('e')
+                        {
+                            if let Some(new_val) = edit_in_editor(&text_input.value, &mut terminal) {
+                                text_input.value = new_val.clone();
+                                text_input.cursor_idx = new_val.len();
+                            }
+                            app.text_input = Some(text_input);
+                            continue;
+                        }
                         match key_event.code {
                             KeyCode::Esc => {
                                 // Cancel
@@ -3821,10 +3823,6 @@ async fn main() -> Result<()> {
                                                     "Draft".to_string(),
                                                 ),
                                                 ("Description".to_string(), description_val),
-                                                (
-                                                    "Description ($EDITOR)".to_string(),
-                                                    format!("Open in {}", editor_name()),
-                                                ),
                                             ],
                                             selected_idx: 0,
                                             entity_iid: issue_iid,
@@ -4655,6 +4653,9 @@ async fn main() -> Result<()> {
                                         if !description.is_empty() {
                                             cmd_args.push(cli.flag_description().to_string());
                                             cmd_args.push(description);
+                                        } else if cli.is_github {
+                                            cmd_args.push("--body".into());
+                                            cmd_args.push("".into());
                                         }
                                         if !labels.is_empty() {
                                             cmd_args.push("--label".into());
@@ -4866,6 +4867,9 @@ async fn main() -> Result<()> {
                                         if !description.is_empty() {
                                             cmd_args.push(cli.flag_description().to_string());
                                             cmd_args.push(description);
+                                        } else if cli.is_github {
+                                            cmd_args.push("--body".into());
+                                            cmd_args.push("".into());
                                         }
 
                                         app.edit_menu = None;
@@ -5222,12 +5226,9 @@ async fn main() -> Result<()> {
                                 }
 
                                 if field_name == "Description" {
-                                    if entity_iid == 0 || entity_type.starts_with("new_") {
-                                        let action = crate::app::TextInputAction::EditNewField {
-                                            field_idx: menu.selected_idx,
-                                        };
+                                    let current_val = if entity_iid == 0 || entity_type.starts_with("new_") {
                                         let raw_val = menu.fields[menu.selected_idx].1.clone();
-                                        let current_val = if raw_val.trim().is_empty() {
+                                        if raw_val.trim().is_empty() {
                                             let template_type = if entity_type == "new_mr" {
                                                 "mr"
                                             } else {
@@ -5236,61 +5237,42 @@ async fn main() -> Result<()> {
                                             get_default_template(template_type).unwrap_or_default()
                                         } else {
                                             raw_val
-                                        };
-                                        app.text_input = Some(crate::app::TextInput {
-                                            title: " Edit Description ".to_string(),
-                                            value: current_val.clone(),
-                                            cursor_idx: current_val.len(),
-                                            action,
-                                        });
-                                        app.edit_menu = Some(menu);
-                                    } else {
-                                        let active_tab = app.active_tab;
-                                        handle_entity_update(
-                                            &mut app,
-                                            &entity_type,
-                                            entity_iid,
-                                            KeyCode::Char('d'),
-                                            &mut terminal,
-                                            events.sender(),
-                                            active_tab,
-                                        )
-                                        .await;
-                                        rebuild_edit_menu(&mut app, &entity_type, entity_iid);
-                                    }
-                                    continue;
-                                }
-
-                                if field_name == "Description ($EDITOR)" {
-                                    if entity_iid == 0 || entity_type.starts_with("new_") {
-                                        let desc_idx = menu
-                                            .fields
-                                            .iter()
-                                            .position(|(k, _)| k == "Description")
-                                            .unwrap_or(menu.selected_idx);
-                                        let current_val = menu.fields[desc_idx].1.clone();
-                                        if let Some(new_val) =
-                                            edit_in_editor(&current_val, &mut terminal)
-                                        {
-                                            menu.fields[desc_idx].1 = new_val;
-                                            app.edit_menu = Some(menu);
-                                        } else {
-                                            app.edit_menu = Some(menu);
                                         }
                                     } else {
-                                        let active_tab = app.active_tab;
-                                        handle_entity_update(
-                                            &mut app,
-                                            &entity_type,
+                                        if entity_type == "issue" {
+                                            app.issues
+                                                .items
+                                                .iter()
+                                                .find(|i| i.iid == entity_iid)
+                                                .and_then(|i| i.description.clone())
+                                                .unwrap_or_default()
+                                        } else {
+                                            app.mrs
+                                                .items
+                                                .iter()
+                                                .find(|m| m.iid == entity_iid)
+                                                .and_then(|m| m.description.clone())
+                                                .unwrap_or_default()
+                                        }
+                                    };
+                                    let action = if entity_iid == 0 || entity_type.starts_with("new_") {
+                                        crate::app::TextInputAction::EditNewField {
+                                            field_idx: menu.selected_idx,
+                                        }
+                                    } else {
+                                        crate::app::TextInputAction::EditField {
                                             entity_iid,
-                                            KeyCode::Char('D'),
-                                            &mut terminal,
-                                            events.sender(),
-                                            active_tab,
-                                        )
-                                        .await;
-                                        rebuild_edit_menu(&mut app, &entity_type, entity_iid);
-                                    }
+                                            entity_type: entity_type.clone(),
+                                            field_type: "description".to_string(),
+                                        }
+                                    };
+                                    app.text_input = Some(crate::app::TextInput {
+                                        title: " Edit Description ".to_string(),
+                                        value: current_val.clone(),
+                                        cursor_idx: current_val.len(),
+                                        action,
+                                    });
+                                    app.edit_menu = Some(menu);
                                     continue;
                                 }
 
@@ -6258,10 +6240,6 @@ async fn main() -> Result<()> {
                                     fields.push(("Weight".to_string(), "0".to_string()));
                                 }
                                 fields.push(("Description".to_string(), String::new()));
-                                fields.push((
-                                    "Description ($EDITOR)".to_string(),
-                                    format!("Open in {}", editor_name()),
-                                ));
                                 app.edit_menu = Some(crate::app::EditMenu {
                                     title: "Create Issue".to_string(),
                                     fields,
@@ -6327,10 +6305,6 @@ async fn main() -> Result<()> {
                                         fields.push((
                                             "Description".to_string(),
                                             issue.description.clone().unwrap_or_default(),
-                                        ));
-                                        fields.push((
-                                            "Description ($EDITOR)".to_string(),
-                                            format!("Open in {}", editor_name()),
                                         ));
                                         app.edit_menu = Some(crate::app::EditMenu {
                                             title: format!("Edit Issue #{}", issue.iid),
@@ -6541,10 +6515,6 @@ async fn main() -> Result<()> {
                                                     (
                                                         "Description".to_string(),
                                                         mr.description.clone().unwrap_or_default(),
-                                                    ),
-                                                    (
-                                                        "Description ($EDITOR)".to_string(),
-                                                        format!("Open in {}", editor_name()),
                                                     ),
                                                 ],
                                                 selected_idx: 0,

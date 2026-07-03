@@ -4662,7 +4662,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .style(Style::default().fg(THEME.text_normal).bg(Color::Reset))
             .wrap(ratatui::widgets::Wrap { trim: true });
 
-        let footer_p = Paragraph::new("  Enter: Confirm • Esc: Cancel  ")
+        let footer_p = Paragraph::new("  Enter: Confirm • Esc: Cancel • Ctrl-e: Open $EDITOR  ")
             .style(
                 Style::default()
                     .fg(THEME.text_muted)
