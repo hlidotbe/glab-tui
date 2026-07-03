@@ -142,12 +142,12 @@ fn render_labels_cell(
             label_style = label_style.bg(bg);
         }
 
-        let mut text_to_add = label.as_str();
+        let mut text_to_add = label.to_string();
         let mut truncated = false;
         if current_len + text_to_add.len() > max_len {
             let allowed = max_len - current_len;
             if allowed > 1 {
-                text_to_add = &text_to_add[..allowed - 1];
+                text_to_add = text_to_add.chars().take(allowed - 1).collect();
                 truncated = true;
             } else {
                 let mut style = Style::default().fg(THEME.read().unwrap().text_muted);
