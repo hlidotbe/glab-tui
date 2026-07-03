@@ -853,28 +853,33 @@ fn rebuild_edit_menu(app: &mut App, entity_type: &str, entity_iid: u64) {
 
             let selected_idx = app.edit_menu.as_ref().map(|m| m.selected_idx).unwrap_or(0);
 
+            let cli = app_cli(app);
+            let mut fields = vec![
+                ("Title".to_string(), issue.title.clone()),
+                ("Labels".to_string(), labels),
+                ("Assignees".to_string(), assignees),
+                ("Milestone".to_string(), milestone),
+            ];
+            if !cli.is_github {
+                fields.push(("Confidential".to_string(), "Toggle/Set".to_string()));
+                fields.push((
+                    "Due Date".to_string(),
+                    issue.due_date.clone().unwrap_or_else(|| "Set".to_string()),
+                ));
+                fields.push(("Weight".to_string(), "Set".to_string()));
+            }
+            fields.push((
+                "Description".to_string(),
+                issue.description.clone().unwrap_or_default(),
+            ));
+            fields.push((
+                "Description ($EDITOR)".to_string(),
+                format!("Open in {}", editor_name()),
+            ));
+
             app.edit_menu = Some(crate::app::EditMenu {
                 title: format!("Edit Issue #{}", issue.iid),
-                fields: vec![
-                    ("Title".to_string(), issue.title.clone()),
-                    ("Labels".to_string(), labels),
-                    ("Assignees".to_string(), assignees),
-                    ("Milestone".to_string(), milestone),
-                    ("Confidential".to_string(), "Toggle/Set".to_string()),
-                    (
-                        "Due Date".to_string(),
-                        issue.due_date.clone().unwrap_or_else(|| "Set".to_string()),
-                    ),
-                    ("Weight".to_string(), "Set".to_string()),
-                    (
-                        "Description".to_string(),
-                        issue.description.clone().unwrap_or_default(),
-                    ),
-                    (
-                        "Description ($EDITOR)".to_string(),
-                        format!("Open in {}", editor_name()),
-                    ),
-                ],
+                fields,
                 selected_idx,
                 entity_iid: issue.iid,
                 entity_type: "issue".to_string(),
@@ -6231,22 +6236,30 @@ async fn main() -> Result<()> {
                     match app.active_tab {
                         app::Tab::Issues => match key_event.code {
                             KeyCode::Char('n') => {
+                                let is_github = app
+                                    .gitlab_client
+                                    .as_ref()
+                                    .map(|c| c.is_github)
+                                    .unwrap_or(false);
+                                let mut fields = vec![
+                                    ("Title".to_string(), String::new()),
+                                    ("Labels".to_string(), String::new()),
+                                    ("Assignees".to_string(), String::new()),
+                                    ("Milestone".to_string(), String::new()),
+                                ];
+                                if !is_github {
+                                    fields.push(("Confidential".to_string(), "No".to_string()));
+                                    fields.push(("Due Date".to_string(), String::new()));
+                                    fields.push(("Weight".to_string(), "0".to_string()));
+                                }
+                                fields.push(("Description".to_string(), String::new()));
+                                fields.push((
+                                    "Description ($EDITOR)".to_string(),
+                                    format!("Open in {}", editor_name()),
+                                ));
                                 app.edit_menu = Some(crate::app::EditMenu {
                                     title: "Create Issue".to_string(),
-                                    fields: vec![
-                                        ("Title".to_string(), String::new()),
-                                        ("Labels".to_string(), String::new()),
-                                        ("Assignees".to_string(), String::new()),
-                                        ("Milestone".to_string(), String::new()),
-                                        ("Confidential".to_string(), "No".to_string()),
-                                        ("Due Date".to_string(), String::new()),
-                                        ("Weight".to_string(), "0".to_string()),
-                                        ("Description".to_string(), String::new()),
-                                        (
-                                            "Description ($EDITOR)".to_string(),
-                                            format!("Open in {}", editor_name()),
-                                        ),
-                                    ],
+                                    fields,
                                     selected_idx: 0,
                                     entity_iid: 0,
                                     entity_type: "new_issue".to_string(),
@@ -6281,34 +6294,42 @@ async fn main() -> Result<()> {
                                                 .collect::<Vec<_>>()
                                                 .join(", ")
                                         };
+                                        let is_github = app
+                                            .gitlab_client
+                                            .as_ref()
+                                            .map(|c| c.is_github)
+                                            .unwrap_or(false);
+                                        let mut fields = vec![
+                                            ("Title".to_string(), issue.title.clone()),
+                                            ("Labels".to_string(), labels),
+                                            ("Assignees".to_string(), assignees),
+                                            ("Milestone".to_string(), milestone),
+                                        ];
+                                        if !is_github {
+                                            fields.push((
+                                                "Confidential".to_string(),
+                                                "Toggle/Set".to_string(),
+                                            ));
+                                            fields.push((
+                                                "Due Date".to_string(),
+                                                issue
+                                                    .due_date
+                                                    .clone()
+                                                    .unwrap_or_else(|| "Set".to_string()),
+                                            ));
+                                            fields.push(("Weight".to_string(), "Set".to_string()));
+                                        }
+                                        fields.push((
+                                            "Description".to_string(),
+                                            issue.description.clone().unwrap_or_default(),
+                                        ));
+                                        fields.push((
+                                            "Description ($EDITOR)".to_string(),
+                                            format!("Open in {}", editor_name()),
+                                        ));
                                         app.edit_menu = Some(crate::app::EditMenu {
                                             title: format!("Edit Issue #{}", issue.iid),
-                                            fields: vec![
-                                                ("Title".to_string(), issue.title.clone()),
-                                                ("Labels".to_string(), labels),
-                                                ("Assignees".to_string(), assignees),
-                                                ("Milestone".to_string(), milestone),
-                                                (
-                                                    "Confidential".to_string(),
-                                                    "Toggle/Set".to_string(),
-                                                ),
-                                                (
-                                                    "Due Date".to_string(),
-                                                    issue
-                                                        .due_date
-                                                        .clone()
-                                                        .unwrap_or_else(|| "Set".to_string()),
-                                                ),
-                                                ("Weight".to_string(), "Set".to_string()),
-                                                (
-                                                    "Description".to_string(),
-                                                    issue.description.clone().unwrap_or_default(),
-                                                ),
-                                                (
-                                                    "Description ($EDITOR)".to_string(),
-                                                    format!("Open in {}", editor_name()),
-                                                ),
-                                            ],
+                                            fields,
                                             selected_idx: 0,
                                             entity_iid: issue.iid,
                                             entity_type: "issue".to_string(),
