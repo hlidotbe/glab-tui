@@ -6228,7 +6228,12 @@ async fn main() -> Result<()> {
                     let mut handled = true;
                     match app.active_tab {
                         app::Tab::Issues => match key_event.code {
-                            KeyCode::Char('n') => {
+                            _ if (key_event.code == KeyCode::Char('n')
+                                || keybinding_matches(
+                                    &app.config.keybindings.issues.create_issue,
+                                    &key_event,
+                                )) =>
+                            {
                                 let is_github = app
                                     .gitlab_client
                                     .as_ref()
@@ -6259,7 +6264,12 @@ async fn main() -> Result<()> {
                                     },
                                 });
                             }
-                            KeyCode::Char('e') => {
+                            _ if (key_event.code == KeyCode::Char('e')
+                                || keybinding_matches(
+                                    &app.config.keybindings.issues.edit_entity,
+                                    &key_event,
+                                )) =>
+                            {
                                 if let Some(selected_idx) = app.issues.state.selected() {
                                     let filtered = app.filtered_issues();
                                     if let Some(issue) = filtered.get(selected_idx) {
@@ -6327,7 +6337,12 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             }
-                            KeyCode::Char('c') => {
+                            _ if (key_event.code == KeyCode::Char('c')
+                                || keybinding_matches(
+                                    &app.config.keybindings.issues.close_entity,
+                                    &key_event,
+                                )) =>
+                            {
                                 if let Some(selected_idx) = app.issues.state.selected() {
                                     let filtered = app.filtered_issues();
                                     if let Some(issue) = filtered.get(selected_idx) {
@@ -6376,7 +6391,12 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             }
-                            KeyCode::Char('r') => {
+                            _ if (key_event.code == KeyCode::Char('r')
+                                || keybinding_matches(
+                                    &app.config.keybindings.issues.reopen_entity,
+                                    &key_event,
+                                )) =>
+                            {
                                 if let Some(selected_idx) = app.issues.state.selected() {
                                     let filtered = app.filtered_issues();
                                     if let Some(issue) = filtered.get(selected_idx) {
@@ -6401,7 +6421,12 @@ async fn main() -> Result<()> {
                             _ => handled = false,
                         },
                         app::Tab::MergeRequests => {
-                            if key_event.code == KeyCode::Char('n') {
+                            if key_event.code == KeyCode::Char('n')
+                                || keybinding_matches(
+                                    &app.config.keybindings.mrs.create_mr,
+                                    &key_event,
+                                )
+                            {
                                 let is_github = app
                                     .gitlab_client
                                     .as_ref()
@@ -6460,7 +6485,12 @@ async fn main() -> Result<()> {
                                     .map(|item| (item.iid, item.title.clone()));
                                 if let Some((mr_iid, mr_title)) = mr_info {
                                     match key_event.code {
-                                        KeyCode::Char('e') => {
+                                        _ if (key_event.code == KeyCode::Char('e')
+                                            || keybinding_matches(
+                                                &app.config.keybindings.mrs.edit_entity,
+                                                &key_event,
+                                            )) =>
+                                        {
                                             let mr = filtered.get(selected_idx).unwrap();
                                             let labels = if mr.labels.is_empty() {
                                                 "None".to_string()
@@ -6533,7 +6563,12 @@ async fn main() -> Result<()> {
                                                 },
                                             });
                                         }
-                                        KeyCode::Char('a') => {
+                                        _ if (key_event.code == KeyCode::Char('a')
+                                            || keybinding_matches(
+                                                &app.config.keybindings.mrs.approve_mr,
+                                                &key_event,
+                                            )) =>
+                                        {
                                             let cli = app_cli(&app);
                                             let args = if cli.is_github {
                                                 vec![
@@ -6558,7 +6593,12 @@ async fn main() -> Result<()> {
                                             )
                                             .await;
                                         }
-                                        KeyCode::Char('m') => {
+                                        _ if (key_event.code == KeyCode::Char('m')
+                                            || keybinding_matches(
+                                                &app.config.keybindings.mrs.merge_mr,
+                                                &key_event,
+                                            )) =>
+                                        {
                                             let cli = app_cli(&app);
                                             let args = if cli.is_github {
                                                 vec![
@@ -6592,7 +6632,12 @@ async fn main() -> Result<()> {
                                             }
                                             app.update_filter_selection();
                                         }
-                                        KeyCode::Char('v') => {
+                                        _ if (key_event.code == KeyCode::Char('v')
+                                            || keybinding_matches(
+                                                &app.config.keybindings.mrs.view_diff,
+                                                &key_event,
+                                            )) =>
+                                        {
                                             app.diff_loading = true;
                                             let tx = events.sender();
                                             let mr_iid = mr_iid;
@@ -6695,7 +6740,12 @@ async fn main() -> Result<()> {
                                             )
                                             .await;
                                         }
-                                        KeyCode::Char('s') => {
+                                        _ if (key_event.code == KeyCode::Char('s')
+                                            || keybinding_matches(
+                                                &app.config.keybindings.mrs.toggle_draft,
+                                                &key_event,
+                                            )) =>
+                                        {
                                             let cli = app_cli(&app);
                                             let is_draft = mr_title.starts_with("Draft:")
                                                 || mr_title.starts_with("WIP:");
@@ -6713,7 +6763,12 @@ async fn main() -> Result<()> {
                                             )
                                             .await;
                                         }
-                                        KeyCode::Char('c') => {
+                                        _ if (key_event.code == KeyCode::Char('c')
+                                            || keybinding_matches(
+                                                &app.config.keybindings.mrs.close_entity,
+                                                &key_event,
+                                            )) =>
+                                        {
                                             let cli = app_cli(&app);
                                             let args = vec![
                                                 cli.entity("mr").to_string(),
@@ -6735,7 +6790,12 @@ async fn main() -> Result<()> {
                                             }
                                             app.update_filter_selection();
                                         }
-                                        KeyCode::Char('r') => {
+                                        _ if (key_event.code == KeyCode::Char('r')
+                                            || keybinding_matches(
+                                                &app.config.keybindings.mrs.reopen_entity,
+                                                &key_event,
+                                            )) =>
+                                        {
                                             let cli = app_cli(&app);
                                             let args = vec![
                                                 cli.entity("mr").to_string(),
@@ -6784,7 +6844,12 @@ async fn main() -> Result<()> {
                                         s
                                     },
                                 });
-                            } else if key_event.code == KeyCode::Char('p') {
+                            } else if key_event.code == KeyCode::Char('p')
+                                || keybinding_matches(
+                                    &app.config.keybindings.pipelines.trigger_pipeline,
+                                    &key_event,
+                                )
+                            {
                                 let cli = app_cli(&app);
                                 let args = if cli.is_github {
                                     vec!["workflow".to_string(), "run".to_string()]
@@ -6810,7 +6875,12 @@ async fn main() -> Result<()> {
                                                 app.selected_pipelines.insert(pipe_id);
                                             }
                                         }
-                                        KeyCode::Char('r') => {
+                                        _ if (key_event.code == KeyCode::Char('r')
+                                            || keybinding_matches(
+                                                &app.config.keybindings.pipelines.retry,
+                                                &key_event,
+                                            )) =>
+                                        {
                                             if let Some(client) = &app.gitlab_client {
                                                 let client_clone = client.clone();
                                                 let project_context = app.project_context.clone();
@@ -6888,7 +6958,12 @@ async fn main() -> Result<()> {
                                                 }
                                             }
                                         }
-                                        KeyCode::Char('d') => {
+                                        _ if (key_event.code == KeyCode::Char('d')
+                                            || keybinding_matches(
+                                                &app.config.keybindings.pipelines.cancel,
+                                                &key_event,
+                                            )) =>
+                                        {
                                             if let Some(p) = app
                                                 .pipelines
                                                 .items
@@ -7378,7 +7453,12 @@ async fn main() -> Result<()> {
                             }
                         }
                         app::Tab::Releases => match key_event.code {
-                            KeyCode::Char('n') => {
+                            _ if (key_event.code == KeyCode::Char('n')
+                                || keybinding_matches(
+                                    &app.config.keybindings.releases.create_release,
+                                    &key_event,
+                                )) =>
+                            {
                                 app.text_input = Some(crate::app::TextInput {
                                     title: "Create Release".to_string(),
                                     value: String::new(),
@@ -7390,7 +7470,15 @@ async fn main() -> Result<()> {
                                 if let Some(selected_idx) = app.releases.state.selected() {
                                     if let Some(item) = app.filtered_releases().get(selected_idx) {
                                         match key_event.code {
-                                            KeyCode::Char('o') => {
+                                            _ if (key_event.code == KeyCode::Char('o')
+                                                || keybinding_matches(
+                                                    &app.config
+                                                        .keybindings
+                                                        .releases
+                                                        .open_in_browser,
+                                                    &key_event,
+                                                )) =>
+                                            {
                                                 let cli = app_cli(&app);
                                                 let args = vec![
                                                     "release".to_string(),
@@ -7493,7 +7581,12 @@ async fn main() -> Result<()> {
                             }
                         }
                         app::Tab::Milestones => match key_event.code {
-                            KeyCode::Char('n') => {
+                            _ if (key_event.code == KeyCode::Char('n')
+                                || keybinding_matches(
+                                    &app.config.keybindings.releases.create_milestone,
+                                    &key_event,
+                                )) =>
+                            {
                                 app.text_input = Some(crate::app::TextInput {
                                     title: "Create Milestone".to_string(),
                                     value: String::new(),
@@ -7711,7 +7804,13 @@ async fn main() -> Result<()> {
                                     app.details_zoomed = !app.details_zoomed;
                                 }
                             },
-                            KeyCode::Right | KeyCode::Char('l') => {
+                            _ if (key_event.code == KeyCode::Right
+                                || key_event.code == KeyCode::Char('l')
+                                || keybinding_matches(
+                                    &app.config.keybindings.global.next_tab,
+                                    &key_event,
+                                )) =>
+                            {
                                 app.next_tab();
                                 if let Some(client) = &app.gitlab_client {
                                     if !app.loading_tabs.contains(&app.active_tab)
@@ -7729,7 +7828,13 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             }
-                            KeyCode::Left | KeyCode::Char('h') => {
+                            _ if (key_event.code == KeyCode::Left
+                                || key_event.code == KeyCode::Char('h')
+                                || keybinding_matches(
+                                    &app.config.keybindings.global.prev_tab,
+                                    &key_event,
+                                )) =>
+                            {
                                 app.previous_tab();
                                 if let Some(client) = &app.gitlab_client {
                                     if !app.loading_tabs.contains(&app.active_tab)

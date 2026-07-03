@@ -264,8 +264,6 @@ pub struct KeybindingGlobal {
     pub scroll_down: String,
     #[serde(default)]
     pub scroll_up: String,
-    #[serde(default)]
-    pub yank_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -354,7 +352,6 @@ keybind_defaults! {
     def_prev_tab = "h",
     def_scroll_down = "J",
     def_scroll_up = "K",
-    def_yank_url = "y",
     def_create_issue = "n",
     def_edit_entity = "e",
     def_close_entity = "c",
@@ -366,7 +363,7 @@ keybind_defaults! {
     def_view_diff = "v",
     def_trigger_pipeline = "p",
     def_retry = "r",
-    def_cancel = "c",
+    def_cancel = "d",
     def_download_artifact = "d",
     def_create_release = "n",
     def_create_milestone = "n",
@@ -385,7 +382,6 @@ impl Default for KeybindingGlobal {
             prev_tab: def_prev_tab(),
             scroll_down: def_scroll_down(),
             scroll_up: def_scroll_up(),
-            yank_url: def_yank_url(),
         }
     }
 }
@@ -555,7 +551,6 @@ next_tab = "l"
 prev_tab = "h"
 scroll_down = "J"
 scroll_up = "K"
-yank_url = "y"
 
 [keybindings.issues]
 create_issue = "n"
@@ -576,7 +571,7 @@ reopen_entity = "r"
 [keybindings.pipelines]
 trigger_pipeline = "p"
 retry = "r"
-cancel = "c"
+cancel = "d"
 download_artifact = "d"
 
 [keybindings.releases]
