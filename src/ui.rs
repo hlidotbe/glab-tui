@@ -508,6 +508,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     let size = f.area();
 
+    // Minimum terminal size guard
+    if size.width < 54 || size.height < 10 {
+        let msg = format!("Terminal too small — resize to at least {}×{}", 54, 10);
+        f.render_widget(
+            Paragraph::new(msg)
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(THEME.red)),
+            size,
+        );
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -572,6 +584,25 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     // Middle: Sidebar | Main Area | Preview Area
     let can_zoom = app.active_tab != Tab::Pipelines || app.selected_pipeline_jobs.is_some();
+
+    // Responsive sidebar: hide when terminal is narrow
+    let sidebar_width = if size.width >= 80 {
+        Constraint::Length(22)
+    } else {
+        Constraint::Length(0)
+    };
+
+    // Responsive details pane: hide when terminal is narrow
+    let details_width = if size.width < 90 {
+        Constraint::Length(0)
+    } else if size.width > 150 {
+        Constraint::Percentage(35)
+    } else if size.width > 100 {
+        Constraint::Length(45)
+    } else {
+        Constraint::Length(30)
+    };
+
     let middle_chunks = if app.details_zoomed && can_zoom {
         Layout::default()
             .direction(Direction::Horizontal)
@@ -584,31 +615,25 @@ pub fn render(f: &mut Frame, app: &mut App) {
     } else if app.active_tab == Tab::Terminal {
         Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(22),
-                Constraint::Min(0),
-                Constraint::Length(0),
-            ])
+            .constraints([sidebar_width, Constraint::Min(0), Constraint::Length(0)])
             .split(chunks[1])
     } else {
-        let details_width = if size.width > 150 {
-            Constraint::Percentage(35)
-        } else if size.width > 100 {
-            Constraint::Length(45)
-        } else {
-            Constraint::Length(30)
-        };
         Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(22), Constraint::Min(0), details_width])
+            .constraints([sidebar_width, Constraint::Min(0), details_width])
             .split(chunks[1])
     };
 
     // Split middle column vertically: main content area + compact terminal pane
-    let (content_area, term_area) = if app.active_tab != Tab::Terminal {
+    let term_height = if app.active_tab != Tab::Terminal && size.height >= 18 {
+        6
+    } else {
+        0
+    };
+    let (content_area, term_area) = if term_height > 0 {
         let tc = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(6)])
+            .constraints([Constraint::Min(0), Constraint::Length(term_height)])
             .split(middle_chunks[1]);
         (tc[0], tc[1])
     } else {
@@ -3134,7 +3159,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
 
     if app.diff_loading {
-        let area = centered_rect(50, 20, size);
+        let area = centered_rect_min(50, 20, 20, 4, size);
         let block = Block::default()
             .title(" Fetching Diff ")
             .title_style(
@@ -3174,7 +3199,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
 
     if let Some(diff_view) = app.diff_view.take() {
-        let area = centered_rect(95, 95, size);
+        let area = centered_rect_min(95, 95, 30, 6, size);
 
         let unresolved_count = app.unresolved_threads_count();
         let unresolved_suffix = if unresolved_count > 0 {
@@ -4257,7 +4282,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .border_style(Style::default().fg(THEME.border_focused))
             .style(Style::default().bg(Color::Reset));
 
-        let area = centered_rect(52, 48, size);
+        let area = centered_rect_min(52, 48, 42, 8, size);
 
         let label_width = menu
             .fields
@@ -4496,7 +4521,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .border_style(Style::default().fg(THEME.border_focused))
                 .style(Style::default().bg(Color::Reset));
 
-            let area = centered_rect(50, 60, size);
+            let area = centered_rect_min(50, 60, 34, 6, size);
 
             let has_filter = selector.field_type != "comment_action_select"
                 && selector.field_type != "review_submit_status"
@@ -4696,7 +4721,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .border_style(Style::default().fg(THEME.border_focused))
             .style(Style::default().bg(Color::Reset));
 
-        let area = centered_rect(60, 60, size);
+        let area = centered_rect_min(60, 60, 28, 4, size);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -5942,6 +5967,17 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+/// Like centered_rect but enforces minimum dimensions so overlays remain usable
+/// on small terminals. Will not exceed the available rect `r`.
+fn centered_rect_min(percent_x: u16, percent_y: u16, min_w: u16, min_h: u16, r: Rect) -> Rect {
+    let rect = centered_rect(percent_x, percent_y, r);
+    let w = rect.width.max(min_w).min(r.width);
+    let h = rect.height.max(min_h).min(r.height);
+    let x = r.x + (r.width - w) / 2;
+    let y = r.y + (r.height - h) / 2;
+    Rect::new(x, y, w, h)
 }
 
 fn centered_rect_fixed(width: u16, height: u16, r: Rect) -> Rect {
