@@ -9,6 +9,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Tab};
+use crate::config::THEME;
 use crate::utils::format::{format_ref, render_markdown, time_ago, truncate};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -87,11 +88,13 @@ fn render_labels_cell(
     max_len: usize,
 ) -> Cell<'static> {
     if labels.is_empty() {
-        let mut style = Style::default().fg(THEME.text_muted);
+        let mut style = Style::default().fg(THEME.read().unwrap().text_muted);
         if is_selected {
-            style = style.bg(THEME.highlight_bg).add_modifier(Modifier::BOLD);
+            style = style
+                .bg(THEME.read().unwrap().highlight_bg)
+                .add_modifier(Modifier::BOLD);
         } else if is_checked {
-            style = style.bg(THEME.checked_bg);
+            style = style.bg(THEME.read().unwrap().checked_bg);
         }
         return Cell::from(Line::from("—").alignment(Alignment::Left)).style(style);
     }
@@ -100,9 +103,9 @@ fn render_labels_cell(
     let mut current_len = 0;
 
     let base_bg = if is_selected {
-        Some(THEME.highlight_bg)
+        Some(THEME.read().unwrap().highlight_bg)
     } else if is_checked {
-        Some(THEME.checked_bg)
+        Some(THEME.read().unwrap().checked_bg)
     } else {
         None
     };
@@ -114,14 +117,14 @@ fn render_labels_cell(
         if idx > 0 {
             let comma = ", ";
             if current_len + comma.len() > max_len {
-                let mut style = Style::default().fg(THEME.text_muted);
+                let mut style = Style::default().fg(THEME.read().unwrap().text_muted);
                 if let Some(bg) = base_bg {
                     style = style.bg(bg);
                 }
                 char_styles.push(('…', style));
                 break;
             }
-            let mut style = Style::default().fg(THEME.text_normal);
+            let mut style = Style::default().fg(THEME.read().unwrap().text_normal);
             if let Some(bg) = base_bg {
                 style = style.bg(bg);
             }
@@ -147,7 +150,7 @@ fn render_labels_cell(
                 text_to_add = &text_to_add[..allowed - 1];
                 truncated = true;
             } else {
-                let mut style = Style::default().fg(THEME.text_muted);
+                let mut style = Style::default().fg(THEME.read().unwrap().text_muted);
                 if let Some(bg) = base_bg {
                     style = style.bg(bg);
                 }
@@ -162,7 +165,7 @@ fn render_labels_cell(
         current_len += text_to_add.len();
 
         if truncated {
-            let mut style = Style::default().fg(THEME.text_muted);
+            let mut style = Style::default().fg(THEME.read().unwrap().text_muted);
             if let Some(bg) = base_bg {
                 style = style.bg(bg);
             }
@@ -190,7 +193,9 @@ fn render_labels_cell(
 
     for (i, (c, mut style)) in char_styles.into_iter().enumerate() {
         if index_set.contains(&i) {
-            style = style.fg(THEME.yellow).add_modifier(Modifier::BOLD);
+            style = style
+                .fg(THEME.read().unwrap().yellow)
+                .add_modifier(Modifier::BOLD);
         }
 
         if first {
@@ -219,53 +224,6 @@ fn render_labels_cell(
 
     Cell::from(Line::from(spans).alignment(Alignment::Left)).style(cell_style)
 }
-
-struct Theme {
-    bg: Color,
-    border: Color,
-    border_focused: Color,
-    header_fg: Color,
-    highlight_bg: Color,
-    inactive_bg: Color,
-    text_normal: Color,
-    text_muted: Color,
-    checked_bg: Color,
-
-    // Status colors (Sunset themed)
-    green: Color,    // success, open
-    green_bg: Color, // status pill bg
-    red: Color,      // failed, closed
-    red_bg: Color,
-    blue: Color, // running, active
-    blue_bg: Color,
-    yellow: Color, // pending, warning
-    yellow_bg: Color,
-    purple: Color, // merged, releases
-    purple_bg: Color,
-}
-
-const THEME: Theme = Theme {
-    bg: Color::Rgb(18, 18, 20),               // dark slate base
-    border: Color::Rgb(80, 80, 88),           // muted gray border for inactive panes
-    border_focused: Color::Rgb(49, 191, 103), // vibrant green for active panes
-    header_fg: Color::Rgb(49, 191, 103),      // vibrant green for active headers
-    highlight_bg: Color::Rgb(43, 43, 57),     // dark slate selection highlight background
-    inactive_bg: Color::Rgb(49, 50, 68), // dark gray surface for selection hover or inactive elements
-    text_normal: Color::Rgb(216, 222, 233), // light text
-    text_muted: Color::Rgb(130, 130, 138), // muted gray text
-    checked_bg: Color::Rgb(28, 38, 55),  // subtle dark steel blue for checked rows
-
-    green: Color::Rgb(49, 191, 103), // success / open (vibrant green)
-    green_bg: Color::Rgb(20, 45, 28), // dark green background for pill
-    red: Color::Rgb(224, 73, 83),    // failed / closed
-    red_bg: Color::Rgb(50, 20, 25),  // dark red background for pill
-    blue: Color::Rgb(61, 139, 255),  // running / active
-    blue_bg: Color::Rgb(15, 35, 60), // dark blue background for pill
-    yellow: Color::Rgb(235, 180, 50), // pending / warning
-    yellow_bg: Color::Rgb(45, 35, 15), // dark yellow background for pill
-    purple: Color::Rgb(168, 122, 243), // merged / releases
-    purple_bg: Color::Rgb(38, 25, 55), // dark purple background for pill
-};
 
 struct StageSummary {
     name: String,
@@ -352,18 +310,18 @@ fn append_stage_summaries(text: &mut Vec<Line<'static>>, jobs: &[crate::gitlab::
     let summaries = get_stages_summary(jobs);
     for s in summaries {
         let status_color = match s.status.as_str() {
-            "success" => THEME.green,
-            "failed" => THEME.red,
-            "running" => THEME.blue,
-            "pending" => THEME.yellow,
-            _ => THEME.text_muted,
+            "success" => THEME.read().unwrap().green,
+            "failed" => THEME.read().unwrap().red,
+            "running" => THEME.read().unwrap().blue,
+            "pending" => THEME.read().unwrap().yellow,
+            _ => THEME.read().unwrap().text_muted,
         };
         text.push(Line::from(vec![
             Span::styled(
                 format!("{:15} ", truncate(&s.name, 15)),
-                Style::default().fg(THEME.text_normal),
+                Style::default().fg(THEME.read().unwrap().text_normal),
             ),
-            Span::styled(" ❯ ", Style::default().fg(THEME.text_muted)),
+            Span::styled(" ❯ ", Style::default().fg(THEME.read().unwrap().text_muted)),
             Span::styled(
                 format!("{:>4} ", format!("{}%", s.percent)),
                 Style::default()
@@ -372,7 +330,7 @@ fn append_stage_summaries(text: &mut Vec<Line<'static>>, jobs: &[crate::gitlab::
             ),
             Span::styled(
                 format!("({}/{})", s.success, s.total),
-                Style::default().fg(THEME.text_muted),
+                Style::default().fg(THEME.read().unwrap().text_muted),
             ),
         ]));
     }
@@ -385,11 +343,14 @@ fn add_cmd(text: &mut Vec<Line<'static>>, key: &str, desc: &str) {
         Span::styled(
             padded_key,
             Style::default()
-                .bg(THEME.border_focused)
-                .fg(THEME.bg)
+                .bg(THEME.read().unwrap().border_focused)
+                .fg(THEME.read().unwrap().bg)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!(" {}", desc), Style::default().fg(THEME.text_normal)),
+        Span::styled(
+            format!(" {}", desc),
+            Style::default().fg(THEME.read().unwrap().text_normal),
+        ),
     ]));
 }
 
@@ -406,10 +367,10 @@ fn build_log_line(cmd: &crate::app::TerminalCommand, width: usize) -> Line<'stat
     };
 
     let (status_text, status_color) = match cmd.status.as_str() {
-        "Success" => ("SUCCESS", THEME.green),
-        "Running" => ("RUNNING", THEME.yellow),
-        s if s.starts_with("Failed") => ("FAILED ", THEME.red),
-        _ => ("PENDING", THEME.yellow),
+        "Success" => ("SUCCESS", THEME.read().unwrap().green),
+        "Running" => ("RUNNING", THEME.read().unwrap().yellow),
+        s if s.starts_with("Failed") => ("FAILED ", THEME.read().unwrap().red),
+        _ => ("PENDING", THEME.read().unwrap().yellow),
     };
 
     let err_detail = if cmd.status.starts_with("Failed: ") {
@@ -467,7 +428,7 @@ fn build_log_line(cmd: &crate::app::TerminalCommand, width: usize) -> Line<'stat
         // 1. Time
         Span::styled(
             format!("[{}] ", time_str),
-            Style::default().fg(THEME.text_muted),
+            Style::default().fg(THEME.read().unwrap().text_muted),
         ),
         // 2. Status
         Span::styled(
@@ -477,14 +438,16 @@ fn build_log_line(cmd: &crate::app::TerminalCommand, width: usize) -> Line<'stat
                 .add_modifier(Modifier::BOLD),
         ),
         // 3. Sep1
-        Span::styled(" • ", Style::default().fg(THEME.text_muted)),
+        Span::styled(" • ", Style::default().fg(THEME.read().unwrap().text_muted)),
         // 4. Action
         Span::styled(
             format!("{: <20}", desc_str),
-            Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(THEME.read().unwrap().blue)
+                .add_modifier(Modifier::BOLD),
         ),
         // 5. Sep2
-        Span::styled(" • ", Style::default().fg(THEME.text_muted)),
+        Span::styled(" • ", Style::default().fg(THEME.read().unwrap().text_muted)),
     ];
 
     // 6. API
@@ -492,20 +455,20 @@ fn build_log_line(cmd: &crate::app::TerminalCommand, width: usize) -> Line<'stat
         spans.push(Span::styled(
             cmd_bin,
             Style::default()
-                .fg(THEME.yellow)
+                .fg(THEME.read().unwrap().yellow)
                 .add_modifier(Modifier::BOLD),
         ));
     }
     spans.push(Span::styled(
         cmd_args,
-        Style::default().fg(THEME.text_normal),
+        Style::default().fg(THEME.read().unwrap().text_normal),
     ));
 
     // 7. Error Detail
     if let Some(detail) = err_detail {
         spans.push(Span::styled(
             format!(" ({})", detail),
-            Style::default().fg(THEME.red),
+            Style::default().fg(THEME.read().unwrap().red),
         ));
     }
 
@@ -522,10 +485,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let mut styled_base = base_style;
         if is_selected {
             styled_base = styled_base
-                .bg(THEME.highlight_bg)
+                .bg(THEME.read().unwrap().highlight_bg)
                 .add_modifier(Modifier::BOLD);
         } else if is_checked {
-            styled_base = styled_base.bg(THEME.checked_bg);
+            styled_base = styled_base.bg(THEME.read().unwrap().checked_bg);
         }
         let line = if query.trim().is_empty() {
             Line::from(text.to_string()).alignment(alignment)
@@ -533,7 +496,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             let matcher = SkimMatcherV2::default();
             if let Some((_, indices)) = matcher.fuzzy_indices(text, query) {
                 let mut highlight_style = Style::default()
-                    .fg(THEME.yellow)
+                    .fg(THEME.read().unwrap().yellow)
                     .add_modifier(Modifier::BOLD);
                 if let Some(bg) = styled_base.bg {
                     highlight_style = highlight_style.bg(bg);
@@ -554,6 +517,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     let size = f.area();
 
+    // Minimum terminal size guard
+    if size.width < 54 || size.height < 10 {
+        let msg = format!("Terminal too small — resize to at least {}×{}", 54, 10);
+        f.render_widget(
+            Paragraph::new(msg)
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(THEME.read().unwrap().red)),
+            size,
+        );
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -570,14 +545,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
         Span::styled(
             " GLAB-TUI ",
             Style::default()
-                .bg(THEME.border_focused)
-                .fg(THEME.bg)
+                .bg(THEME.read().unwrap().border_focused)
+                .fg(THEME.read().unwrap().bg)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!(" ❯ {} ", app.project_context),
             Style::default()
-                .fg(THEME.text_normal)
+                .fg(THEME.read().unwrap().text_normal)
                 .add_modifier(Modifier::BOLD),
         ),
     ];
@@ -585,39 +560,58 @@ pub fn render(f: &mut Frame, app: &mut App) {
         title_spans.push(Span::styled(
             " SEARCHING ",
             Style::default()
-                .bg(THEME.yellow)
-                .fg(THEME.bg)
+                .bg(THEME.read().unwrap().yellow)
+                .fg(THEME.read().unwrap().bg)
                 .add_modifier(Modifier::BOLD),
         ));
         title_spans.push(Span::styled(
             format!(" {}_ ", app.search_query),
-            Style::default().fg(THEME.yellow),
+            Style::default().fg(THEME.read().unwrap().yellow),
         ));
     } else if !app.search_query.is_empty() {
         title_spans.push(Span::styled(
             " FILTERED ",
             Style::default()
-                .bg(THEME.yellow)
-                .fg(THEME.bg)
+                .bg(THEME.read().unwrap().yellow)
+                .fg(THEME.read().unwrap().bg)
                 .add_modifier(Modifier::BOLD),
         ));
         title_spans.push(Span::styled(
             format!(" {} ", app.search_query),
-            Style::default().fg(THEME.yellow),
+            Style::default().fg(THEME.read().unwrap().yellow),
         ));
     }
 
     let title = Paragraph::new(Line::from(title_spans))
-        .style(Style::default().bg(THEME.bg))
+        .style(Style::default().bg(THEME.read().unwrap().bg))
         .block(
             Block::default()
                 .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(THEME.border)),
+                .border_style(Style::default().fg(THEME.read().unwrap().border)),
         );
     f.render_widget(title, title_area);
 
     // Middle: Sidebar | Main Area | Preview Area
     let can_zoom = app.active_tab != Tab::Pipelines || app.selected_pipeline_jobs.is_some();
+
+    // Responsive sidebar: hide when terminal is narrow
+    let sidebar_width = if size.width >= 80 {
+        Constraint::Length(22)
+    } else {
+        Constraint::Length(0)
+    };
+
+    // Responsive details pane: hide when terminal is narrow
+    let details_width = if size.width < 90 {
+        Constraint::Length(0)
+    } else if size.width > 150 {
+        Constraint::Percentage(35)
+    } else if size.width > 100 {
+        Constraint::Length(45)
+    } else {
+        Constraint::Length(30)
+    };
+
     let middle_chunks = if app.details_zoomed && can_zoom {
         Layout::default()
             .direction(Direction::Horizontal)
@@ -630,31 +624,25 @@ pub fn render(f: &mut Frame, app: &mut App) {
     } else if app.active_tab == Tab::Terminal {
         Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(22),
-                Constraint::Min(0),
-                Constraint::Length(0),
-            ])
+            .constraints([sidebar_width, Constraint::Min(0), Constraint::Length(0)])
             .split(chunks[1])
     } else {
-        let details_width = if size.width > 150 {
-            Constraint::Percentage(35)
-        } else if size.width > 100 {
-            Constraint::Length(45)
-        } else {
-            Constraint::Length(30)
-        };
         Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(22), Constraint::Min(0), details_width])
+            .constraints([sidebar_width, Constraint::Min(0), details_width])
             .split(chunks[1])
     };
 
     // Split middle column vertically: main content area + compact terminal pane
-    let (content_area, term_area) = if app.active_tab != Tab::Terminal {
+    let term_height = if app.active_tab != Tab::Terminal && size.height >= 18 {
+        6
+    } else {
+        0
+    };
+    let (content_area, term_area) = if term_height > 0 {
         let tc = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(6)])
+            .constraints([Constraint::Min(0), Constraint::Length(term_height)])
             .split(middle_chunks[1]);
         (tc[0], tc[1])
     } else {
@@ -674,12 +662,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
             if *t == app.active_tab {
                 ListItem::new(title).style(
                     Style::default()
-                        .bg(THEME.border_focused)
-                        .fg(THEME.bg)
+                        .bg(THEME.read().unwrap().border_focused)
+                        .fg(THEME.read().unwrap().bg)
                         .add_modifier(Modifier::BOLD),
                 )
             } else {
-                ListItem::new(title).style(Style::default().fg(THEME.text_muted))
+                ListItem::new(title).style(Style::default().fg(THEME.read().unwrap().text_muted))
             }
         })
         .collect();
@@ -687,11 +675,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let sidebar = List::new(sidebar_items).block(
         Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border))
+            .border_style(Style::default().fg(THEME.read().unwrap().border))
             .title(" Navigation ")
             .title_style(
                 Style::default()
-                    .fg(THEME.text_muted)
+                    .fg(THEME.read().unwrap().text_muted)
                     .add_modifier(Modifier::BOLD),
             ),
     );
@@ -702,20 +690,20 @@ pub fn render(f: &mut Frame, app: &mut App) {
     let main_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if app.focus_column_checklist {
-            THEME.border
+            THEME.read().unwrap().border
         } else {
-            THEME.border_focused
+            THEME.read().unwrap().border_focused
         }))
         .title(tab_title)
         .title_style(
             Style::default()
-                .fg(THEME.header_fg)
+                .fg(THEME.read().unwrap().header_fg)
                 .add_modifier(Modifier::BOLD),
         );
 
-    let highlight_style = Style::default().bg(THEME.highlight_bg);
+    let highlight_style = Style::default().bg(THEME.read().unwrap().highlight_bg);
     let header_style = Style::default()
-        .fg(THEME.text_normal)
+        .fg(THEME.read().unwrap().text_normal)
         .add_modifier(Modifier::BOLD);
 
     match app.active_tab {
@@ -725,7 +713,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Paragraph::new("\n\n Loading issues...")
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     content_area,
                 );
                 f.render_widget(
@@ -734,9 +722,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Block::default()
                                 .borders(Borders::ALL)
                                 .title(" Details ")
-                                .border_style(Style::default().fg(THEME.border)),
+                                .border_style(Style::default().fg(THEME.read().unwrap().border)),
                         )
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     middle_chunks[2],
                 );
             } else {
@@ -774,11 +762,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         (
                             "OPEN",
                             Style::default()
-                                .fg(THEME.green)
+                                .fg(THEME.read().unwrap().green)
                                 .bg(if is_selected {
-                                    THEME.highlight_bg
+                                    THEME.read().unwrap().highlight_bg
                                 } else {
-                                    THEME.green_bg
+                                    THEME.read().unwrap().green_bg
                                 })
                                 .add_modifier(Modifier::BOLD),
                         )
@@ -786,11 +774,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         (
                             "CLOSED",
                             Style::default()
-                                .fg(THEME.red)
+                                .fg(THEME.read().unwrap().red)
                                 .bg(if is_selected {
-                                    THEME.highlight_bg
+                                    THEME.read().unwrap().highlight_bg
                                 } else {
-                                    THEME.red_bg
+                                    THEME.read().unwrap().red_bg
                                 })
                                 .add_modifier(Modifier::BOLD),
                         )
@@ -802,7 +790,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -822,7 +810,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -841,7 +829,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.blue),
+                            Style::default().fg(THEME.read().unwrap().blue),
                             Alignment::Left,
                         ));
                     }
@@ -865,7 +853,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.yellow),
+                            Style::default().fg(THEME.read().unwrap().yellow),
+                            Alignment::Left,
+                        ));
+                    }
+                    if app.is_column_visible(Tab::Issues, "Due Date") {
+                        let due_str = i.due_date.as_deref().unwrap_or("—");
+                        cells.push(render_fuzzy_cell(
+                            due_str,
+                            &app.search_query,
+                            is_selected,
+                            false,
+                            Style::default().fg(THEME.read().unwrap().yellow),
                             Alignment::Left,
                         ));
                     }
@@ -876,12 +875,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.blue),
+                            Style::default().fg(THEME.read().unwrap().blue),
                             Alignment::Left,
                         ));
                     }
                     let row_style = if is_selected {
-                        Style::default().bg(THEME.highlight_bg)
+                        Style::default().bg(THEME.read().unwrap().highlight_bg)
                     } else {
                         Style::default()
                     };
@@ -915,6 +914,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     header_cells.push(Cell::from("Milestone"));
                     widths.push(Constraint::Length(18));
                 }
+                if app.is_column_visible(Tab::Issues, "Due Date") {
+                    header_cells.push(Cell::from("Due Date"));
+                    widths.push(Constraint::Length(12));
+                }
                 if app.is_column_visible(Tab::Issues, "Author") {
                     header_cells.push(Cell::from("Author"));
                     widths.push(Constraint::Length(15));
@@ -933,11 +936,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 f.render_stateful_widget(table, content_area, &mut app.issues.state);
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(THEME.border))
+                    .border_style(Style::default().fg(THEME.read().unwrap().border))
                     .title(" Details ")
                     .title_style(
                         Style::default()
-                            .fg(THEME.text_muted)
+                            .fg(THEME.read().unwrap().text_muted)
                             .add_modifier(Modifier::BOLD),
                     );
                 let selected_issue_idx = app.issues.state.selected();
@@ -963,34 +966,64 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Span::styled(
                                 "Title:     ",
                                 Style::default()
-                                    .fg(THEME.text_muted)
+                                    .fg(THEME.read().unwrap().text_muted)
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(
                                 &issue.title,
                                 Style::default()
-                                    .fg(THEME.text_normal)
+                                    .fg(THEME.read().unwrap().text_normal)
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         text.push(Line::from(""));
                         text.push(Line::from(vec![
-                            Span::styled("Author:    ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Author:    ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 format!("@{}", issue.author.username),
-                                Style::default().fg(THEME.blue),
+                                Style::default().fg(THEME.read().unwrap().blue),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Assignees: ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(assignees, Style::default().fg(THEME.blue)),
+                            Span::styled(
+                                "Assignees: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                assignees,
+                                Style::default().fg(THEME.read().unwrap().blue),
+                            ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Milestone: ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(milestone, Style::default().fg(THEME.purple)),
+                            Span::styled(
+                                "Milestone: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                milestone,
+                                Style::default().fg(THEME.read().unwrap().purple),
+                            ),
                         ]));
+                        if let Some(due) = &issue.due_date {
+                            text.push(Line::from(vec![
+                                Span::styled(
+                                    "Due Date:  ",
+                                    Style::default().fg(THEME.read().unwrap().text_muted),
+                                ),
+                                Span::styled(
+                                    due,
+                                    Style::default().fg(THEME.read().unwrap().yellow),
+                                ),
+                            ]));
+                        }
                         text.push(Line::from(vec![
-                            Span::styled("State:     ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "State:     ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 if issue.state == "opened" {
                                     "OPEN"
@@ -999,34 +1032,39 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 },
                                 Style::default()
                                     .fg(if issue.state == "opened" {
-                                        THEME.green
+                                        THEME.read().unwrap().green
                                     } else {
-                                        THEME.red
+                                        THEME.read().unwrap().red
                                     })
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Updated:   ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Updated:   ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 time_ago(&issue.updated_at),
-                                Style::default().fg(THEME.yellow),
+                                Style::default().fg(THEME.read().unwrap().yellow),
                             ),
                         ]));
                         text.push(Line::from(""));
                         let mut label_spans = vec![Span::styled(
                             "Labels:    ",
-                            Style::default().fg(THEME.text_muted),
+                            Style::default().fg(THEME.read().unwrap().text_muted),
                         )];
                         if issue.labels.is_empty() {
-                            label_spans
-                                .push(Span::styled("None", Style::default().fg(THEME.text_muted)));
+                            label_spans.push(Span::styled(
+                                "None",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ));
                         } else {
                             for (idx, label) in issue.labels.iter().enumerate() {
                                 if idx > 0 {
                                     label_spans.push(Span::styled(
                                         ", ",
-                                        Style::default().fg(THEME.text_normal),
+                                        Style::default().fg(THEME.read().unwrap().text_normal),
                                     ));
                                 }
                                 let label_color = get_label_color(label);
@@ -1045,7 +1083,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 text.push(Line::from(vec![Span::styled(
                                     "Description:",
                                     Style::default()
-                                        .fg(THEME.header_fg)
+                                        .fg(THEME.read().unwrap().header_fg)
                                         .add_modifier(Modifier::BOLD),
                                 )]));
                                 text.extend(render_markdown(desc));
@@ -1067,11 +1105,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                         let preview_block = Block::default()
                             .borders(Borders::ALL)
-                            .border_style(Style::default().fg(THEME.border))
+                            .border_style(Style::default().fg(THEME.read().unwrap().border))
                             .title(format!(" Details{} ", title_suffix))
                             .title_style(
                                 Style::default()
-                                    .fg(THEME.text_muted)
+                                    .fg(THEME.read().unwrap().text_muted)
                                     .add_modifier(Modifier::BOLD),
                             );
 
@@ -1089,7 +1127,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_widget(
                         Paragraph::new("Select an item to view details...")
                             .block(preview_block)
-                            .style(Style::default().fg(THEME.text_muted)),
+                            .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                         middle_chunks[2],
                     );
                 }
@@ -1101,7 +1139,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Paragraph::new("\n\n Loading merge requests...")
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     content_area,
                 );
                 f.render_widget(
@@ -1110,9 +1148,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Block::default()
                                 .borders(Borders::ALL)
                                 .title(" Details ")
-                                .border_style(Style::default().fg(THEME.border)),
+                                .border_style(Style::default().fg(THEME.read().unwrap().border)),
                         )
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     middle_chunks[2],
                 );
             } else {
@@ -1161,11 +1199,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         (
                             "OPEN",
                             Style::default()
-                                .fg(THEME.green)
+                                .fg(THEME.read().unwrap().green)
                                 .bg(if is_selected {
-                                    THEME.highlight_bg
+                                    THEME.read().unwrap().highlight_bg
                                 } else {
-                                    THEME.green_bg
+                                    THEME.read().unwrap().green_bg
                                 })
                                 .add_modifier(Modifier::BOLD),
                         )
@@ -1173,11 +1211,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         (
                             "MERGED",
                             Style::default()
-                                .fg(THEME.purple)
+                                .fg(THEME.read().unwrap().purple)
                                 .bg(if is_selected {
-                                    THEME.highlight_bg
+                                    THEME.read().unwrap().highlight_bg
                                 } else {
-                                    THEME.purple_bg
+                                    THEME.read().unwrap().purple_bg
                                 })
                                 .add_modifier(Modifier::BOLD),
                         )
@@ -1185,11 +1223,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         (
                             "CLOSED",
                             Style::default()
-                                .fg(THEME.red)
+                                .fg(THEME.read().unwrap().red)
                                 .bg(if is_selected {
-                                    THEME.highlight_bg
+                                    THEME.read().unwrap().highlight_bg
                                 } else {
-                                    THEME.red_bg
+                                    THEME.read().unwrap().red_bg
                                 })
                                 .add_modifier(Modifier::BOLD),
                         )
@@ -1199,11 +1237,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         (
                             "DRAFT".to_string(),
                             Style::default()
-                                .fg(THEME.yellow)
+                                .fg(THEME.read().unwrap().yellow)
                                 .bg(if is_selected {
-                                    THEME.highlight_bg
+                                    THEME.read().unwrap().highlight_bg
                                 } else {
-                                    THEME.yellow_bg
+                                    THEME.read().unwrap().yellow_bg
                                 })
                                 .add_modifier(Modifier::BOLD),
                         )
@@ -1213,11 +1251,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             (
                                 "DRAFT".to_string(),
                                 Style::default()
-                                    .fg(THEME.yellow)
+                                    .fg(THEME.read().unwrap().yellow)
                                     .bg(if is_selected {
-                                        THEME.highlight_bg
+                                        THEME.read().unwrap().highlight_bg
                                     } else {
-                                        THEME.yellow_bg
+                                        THEME.read().unwrap().yellow_bg
                                     })
                                     .add_modifier(Modifier::BOLD),
                             )
@@ -1225,11 +1263,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             (
                                 "READY".to_string(),
                                 Style::default()
-                                    .fg(THEME.green)
+                                    .fg(THEME.read().unwrap().green)
                                     .bg(if is_selected {
-                                        THEME.highlight_bg
+                                        THEME.read().unwrap().highlight_bg
                                     } else {
-                                        THEME.green_bg
+                                        THEME.read().unwrap().green_bg
                                     })
                                     .add_modifier(Modifier::BOLD),
                             )
@@ -1243,7 +1281,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -1273,7 +1311,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -1292,7 +1330,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.blue),
+                            Style::default().fg(THEME.read().unwrap().blue),
                             Alignment::Left,
                         ));
                     }
@@ -1311,7 +1349,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.blue),
+                            Style::default().fg(THEME.read().unwrap().blue),
                             Alignment::Left,
                         ));
                     }
@@ -1335,7 +1373,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.yellow),
+                            Style::default().fg(THEME.read().unwrap().yellow),
                             Alignment::Left,
                         ));
                     }
@@ -1346,12 +1384,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_selected,
                             false,
-                            Style::default().fg(THEME.blue),
+                            Style::default().fg(THEME.read().unwrap().blue),
                             Alignment::Left,
                         ));
                     }
                     let row_style = if is_selected {
-                        Style::default().bg(THEME.highlight_bg)
+                        Style::default().bg(THEME.read().unwrap().highlight_bg)
                     } else {
                         Style::default()
                     };
@@ -1414,11 +1452,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let preview_block = Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(THEME.border))
+                    .border_style(Style::default().fg(THEME.read().unwrap().border))
                     .title(" Details ")
                     .title_style(
                         Style::default()
-                            .fg(THEME.text_muted)
+                            .fg(THEME.read().unwrap().text_muted)
                             .add_modifier(Modifier::BOLD),
                     );
                 if let Some(selected) = app.mrs.state.selected() {
@@ -1447,49 +1485,83 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 .join(", ")
                         };
                         let draft_status = if mr.draft { "DRAFT" } else { "READY" };
-                        let draft_color = if mr.draft { THEME.yellow } else { THEME.green };
+                        let draft_color = if mr.draft {
+                            THEME.read().unwrap().yellow
+                        } else {
+                            THEME.read().unwrap().green
+                        };
 
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
                             Span::styled(
                                 "Title:     ",
                                 Style::default()
-                                    .fg(THEME.text_muted)
+                                    .fg(THEME.read().unwrap().text_muted)
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(
                                 &mr.title,
                                 Style::default()
-                                    .fg(THEME.text_normal)
+                                    .fg(THEME.read().unwrap().text_normal)
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         text.push(Line::from(""));
                         text.push(Line::from(vec![
-                            Span::styled("Author:    ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Author:    ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 format!("@{}", mr.author.username),
-                                Style::default().fg(THEME.blue),
+                                Style::default().fg(THEME.read().unwrap().blue),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Assignees: ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(assignees, Style::default().fg(THEME.blue)),
+                            Span::styled(
+                                "Assignees: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                assignees,
+                                Style::default().fg(THEME.read().unwrap().blue),
+                            ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Reviewers: ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(reviewers, Style::default().fg(THEME.blue)),
+                            Span::styled(
+                                "Reviewers: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                reviewers,
+                                Style::default().fg(THEME.read().unwrap().blue),
+                            ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Milestone: ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(milestone, Style::default().fg(THEME.purple)),
+                            Span::styled(
+                                "Milestone: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                milestone,
+                                Style::default().fg(THEME.read().unwrap().purple),
+                            ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Target:    ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(&mr.target_branch, Style::default().fg(THEME.purple)),
+                            Span::styled(
+                                "Target:    ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                &mr.target_branch,
+                                Style::default().fg(THEME.read().unwrap().purple),
+                            ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("State:     ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "State:     ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 if mr.state == "opened" {
                                     "OPEN"
@@ -1500,41 +1572,53 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 },
                                 Style::default()
                                     .fg(if mr.state == "opened" {
-                                        THEME.green
+                                        THEME.read().unwrap().green
                                     } else if mr.state == "merged" {
-                                        THEME.purple
+                                        THEME.read().unwrap().purple
                                     } else {
-                                        THEME.red
+                                        THEME.read().unwrap().red
                                     })
                                     .add_modifier(Modifier::BOLD),
                             ),
-                            Span::styled(" (", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                " (",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 draft_status,
                                 Style::default()
                                     .fg(draft_color)
                                     .add_modifier(Modifier::BOLD),
                             ),
-                            Span::styled(")", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                ")",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Updated:   ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Updated:   ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 time_ago(&mr.updated_at),
-                                Style::default().fg(THEME.yellow),
+                                Style::default().fg(THEME.read().unwrap().yellow),
                             ),
                         ]));
                         if Some(mr.iid) == app.last_fetched_mr_iid {
                             let unresolved_count = app.unresolved_threads_count();
                             text.push(Line::from(vec![
-                                Span::styled("Threads:   ", Style::default().fg(THEME.text_muted)),
+                                Span::styled(
+                                    "Threads:   ",
+                                    Style::default().fg(THEME.read().unwrap().text_muted),
+                                ),
                                 Span::styled(
                                     format!("{} unresolved", unresolved_count),
                                     Style::default()
                                         .fg(if unresolved_count > 0 {
-                                            THEME.red
+                                            THEME.read().unwrap().red
                                         } else {
-                                            THEME.green
+                                            THEME.read().unwrap().green
                                         })
                                         .add_modifier(Modifier::BOLD),
                                 ),
@@ -1543,17 +1627,19 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         text.push(Line::from(""));
                         let mut label_spans = vec![Span::styled(
                             "Labels:    ",
-                            Style::default().fg(THEME.text_muted),
+                            Style::default().fg(THEME.read().unwrap().text_muted),
                         )];
                         if mr.labels.is_empty() {
-                            label_spans
-                                .push(Span::styled("None", Style::default().fg(THEME.text_muted)));
+                            label_spans.push(Span::styled(
+                                "None",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ));
                         } else {
                             for (idx, label) in mr.labels.iter().enumerate() {
                                 if idx > 0 {
                                     label_spans.push(Span::styled(
                                         ", ",
-                                        Style::default().fg(THEME.text_normal),
+                                        Style::default().fg(THEME.read().unwrap().text_normal),
                                     ));
                                 }
                                 let label_color = get_label_color(label);
@@ -1572,7 +1658,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 text.push(Line::from(vec![Span::styled(
                                     "Description:",
                                     Style::default()
-                                        .fg(THEME.header_fg)
+                                        .fg(THEME.read().unwrap().header_fg)
                                         .add_modifier(Modifier::BOLD),
                                 )]));
                                 text.extend(render_markdown(desc));
@@ -1594,11 +1680,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                         let preview_block = Block::default()
                             .borders(Borders::ALL)
-                            .border_style(Style::default().fg(THEME.border))
+                            .border_style(Style::default().fg(THEME.read().unwrap().border))
                             .title(format!(" Details{} ", title_suffix))
                             .title_style(
                                 Style::default()
-                                    .fg(THEME.text_muted)
+                                    .fg(THEME.read().unwrap().text_muted)
                                     .add_modifier(Modifier::BOLD),
                             );
 
@@ -1616,7 +1702,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_widget(
                         Paragraph::new("Select an item to view details...")
                             .block(preview_block)
-                            .style(Style::default().fg(THEME.text_muted)),
+                            .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                         middle_chunks[2],
                     );
                 }
@@ -1628,7 +1714,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Paragraph::new("\n\n Loading pipelines...")
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     content_area,
                 );
                 f.render_widget(
@@ -1637,9 +1723,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Block::default()
                                 .borders(Borders::ALL)
                                 .title(" Details ")
-                                .border_style(Style::default().fg(THEME.border)),
+                                .border_style(Style::default().fg(THEME.read().unwrap().border)),
                         )
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     middle_chunks[2],
                 );
             } else {
@@ -1666,14 +1752,46 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let rows = filtered_pipelines.iter().enumerate().map(|(idx, p)| {
                     let is_row_highlighted = app.pipelines.state.selected() == Some(idx);
                     let (status_text, status_color, bg_color) = match p.status.as_str() {
-                        "success" => ("SUCCESS", THEME.green, THEME.green_bg),
-                        "failed" => ("FAILED", THEME.red, THEME.red_bg),
-                        "running" => ("RUNNING", THEME.blue, THEME.blue_bg),
-                        "canceled" => ("CANCEL", THEME.text_muted, THEME.inactive_bg),
-                        "pending" => ("PENDING", THEME.yellow, THEME.yellow_bg),
-                        "skipped" => ("SKIP", THEME.text_muted, THEME.inactive_bg),
-                        "manual" => ("MANUAL", THEME.text_muted, THEME.inactive_bg),
-                        _ => ("UNKNOWN", THEME.text_muted, THEME.inactive_bg),
+                        "success" => (
+                            "SUCCESS",
+                            THEME.read().unwrap().green,
+                            THEME.read().unwrap().green_bg,
+                        ),
+                        "failed" => (
+                            "FAILED",
+                            THEME.read().unwrap().red,
+                            THEME.read().unwrap().red_bg,
+                        ),
+                        "running" => (
+                            "RUNNING",
+                            THEME.read().unwrap().blue,
+                            THEME.read().unwrap().blue_bg,
+                        ),
+                        "canceled" => (
+                            "CANCEL",
+                            THEME.read().unwrap().text_muted,
+                            THEME.read().unwrap().inactive_bg,
+                        ),
+                        "pending" => (
+                            "PENDING",
+                            THEME.read().unwrap().yellow,
+                            THEME.read().unwrap().yellow_bg,
+                        ),
+                        "skipped" => (
+                            "SKIP",
+                            THEME.read().unwrap().text_muted,
+                            THEME.read().unwrap().inactive_bg,
+                        ),
+                        "manual" => (
+                            "MANUAL",
+                            THEME.read().unwrap().text_muted,
+                            THEME.read().unwrap().inactive_bg,
+                        ),
+                        _ => (
+                            "UNKNOWN",
+                            THEME.read().unwrap().text_muted,
+                            THEME.read().unwrap().inactive_bg,
+                        ),
                     };
                     let stages_dots = if let Some(jobs) = app.pipeline_jobs.get(&p.id) {
                         get_stages_dots(jobs)
@@ -1682,9 +1800,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     };
                     let is_checked = app.selected_pipelines.contains(&p.id);
                     let status_bg = if is_row_highlighted {
-                        THEME.highlight_bg
+                        THEME.read().unwrap().highlight_bg
                     } else if is_checked {
-                        THEME.checked_bg
+                        THEME.read().unwrap().checked_bg
                     } else {
                         bg_color
                     };
@@ -1695,7 +1813,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             is_checked,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -1718,7 +1836,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             is_checked,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -1728,14 +1846,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             is_checked,
-                            Style::default().fg(THEME.purple),
+                            Style::default().fg(THEME.read().unwrap().purple),
                             Alignment::Left,
                         ));
                     }
                     let row_style = if is_row_highlighted {
-                        Style::default().bg(THEME.highlight_bg)
+                        Style::default().bg(THEME.read().unwrap().highlight_bg)
                     } else if is_checked {
-                        Style::default().bg(THEME.checked_bg)
+                        Style::default().bg(THEME.read().unwrap().checked_bg)
                     } else {
                         Style::default()
                     };
@@ -1781,36 +1899,50 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .title(" Details ")
                     .title_style(
                         Style::default()
-                            .fg(THEME.text_muted)
+                            .fg(THEME.read().unwrap().text_muted)
                             .add_modifier(Modifier::BOLD),
                     )
-                    .border_style(Style::default().fg(THEME.border));
+                    .border_style(Style::default().fg(THEME.read().unwrap().border));
                 if let Some(selected) = app.pipelines.state.selected() {
                     if let Some(p) = filtered_pipelines.get(selected) {
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
-                            Span::styled("Pipeline ID: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Pipeline ID: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 format!("#{}", p.id),
-                                Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+                                Style::default()
+                                    .fg(THEME.read().unwrap().blue)
+                                    .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Ref:         ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(format_ref(&p.r#ref), Style::default().fg(THEME.purple)),
+                            Span::styled(
+                                "Ref:         ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                format_ref(&p.r#ref),
+                                Style::default().fg(THEME.read().unwrap().purple),
+                            ),
                         ]));
 
                         let (status_text, status_color) = match p.status.as_str() {
-                            "success" => ("success", THEME.green),
-                            "failed" => ("failed", THEME.red),
-                            "running" => ("running", THEME.blue),
-                            "canceled" => ("canceled", THEME.text_muted),
-                            "pending" => ("pending", THEME.yellow),
-                            _ => ("unknown", THEME.text_muted),
+                            "success" => ("success", THEME.read().unwrap().green),
+                            "failed" => ("failed", THEME.read().unwrap().red),
+                            "running" => ("running", THEME.read().unwrap().blue),
+                            "canceled" => ("canceled", THEME.read().unwrap().text_muted),
+                            "pending" => ("pending", THEME.read().unwrap().yellow),
+                            _ => ("unknown", THEME.read().unwrap().text_muted),
                         };
 
                         text.push(Line::from(vec![
-                            Span::styled("Status:      ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Status:      ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 status_text,
                                 Style::default()
@@ -1819,10 +1951,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Updated:     ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Updated:     ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 time_ago(&p.updated_at),
-                                Style::default().fg(THEME.yellow),
+                                Style::default().fg(THEME.read().unwrap().yellow),
                             ),
                         ]));
                         text.push(Line::from(""));
@@ -1831,7 +1966,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             text.push(Line::from(vec![Span::styled(
                                 "Stages Success Rate:",
                                 Style::default()
-                                    .fg(THEME.header_fg)
+                                    .fg(THEME.read().unwrap().header_fg)
                                     .add_modifier(Modifier::BOLD),
                             )]));
                             text.push(Line::from(""));
@@ -1840,7 +1975,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             text.push(Line::from(vec![Span::styled(
                                 "Loading stages...",
                                 Style::default()
-                                    .fg(THEME.text_muted)
+                                    .fg(THEME.read().unwrap().text_muted)
                                     .add_modifier(Modifier::ITALIC),
                             )]));
                         }
@@ -1856,7 +1991,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_widget(
                         Paragraph::new("Select an item to view details...")
                             .block(preview_block)
-                            .style(Style::default().fg(THEME.text_muted)),
+                            .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                         middle_chunks[2],
                     );
                 }
@@ -1868,7 +2003,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Paragraph::new("\n\n Loading jobs...")
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     content_area,
                 );
                 f.render_widget(
@@ -1877,9 +2012,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Block::default()
                                 .borders(Borders::ALL)
                                 .title(" Details ")
-                                .border_style(Style::default().fg(THEME.border)),
+                                .border_style(Style::default().fg(THEME.read().unwrap().border)),
                         )
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     middle_chunks[2],
                 );
             } else if let Some(jobs) = &app.selected_pipeline_jobs {
@@ -1906,21 +2041,53 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let rows = filtered_jobs.iter().enumerate().map(|(i, j)| {
                     let (status_text, status_color, bg_color) = match j.status.as_str() {
-                        "success" => ("SUCCESS", THEME.green, THEME.green_bg),
-                        "failed" => ("FAILED", THEME.red, THEME.red_bg),
-                        "running" => ("RUNNING", THEME.blue, THEME.blue_bg),
-                        "canceled" => ("CANCEL", THEME.text_muted, THEME.inactive_bg),
-                        "pending" => ("PENDING", THEME.yellow, THEME.yellow_bg),
-                        "skipped" => ("SKIP", THEME.text_muted, THEME.inactive_bg),
-                        "manual" => ("MANUAL", THEME.text_muted, THEME.inactive_bg),
-                        _ => ("UNKNOWN", THEME.text_muted, THEME.inactive_bg),
+                        "success" => (
+                            "SUCCESS",
+                            THEME.read().unwrap().green,
+                            THEME.read().unwrap().green_bg,
+                        ),
+                        "failed" => (
+                            "FAILED",
+                            THEME.read().unwrap().red,
+                            THEME.read().unwrap().red_bg,
+                        ),
+                        "running" => (
+                            "RUNNING",
+                            THEME.read().unwrap().blue,
+                            THEME.read().unwrap().blue_bg,
+                        ),
+                        "canceled" => (
+                            "CANCEL",
+                            THEME.read().unwrap().text_muted,
+                            THEME.read().unwrap().inactive_bg,
+                        ),
+                        "pending" => (
+                            "PENDING",
+                            THEME.read().unwrap().yellow,
+                            THEME.read().unwrap().yellow_bg,
+                        ),
+                        "skipped" => (
+                            "SKIP",
+                            THEME.read().unwrap().text_muted,
+                            THEME.read().unwrap().inactive_bg,
+                        ),
+                        "manual" => (
+                            "MANUAL",
+                            THEME.read().unwrap().text_muted,
+                            THEME.read().unwrap().inactive_bg,
+                        ),
+                        _ => (
+                            "UNKNOWN",
+                            THEME.read().unwrap().text_muted,
+                            THEME.read().unwrap().inactive_bg,
+                        ),
                     };
                     let is_job_selected = Some(i) == app.selected_job_index;
                     let is_checked = app.selected_jobs.contains(&j.id);
                     let status_bg = if is_job_selected {
-                        THEME.highlight_bg
+                        THEME.read().unwrap().highlight_bg
                     } else if is_checked {
-                        THEME.checked_bg
+                        THEME.read().unwrap().checked_bg
                     } else {
                         bg_color
                     };
@@ -1933,7 +2100,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_job_selected,
                             is_checked,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -1943,7 +2110,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_job_selected,
                             is_checked,
-                            Style::default().fg(THEME.purple),
+                            Style::default().fg(THEME.read().unwrap().purple),
                             Alignment::Left,
                         ));
                     }
@@ -1966,7 +2133,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_job_selected,
                             is_checked,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -1976,14 +2143,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_job_selected,
                             is_checked,
-                            Style::default().fg(THEME.text_muted),
+                            Style::default().fg(THEME.read().unwrap().text_muted),
                             Alignment::Left,
                         ));
                     }
                     let row_style = if is_job_selected {
-                        Style::default().bg(THEME.highlight_bg)
+                        Style::default().bg(THEME.read().unwrap().highlight_bg)
                     } else if is_checked {
-                        Style::default().bg(THEME.checked_bg)
+                        Style::default().bg(THEME.read().unwrap().checked_bg)
                     } else {
                         Style::default()
                     };
@@ -2028,10 +2195,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .title(" Jobs ")
                             .title_style(
                                 Style::default()
-                                    .fg(THEME.header_fg)
+                                    .fg(THEME.read().unwrap().header_fg)
                                     .add_modifier(Modifier::BOLD),
                             )
-                            .border_style(Style::default().fg(THEME.border_focused)),
+                            .border_style(
+                                Style::default().fg(THEME.read().unwrap().border_focused),
+                            ),
                     )
                     .row_highlight_style(highlight_style)
                     .highlight_symbol(" ❯ ");
@@ -2066,10 +2235,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .title(format!(" Details / Trace{} ", title_suffix))
                         .title_style(
                             Style::default()
-                                .fg(THEME.text_muted)
+                                .fg(THEME.read().unwrap().text_muted)
                                 .add_modifier(Modifier::BOLD),
                         )
-                        .border_style(Style::default().fg(THEME.border));
+                        .border_style(Style::default().fg(THEME.read().unwrap().border));
 
                     f.render_widget(
                         Paragraph::new(trace.as_str())
@@ -2084,15 +2253,15 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .title(" Details / Trace ")
                         .title_style(
                             Style::default()
-                                .fg(THEME.text_muted)
+                                .fg(THEME.read().unwrap().text_muted)
                                 .add_modifier(Modifier::BOLD),
                         )
-                        .border_style(Style::default().fg(THEME.border));
+                        .border_style(Style::default().fg(THEME.read().unwrap().border));
                     let mut text = Vec::new();
                     text.push(Line::from(vec![Span::styled(
                         "Stages Success Rate:",
                         Style::default()
-                            .fg(THEME.header_fg)
+                            .fg(THEME.read().unwrap().header_fg)
                             .add_modifier(Modifier::BOLD),
                     )]));
                     text.push(Line::from(""));
@@ -2100,16 +2269,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_widget(Paragraph::new(text).block(preview_block), middle_chunks[2]);
                 }
             } else {
-                f.render_widget(Paragraph::new("\n\n No jobs loaded.\n Press 'p' to manually enter a pipeline ID to fetch jobs for,\n or view a pipeline in Pipelines tab and press Enter.").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.text_muted)), content_area);
+                f.render_widget(Paragraph::new("\n\n No jobs loaded.\n Press 'p' to manually enter a pipeline ID to fetch jobs for,\n or view a pipeline in Pipelines tab and press Enter.").alignment(Alignment::Center).block(main_block.clone()).style(Style::default().fg(THEME.read().unwrap().text_muted)), content_area);
                 f.render_widget(
                     Paragraph::new("Select a job to view details...")
                         .block(
                             Block::default()
                                 .borders(Borders::ALL)
                                 .title(" Details ")
-                                .border_style(Style::default().fg(THEME.border)),
+                                .border_style(Style::default().fg(THEME.read().unwrap().border)),
                         )
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     middle_chunks[2],
                 );
             }
@@ -2120,7 +2289,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Paragraph::new("\n\n Loading runners...")
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     content_area,
                 );
                 f.render_widget(
@@ -2129,9 +2298,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Block::default()
                                 .borders(Borders::ALL)
                                 .title(" Details ")
-                                .border_style(Style::default().fg(THEME.border)),
+                                .border_style(Style::default().fg(THEME.read().unwrap().border)),
                         )
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     middle_chunks[2],
                 );
             } else {
@@ -2157,10 +2326,26 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let rows = filtered_runners.iter().enumerate().map(|(idx, r)| {
                     let is_row_highlighted = app.runners.state.selected() == Some(idx);
                     let (status_text, status_color, bg_color) = match r.status.as_str() {
-                        "online" => ("ONLINE", THEME.green, THEME.green_bg),
-                        "paused" => ("PAUSED", THEME.yellow, THEME.yellow_bg),
-                        "offline" => ("OFFLINE", THEME.red, THEME.red_bg),
-                        _ => ("UNKNOWN", THEME.text_muted, THEME.inactive_bg),
+                        "online" => (
+                            "ONLINE",
+                            THEME.read().unwrap().green,
+                            THEME.read().unwrap().green_bg,
+                        ),
+                        "paused" => (
+                            "PAUSED",
+                            THEME.read().unwrap().yellow,
+                            THEME.read().unwrap().yellow_bg,
+                        ),
+                        "offline" => (
+                            "OFFLINE",
+                            THEME.read().unwrap().red,
+                            THEME.read().unwrap().red_bg,
+                        ),
+                        _ => (
+                            "UNKNOWN",
+                            THEME.read().unwrap().text_muted,
+                            THEME.read().unwrap().inactive_bg,
+                        ),
                     };
                     let desc = r.description.as_deref().unwrap_or("No description");
                     let mut row_cells = Vec::new();
@@ -2170,7 +2355,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             false,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -2180,7 +2365,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             false,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -2193,7 +2378,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Style::default()
                                 .fg(status_color)
                                 .bg(if is_row_highlighted {
-                                    THEME.highlight_bg
+                                    THEME.read().unwrap().highlight_bg
                                 } else {
                                     bg_color
                                 })
@@ -2207,12 +2392,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             false,
-                            Style::default().fg(if r.active { THEME.green } else { THEME.red }),
+                            Style::default().fg(if r.active {
+                                THEME.read().unwrap().green
+                            } else {
+                                THEME.read().unwrap().red
+                            }),
                             Alignment::Left,
                         ));
                     }
                     let row_style = if is_row_highlighted {
-                        Style::default().bg(THEME.highlight_bg)
+                        Style::default().bg(THEME.read().unwrap().highlight_bg)
                     } else {
                         Style::default()
                     };
@@ -2258,43 +2447,64 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .title(" Performance Dashboard ")
                     .title_style(
                         Style::default()
-                            .fg(THEME.text_muted)
+                            .fg(THEME.read().unwrap().text_muted)
                             .add_modifier(Modifier::BOLD),
                     )
-                    .border_style(Style::default().fg(THEME.border));
+                    .border_style(Style::default().fg(THEME.read().unwrap().border));
                 if let Some(selected) = app.runners.state.selected() {
                     if let Some(r) = filtered_runners.get(selected) {
                         let desc = r.description.as_deref().unwrap_or("None");
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
-                            Span::styled("Runner ID:   ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Runner ID:   ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 r.id.to_string(),
-                                Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+                                Style::default()
+                                    .fg(THEME.read().unwrap().blue)
+                                    .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Description: ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(desc, Style::default().fg(THEME.text_normal)),
+                            Span::styled(
+                                "Description: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                desc,
+                                Style::default().fg(THEME.read().unwrap().text_normal),
+                            ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Status:      ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Status:      ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 &r.status,
                                 Style::default()
                                     .fg(if r.status == "online" {
-                                        THEME.green
+                                        THEME.read().unwrap().green
                                     } else {
-                                        THEME.red
+                                        THEME.read().unwrap().red
                                     })
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Active:      ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Active:      ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 r.active.to_string(),
-                                Style::default().fg(if r.active { THEME.green } else { THEME.red }),
+                                Style::default().fg(if r.active {
+                                    THEME.read().unwrap().green
+                                } else {
+                                    THEME.read().unwrap().red
+                                }),
                             ),
                         ]));
 
@@ -2302,7 +2512,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         text.push(Line::from(vec![Span::styled(
                             "── Performance & Queue Metrics ──",
                             Style::default()
-                                .fg(THEME.header_fg)
+                                .fg(THEME.read().unwrap().header_fg)
                                 .add_modifier(Modifier::BOLD),
                         )]));
                         text.push(Line::from(""));
@@ -2327,28 +2537,34 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         }
 
                         text.push(Line::from(vec![
-                            Span::styled("Active Jobs: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Active Jobs: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 format!("{}  ", gauge_chars),
-                                Style::default().fg(THEME.green),
+                                Style::default().fg(THEME.read().unwrap().green),
                             ),
                             Span::styled(
                                 format!("{}/{}", active_jobs, max_capacity),
                                 Style::default()
-                                    .fg(THEME.text_normal)
+                                    .fg(THEME.read().unwrap().text_normal)
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ]));
 
                         let util_color = if utilization > 80 {
-                            THEME.red
+                            THEME.read().unwrap().red
                         } else if utilization > 50 {
-                            THEME.yellow
+                            THEME.read().unwrap().yellow
                         } else {
-                            THEME.green
+                            THEME.read().unwrap().green
                         };
                         text.push(Line::from(vec![
-                            Span::styled("Utilization: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Utilization: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 format!("{}%", utilization),
                                 Style::default().fg(util_color).add_modifier(Modifier::BOLD),
@@ -2356,14 +2572,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         ]));
 
                         let q_color = if queue_depth > 3 {
-                            THEME.red
+                            THEME.read().unwrap().red
                         } else if queue_depth > 0 {
-                            THEME.yellow
+                            THEME.read().unwrap().yellow
                         } else {
-                            THEME.green
+                            THEME.read().unwrap().green
                         };
                         text.push(Line::from(vec![
-                            Span::styled("Queue Depth: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Queue Depth: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 format!("{} jobs waiting", queue_depth),
                                 Style::default().fg(q_color).add_modifier(Modifier::BOLD),
@@ -2371,14 +2590,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         ]));
 
                         let wait_color = if wait_time > 45 {
-                            THEME.red
+                            THEME.read().unwrap().red
                         } else if wait_time > 25 {
-                            THEME.yellow
+                            THEME.read().unwrap().yellow
                         } else {
-                            THEME.green
+                            THEME.read().unwrap().green
                         };
                         text.push(Line::from(vec![
-                            Span::styled("Avg Wait:    ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Avg Wait:    ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 format!("{} seconds", wait_time),
                                 Style::default().fg(wait_color),
@@ -2398,7 +2620,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_widget(
                         Paragraph::new("Select an item to view details...")
                             .block(preview_block)
-                            .style(Style::default().fg(THEME.text_muted)),
+                            .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                         middle_chunks[2],
                     );
                 }
@@ -2410,7 +2632,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Paragraph::new("\n\n Loading releases...")
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     content_area,
                 );
                 f.render_widget(
@@ -2419,9 +2641,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Block::default()
                                 .borders(Borders::ALL)
                                 .title(" Details ")
-                                .border_style(Style::default().fg(THEME.border)),
+                                .border_style(Style::default().fg(THEME.read().unwrap().border)),
                         )
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     middle_chunks[2],
                 );
             } else {
@@ -2439,6 +2661,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     |item, col| match col {
                         "Tag" => vec![item.tag_name.clone()],
                         "Release Name" => vec![item.name.clone()],
+                        "Description" => item
+                            .description
+                            .clone()
+                            .map(|d| vec![d])
+                            .unwrap_or_default(),
+                        "Author" => item
+                            .author_name
+                            .clone()
+                            .map(|a| vec![a])
+                            .unwrap_or_default(),
                         _ => vec![],
                     },
                 );
@@ -2453,7 +2685,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             is_row_highlighted,
                             false,
                             Style::default()
-                                .fg(THEME.green)
+                                .fg(THEME.read().unwrap().green)
                                 .add_modifier(Modifier::BOLD),
                             Alignment::Left,
                         ));
@@ -2464,7 +2696,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             false,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
@@ -2474,12 +2706,34 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             false,
-                            Style::default().fg(THEME.yellow),
+                            Style::default().fg(THEME.read().unwrap().yellow),
+                            Alignment::Left,
+                        ));
+                    }
+                    if app.is_column_visible(Tab::Releases, "Description") {
+                        let desc = r.description.as_deref().unwrap_or("");
+                        row_cells.push(render_fuzzy_cell(
+                            &truncate(desc, 80),
+                            &app.search_query,
+                            is_row_highlighted,
+                            false,
+                            Style::default().fg(THEME.read().unwrap().text_muted),
+                            Alignment::Left,
+                        ));
+                    }
+                    if app.is_column_visible(Tab::Releases, "Author") {
+                        let author = r.author_name.as_deref().unwrap_or("");
+                        row_cells.push(render_fuzzy_cell(
+                            &author.to_string(),
+                            &app.search_query,
+                            is_row_highlighted,
+                            false,
+                            Style::default().fg(THEME.read().unwrap().blue),
                             Alignment::Left,
                         ));
                     }
                     let row_style = if is_row_highlighted {
-                        Style::default().bg(THEME.highlight_bg)
+                        Style::default().bg(THEME.read().unwrap().highlight_bg)
                     } else {
                         Style::default()
                     };
@@ -2501,6 +2755,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     header_cells.push(Cell::from("Date"));
                     widths.push(Constraint::Length(12));
                 }
+                if app.is_column_visible(Tab::Releases, "Description") {
+                    header_cells.push(Cell::from("Description"));
+                    widths.push(Constraint::Fill(2));
+                }
+                if app.is_column_visible(Tab::Releases, "Author") {
+                    header_cells.push(Cell::from("Author"));
+                    widths.push(Constraint::Length(16));
+                }
 
                 if widths.is_empty() {
                     widths.push(Constraint::Min(0));
@@ -2519,10 +2781,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .title(" Details ")
                     .title_style(
                         Style::default()
-                            .fg(THEME.text_muted)
+                            .fg(THEME.read().unwrap().text_muted)
                             .add_modifier(Modifier::BOLD),
                     )
-                    .border_style(Style::default().fg(THEME.border));
+                    .border_style(Style::default().fg(THEME.read().unwrap().border));
                 if let Some(selected) = app.releases.state.selected() {
                     if let Some(r) = filtered_releases.get(selected) {
                         let mut text = Vec::new();
@@ -2530,29 +2792,62 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Span::styled(
                                 "Release: ",
                                 Style::default()
-                                    .fg(THEME.text_muted)
+                                    .fg(THEME.read().unwrap().text_muted)
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(
                                 &r.name,
                                 Style::default()
-                                    .fg(THEME.text_normal)
+                                    .fg(THEME.read().unwrap().text_normal)
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Tag:     ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Tag:     ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 &r.tag_name,
                                 Style::default()
-                                    .fg(THEME.green)
+                                    .fg(THEME.read().unwrap().green)
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Date:    ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(&r.released_at, Style::default().fg(THEME.yellow)),
+                            Span::styled(
+                                "Date:    ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                &r.released_at,
+                                Style::default().fg(THEME.read().unwrap().yellow),
+                            ),
                         ]));
+                        if let Some(ref author) = r.author_name {
+                            text.push(Line::from(vec![
+                                Span::styled(
+                                    "Author:  ",
+                                    Style::default().fg(THEME.read().unwrap().text_muted),
+                                ),
+                                Span::styled(
+                                    author,
+                                    Style::default().fg(THEME.read().unwrap().blue),
+                                ),
+                            ]));
+                        }
+                        if let Some(ref desc) = r.description {
+                            if !desc.is_empty() {
+                                text.push(Line::from(Span::styled(
+                                    "---",
+                                    Style::default().fg(THEME.read().unwrap().text_muted),
+                                )));
+                                text.push(Line::from(Span::styled(
+                                    truncate(desc, 200),
+                                    Style::default().fg(THEME.read().unwrap().text_normal),
+                                )));
+                            }
+                        }
                         f.render_widget(
                             Paragraph::new(text)
                                 .block(preview_block)
@@ -2566,7 +2861,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_widget(
                         Paragraph::new("Select an item to view details...")
                             .block(preview_block)
-                            .style(Style::default().fg(THEME.text_muted)),
+                            .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                         middle_chunks[2],
                     );
                 }
@@ -2578,7 +2873,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Paragraph::new("\n\n Loading todos...")
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     content_area,
                 );
                 f.render_widget(
@@ -2587,9 +2882,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Block::default()
                                 .borders(Borders::ALL)
                                 .title(" Details ")
-                                .border_style(Style::default().fg(THEME.border)),
+                                .border_style(Style::default().fg(THEME.read().unwrap().border)),
                         )
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     middle_chunks[2],
                 );
             } else {
@@ -2623,15 +2918,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         " "
                     };
                     let state_style = Style::default()
-                        .fg(THEME.green)
+                        .fg(THEME.read().unwrap().green)
                         .add_modifier(Modifier::BOLD);
 
                     let type_style = if n.target_type == "MergeRequest" {
                         Style::default()
-                            .fg(THEME.purple)
+                            .fg(THEME.read().unwrap().purple)
                             .add_modifier(Modifier::BOLD)
                     } else {
-                        Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD)
+                        Style::default()
+                            .fg(THEME.read().unwrap().blue)
+                            .add_modifier(Modifier::BOLD)
                     };
 
                     let mut row_cells = Vec::new();
@@ -2651,7 +2948,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             false,
-                            Style::default().fg(THEME.text_muted),
+                            Style::default().fg(THEME.read().unwrap().text_muted),
                             Alignment::Left,
                         ));
                     }
@@ -2671,7 +2968,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             false,
-                            Style::default().fg(THEME.blue),
+                            Style::default().fg(THEME.read().unwrap().blue),
                             Alignment::Left,
                         ));
                     }
@@ -2681,12 +2978,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             &app.search_query,
                             is_row_highlighted,
                             false,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                             Alignment::Left,
                         ));
                     }
                     let row_style = if is_row_highlighted {
-                        Style::default().bg(THEME.highlight_bg)
+                        Style::default().bg(THEME.read().unwrap().highlight_bg)
                     } else {
                         Style::default()
                     };
@@ -2734,55 +3031,76 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .title(" Details ")
                     .title_style(
                         Style::default()
-                            .fg(THEME.text_muted)
+                            .fg(THEME.read().unwrap().text_muted)
                             .add_modifier(Modifier::BOLD),
                     )
-                    .border_style(Style::default().fg(THEME.border));
+                    .border_style(Style::default().fg(THEME.read().unwrap().border));
                 if let Some(selected) = app.todos.state.selected() {
                     if let Some(n) = filtered_todos.get(selected) {
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
-                            Span::styled("Title:    ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Title:    ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 &n.title,
                                 Style::default()
-                                    .fg(THEME.text_normal)
+                                    .fg(THEME.read().unwrap().text_normal)
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Project:  ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(&n.project_path, Style::default().fg(THEME.text_normal)),
-                        ]));
-                        text.push(Line::from(vec![
-                            Span::styled("Target:   ", Style::default().fg(THEME.text_muted)),
                             Span::styled(
-                                format!("{} #{}", n.target_type, n.target_iid),
-                                Style::default().fg(THEME.blue),
+                                "Project:  ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                &n.project_path,
+                                Style::default().fg(THEME.read().unwrap().text_normal),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("State:    ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Target:   ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                format!("{} #{}", n.target_type, n.target_iid),
+                                Style::default().fg(THEME.read().unwrap().blue),
+                            ),
+                        ]));
+                        text.push(Line::from(vec![
+                            Span::styled(
+                                "State:    ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 &n.state,
                                 Style::default().fg(
                                     if n.state == "unread" || n.state == "pending" {
-                                        THEME.green
+                                        THEME.read().unwrap().green
                                     } else {
-                                        THEME.text_muted
+                                        THEME.read().unwrap().text_muted
                                     },
                                 ),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Updated:  ", Style::default().fg(THEME.text_muted)),
-                            Span::styled(&n.updated_at, Style::default().fg(THEME.yellow)),
+                            Span::styled(
+                                "Updated:  ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
+                            Span::styled(
+                                &n.updated_at,
+                                Style::default().fg(THEME.read().unwrap().yellow),
+                            ),
                         ]));
                         text.push(Line::from(""));
                         text.push(Line::from(Span::styled(
                             " Press Enter to mark read and switch to item",
                             Style::default()
-                                .fg(THEME.text_muted)
+                                .fg(THEME.read().unwrap().text_muted)
                                 .add_modifier(Modifier::ITALIC),
                         )));
                         f.render_widget(
@@ -2798,7 +3116,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_widget(
                         Paragraph::new("Select an item to view details...")
                             .block(preview_block)
-                            .style(Style::default().fg(THEME.text_muted)),
+                            .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                         middle_chunks[2],
                     );
                 }
@@ -2810,7 +3128,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     Paragraph::new("\n\n Loading milestones...")
                         .alignment(Alignment::Center)
                         .block(main_block.clone())
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     content_area,
                 );
                 f.render_widget(
@@ -2819,12 +3137,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             Block::default()
                                 .borders(Borders::ALL)
                                 .title(" Details ")
-                                .border_style(Style::default().fg(THEME.border)),
+                                .border_style(Style::default().fg(THEME.read().unwrap().border)),
                         )
-                        .style(Style::default().fg(THEME.text_muted)),
+                        .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                     middle_chunks[2],
                 );
             } else {
+                let is_github = app
+                    .gitlab_client
+                    .as_ref()
+                    .map(|c| c.is_github)
+                    .unwrap_or(false);
                 let default_set = std::collections::HashSet::new();
                 let mut filtered_milestones = App::filter_milestones_list(
                     &app.milestones.items,
@@ -2846,7 +3169,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 );
 
                 let header_cells = Tab::Milestones
-                    .columns()
+                    .columns(is_github)
                     .into_iter()
                     .filter(|col| app.is_column_visible(Tab::Milestones, col))
                     .map(|h| Cell::from(h).style(Style::default().add_modifier(Modifier::BOLD)));
@@ -2857,7 +3180,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let rows = filtered_milestones.iter().enumerate().map(|(idx, m)| {
                     let mut cells = Vec::new();
-                    let cols = Tab::Milestones.columns();
+                    let cols = Tab::Milestones.columns(is_github);
                     for col in cols {
                         if app.is_column_visible(Tab::Milestones, &col) {
                             let val = match col {
@@ -2877,9 +3200,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     }
                     let is_selected = app.milestones.state.selected() == Some(idx);
                     let row_style = if is_selected {
-                        Style::default().bg(THEME.highlight_bg)
+                        Style::default().bg(THEME.read().unwrap().highlight_bg)
                     } else {
-                        Style::default().fg(THEME.text_normal)
+                        Style::default().fg(THEME.read().unwrap().text_normal)
                     };
                     Row::new(cells).style(row_style)
                 });
@@ -2905,38 +3228,52 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .title(" Milestone Details ")
                     .title_style(
                         Style::default()
-                            .fg(THEME.text_muted)
+                            .fg(THEME.read().unwrap().text_muted)
                             .add_modifier(Modifier::BOLD),
                     )
-                    .border_style(Style::default().fg(THEME.border));
+                    .border_style(Style::default().fg(THEME.read().unwrap().border));
 
                 if let Some(selected_idx) = app.milestones.state.selected() {
                     if let Some(m) = filtered_milestones.get(selected_idx) {
                         let mut text = Vec::new();
                         text.push(Line::from(vec![
-                            Span::styled("Title:      ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Title:      ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 &m.title,
-                                Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD),
+                                Style::default()
+                                    .fg(THEME.read().unwrap().blue)
+                                    .add_modifier(Modifier::BOLD),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("State:      ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "State:      ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::styled(
                                 &m.state,
                                 Style::default().fg(if m.state == "active" {
-                                    THEME.green
+                                    THEME.read().unwrap().green
                                 } else {
-                                    THEME.yellow
+                                    THEME.read().unwrap().yellow
                                 }),
                             ),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Start Date: ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Start Date: ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::raw(m.start_date.as_deref().unwrap_or("N/A")),
                         ]));
                         text.push(Line::from(vec![
-                            Span::styled("Due Date:   ", Style::default().fg(THEME.text_muted)),
+                            Span::styled(
+                                "Due Date:   ",
+                                Style::default().fg(THEME.read().unwrap().text_muted),
+                            ),
                             Span::raw(m.due_date.as_deref().unwrap_or("N/A")),
                         ]));
                         if let Some(desc) = &m.description {
@@ -2979,7 +3316,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             );
                             text.push(Line::from(Span::styled(
                                 bar,
-                                Style::default().fg(THEME.green),
+                                Style::default().fg(THEME.read().unwrap().green),
                             )));
                             text.push(Line::from(""));
                         } else {
@@ -2999,7 +3336,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     f.render_widget(
                         Paragraph::new("Select a milestone to view details...")
                             .block(preview_block)
-                            .style(Style::default().fg(THEME.text_muted)),
+                            .style(Style::default().fg(THEME.read().unwrap().text_muted)),
                         middle_chunks[2],
                     );
                 }
@@ -3012,9 +3349,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(if app.focus_column_checklist {
-                        THEME.border
+                        THEME.read().unwrap().border
                     } else {
-                        THEME.border_focused
+                        THEME.read().unwrap().border_focused
                     }));
             let inner_rect = base_block.inner(area);
             let log_height = inner_rect.height as usize;
@@ -3032,7 +3369,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             };
             let custom_main_block = base_block.clone().title(block_title).title_style(
                 Style::default()
-                    .fg(THEME.header_fg)
+                    .fg(THEME.read().unwrap().header_fg)
                     .add_modifier(Modifier::BOLD),
             );
 
@@ -3061,11 +3398,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
     if term_area.height > 0 {
         let bottom_block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border))
+            .border_style(Style::default().fg(THEME.read().unwrap().border))
             .title(" Terminal ")
             .title_style(
                 Style::default()
-                    .fg(THEME.purple)
+                    .fg(THEME.read().unwrap().purple)
                     .add_modifier(Modifier::BOLD),
             );
         f.render_widget(bottom_block.clone(), term_area);
@@ -3096,16 +3433,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
 
     if app.diff_loading {
-        let area = centered_rect(50, 20, size);
+        let area = centered_rect_min(50, 20, 20, 4, size);
         let block = Block::default()
             .title(" Fetching Diff ")
             .title_style(
                 Style::default()
-                    .fg(THEME.header_fg)
+                    .fg(THEME.read().unwrap().header_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
+            .border_style(Style::default().fg(THEME.read().unwrap().border_focused))
             .style(Style::default().bg(Color::Reset));
 
         let pr_label = if app.gitlab_client.as_ref().map_or(true, |c| c.is_github) {
@@ -3117,11 +3454,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             Line::from(""),
             Line::from(Span::styled(
                 format!("   Fetching {pr_label} Diff..."),
-                Style::default().fg(THEME.text_normal),
+                Style::default().fg(THEME.read().unwrap().text_normal),
             )),
             Line::from(Span::styled(
                 "   Please wait, running CLI tool in background...",
-                Style::default().fg(THEME.text_muted),
+                Style::default().fg(THEME.read().unwrap().text_muted),
             )),
             Line::from(""),
         ];
@@ -3136,7 +3473,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
 
     if let Some(diff_view) = app.diff_view.take() {
-        let area = centered_rect(95, 95, size);
+        let area = centered_rect_min(95, 95, 30, 6, size);
 
         let unresolved_count = app.unresolved_threads_count();
         let unresolved_suffix = if unresolved_count > 0 {
@@ -3163,11 +3500,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             ))
             .title_style(
                 Style::default()
-                    .fg(THEME.header_fg)
+                    .fg(THEME.read().unwrap().header_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border))
+            .border_style(Style::default().fg(THEME.read().unwrap().border))
             .style(Style::default().bg(Color::Reset));
 
         let inner_area = outer_block.inner(area);
@@ -3199,9 +3536,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(" Files ")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(if diff_view.focus_on_files {
-                THEME.border_focused
+                THEME.read().unwrap().border_focused
             } else {
-                THEME.border
+                THEME.read().unwrap().border
             }));
 
         let mut file_items = Vec::new();
@@ -3227,16 +3564,20 @@ pub fn render(f: &mut Frame, app: &mut App) {
             let item_style = if is_selected {
                 if diff_view.focus_on_files {
                     Style::default()
-                        .bg(THEME.highlight_bg)
-                        .fg(THEME.bg)
+                        .bg(THEME.read().unwrap().highlight_bg)
+                        .fg(THEME.read().unwrap().bg)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().bg(THEME.border).fg(THEME.text_normal)
+                    Style::default()
+                        .bg(THEME.read().unwrap().border)
+                        .fg(THEME.read().unwrap().text_normal)
                 }
             } else if node.is_dir {
-                Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(THEME.read().unwrap().blue)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(THEME.text_normal)
+                Style::default().fg(THEME.read().unwrap().text_normal)
             };
 
             file_items.push(ListItem::new(display_str).style(item_style));
@@ -3248,9 +3589,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(" Diff ")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(if !diff_view.focus_on_files {
-                THEME.border_focused
+                THEME.read().unwrap().border_focused
             } else {
-                THEME.border
+                THEME.read().unwrap().border
             }));
 
         let list_height = (main_chunks[1].height as usize).saturating_sub(2);
@@ -3288,10 +3629,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                 let gutter_bg = Color::Rgb(22, 22, 26);
                 let marker_style = Style::default()
-                    .fg(THEME.yellow)
+                    .fg(THEME.read().unwrap().yellow)
                     .add_modifier(Modifier::BOLD)
                     .bg(gutter_bg);
-                let num_style = Style::default().fg(THEME.text_muted).bg(gutter_bg);
+                let num_style = Style::default()
+                    .fg(THEME.read().unwrap().text_muted)
+                    .bg(gutter_bg);
                 let sep_style = Style::default().fg(Color::Rgb(60, 60, 68)).bg(gutter_bg);
 
                 let sel_bg = if in_selection {
@@ -3379,10 +3722,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 .unwrap_or_else(|| " ".to_string());
                             left_spans.push(Span::styled(
                                 prefix,
-                                Style::default().fg(THEME.text_muted).bg(actual_bg),
+                                Style::default()
+                                    .fg(THEME.read().unwrap().text_muted)
+                                    .bg(actual_bg),
                             ));
 
-                            let content_base = Style::default().fg(THEME.text_normal).bg(actual_bg);
+                            let content_base = Style::default()
+                                .fg(THEME.read().unwrap().text_normal)
+                                .bg(actual_bg);
                             let final_style = if is_cursor {
                                 content_base
                                     .add_modifier(Modifier::UNDERLINED)
@@ -3394,7 +3741,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             if let Some(ref highlighted) = line.syntax_highlighted {
                                 for (span_style, text) in highlighted {
                                     let merged = final_style
-                                        .fg(span_style.fg.unwrap_or(THEME.text_normal))
+                                        .fg(span_style
+                                            .fg
+                                            .unwrap_or(THEME.read().unwrap().text_normal))
                                         .add_modifier(span_style.add_modifier);
                                     left_spans.push(Span::styled(text.clone(), merged));
                                 }
@@ -3408,31 +3757,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             }
                         }
                         crate::app::DiffLineType::Meta => {
-                            let mut s =
-                                Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
-                            if let Some(bg) = sel_bg {
-                                s = s.bg(bg);
-                            }
-                            let final_style = if is_cursor {
-                                s.add_modifier(Modifier::UNDERLINED)
-                                    .add_modifier(Modifier::BOLD)
-                            } else {
-                                s
-                            };
-                            if let Some(ref highlighted) = line.syntax_highlighted {
-                                for (span_style, text) in highlighted {
-                                    let merged = final_style
-                                        .fg(span_style.fg.unwrap_or(THEME.blue))
-                                        .add_modifier(span_style.add_modifier);
-                                    left_spans.push(Span::styled(text.clone(), merged));
-                                }
-                            } else {
-                                left_spans.push(Span::styled(&line.content, final_style));
-                            }
-                        }
-                        crate::app::DiffLineType::HunkHeader => {
                             let mut s = Style::default()
-                                .fg(THEME.purple)
+                                .fg(THEME.read().unwrap().blue)
                                 .add_modifier(Modifier::BOLD);
                             if let Some(bg) = sel_bg {
                                 s = s.bg(bg);
@@ -3446,7 +3772,31 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             if let Some(ref highlighted) = line.syntax_highlighted {
                                 for (span_style, text) in highlighted {
                                     let merged = final_style
-                                        .fg(span_style.fg.unwrap_or(THEME.purple))
+                                        .fg(span_style.fg.unwrap_or(THEME.read().unwrap().blue))
+                                        .add_modifier(span_style.add_modifier);
+                                    left_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            } else {
+                                left_spans.push(Span::styled(&line.content, final_style));
+                            }
+                        }
+                        crate::app::DiffLineType::HunkHeader => {
+                            let mut s = Style::default()
+                                .fg(THEME.read().unwrap().purple)
+                                .add_modifier(Modifier::BOLD);
+                            if let Some(bg) = sel_bg {
+                                s = s.bg(bg);
+                            }
+                            let final_style = if is_cursor {
+                                s.add_modifier(Modifier::UNDERLINED)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                s
+                            };
+                            if let Some(ref highlighted) = line.syntax_highlighted {
+                                for (span_style, text) in highlighted {
+                                    let merged = final_style
+                                        .fg(span_style.fg.unwrap_or(THEME.read().unwrap().purple))
                                         .add_modifier(span_style.add_modifier);
                                     left_spans.push(Span::styled(text.clone(), merged));
                                 }
@@ -3555,10 +3905,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                                 .unwrap_or_else(|| " ".to_string());
                             right_spans.push(Span::styled(
                                 prefix,
-                                Style::default().fg(THEME.text_muted).bg(actual_bg),
+                                Style::default()
+                                    .fg(THEME.read().unwrap().text_muted)
+                                    .bg(actual_bg),
                             ));
 
-                            let content_base = Style::default().fg(THEME.text_normal).bg(actual_bg);
+                            let content_base = Style::default()
+                                .fg(THEME.read().unwrap().text_normal)
+                                .bg(actual_bg);
                             let final_style = if is_cursor {
                                 content_base
                                     .add_modifier(Modifier::UNDERLINED)
@@ -3570,7 +3924,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             if let Some(ref highlighted) = line.syntax_highlighted {
                                 for (span_style, text) in highlighted {
                                     let merged = final_style
-                                        .fg(span_style.fg.unwrap_or(THEME.text_normal))
+                                        .fg(span_style
+                                            .fg
+                                            .unwrap_or(THEME.read().unwrap().text_normal))
                                         .add_modifier(span_style.add_modifier);
                                     right_spans.push(Span::styled(text.clone(), merged));
                                 }
@@ -3584,31 +3940,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             }
                         }
                         crate::app::DiffLineType::Meta => {
-                            let mut s =
-                                Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
-                            if let Some(bg) = sel_bg {
-                                s = s.bg(bg);
-                            }
-                            let final_style = if is_cursor {
-                                s.add_modifier(Modifier::UNDERLINED)
-                                    .add_modifier(Modifier::BOLD)
-                            } else {
-                                s
-                            };
-                            if let Some(ref highlighted) = line.syntax_highlighted {
-                                for (span_style, text) in highlighted {
-                                    let merged = final_style
-                                        .fg(span_style.fg.unwrap_or(THEME.blue))
-                                        .add_modifier(span_style.add_modifier);
-                                    right_spans.push(Span::styled(text.clone(), merged));
-                                }
-                            } else {
-                                right_spans.push(Span::styled(&line.content, final_style));
-                            }
-                        }
-                        crate::app::DiffLineType::HunkHeader => {
                             let mut s = Style::default()
-                                .fg(THEME.purple)
+                                .fg(THEME.read().unwrap().blue)
                                 .add_modifier(Modifier::BOLD);
                             if let Some(bg) = sel_bg {
                                 s = s.bg(bg);
@@ -3622,7 +3955,31 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             if let Some(ref highlighted) = line.syntax_highlighted {
                                 for (span_style, text) in highlighted {
                                     let merged = final_style
-                                        .fg(span_style.fg.unwrap_or(THEME.purple))
+                                        .fg(span_style.fg.unwrap_or(THEME.read().unwrap().blue))
+                                        .add_modifier(span_style.add_modifier);
+                                    right_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            } else {
+                                right_spans.push(Span::styled(&line.content, final_style));
+                            }
+                        }
+                        crate::app::DiffLineType::HunkHeader => {
+                            let mut s = Style::default()
+                                .fg(THEME.read().unwrap().purple)
+                                .add_modifier(Modifier::BOLD);
+                            if let Some(bg) = sel_bg {
+                                s = s.bg(bg);
+                            }
+                            let final_style = if is_cursor {
+                                s.add_modifier(Modifier::UNDERLINED)
+                                    .add_modifier(Modifier::BOLD)
+                            } else {
+                                s
+                            };
+                            if let Some(ref highlighted) = line.syntax_highlighted {
+                                for (span_style, text) in highlighted {
+                                    let merged = final_style
+                                        .fg(span_style.fg.unwrap_or(THEME.read().unwrap().purple))
                                         .add_modifier(span_style.add_modifier);
                                     right_spans.push(Span::styled(text.clone(), merged));
                                 }
@@ -3676,8 +4033,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .collect();
 
                 for comment in matching_comments {
-                    let comment_style =
-                        Style::default().fg(THEME.yellow).bg(Color::Rgb(45, 45, 20));
+                    let comment_style = Style::default()
+                        .fg(THEME.read().unwrap().yellow)
+                        .bg(Color::Rgb(45, 45, 20));
 
                     let range_info = match (comment.end_line_num, comment.end_old_line_num) {
                         (Some(end_l), _) if end_l != comment.line_num.unwrap_or(0) => {
@@ -3690,7 +4048,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     };
 
                     let prefix_style = Style::default()
-                        .fg(THEME.yellow)
+                        .fg(THEME.read().unwrap().yellow)
                         .add_modifier(Modifier::BOLD);
 
                     let right_prefix_first = format!(" 💬 Draft Note{}: ", range_info);
@@ -3762,9 +4120,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         .collect();
 
                 for comment in matching_current {
-                    let comment_style = Style::default().fg(THEME.blue).bg(Color::Rgb(20, 30, 45));
+                    let comment_style = Style::default()
+                        .fg(THEME.read().unwrap().blue)
+                        .bg(Color::Rgb(20, 30, 45));
 
-                    let prefix_style = Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
+                    let prefix_style = Style::default()
+                        .fg(THEME.read().unwrap().blue)
+                        .add_modifier(Modifier::BOLD);
 
                     let right_prefix_first = format!(" 💬 @{}: ", comment.author.username);
 
@@ -3846,11 +4208,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let gutter_bg = Color::Rgb(22, 22, 26);
 
                 let marker_style = Style::default()
-                    .fg(THEME.yellow)
+                    .fg(THEME.read().unwrap().yellow)
                     .add_modifier(Modifier::BOLD)
                     .bg(gutter_bg);
 
-                let num_style = Style::default().fg(THEME.text_muted).bg(gutter_bg);
+                let num_style = Style::default()
+                    .fg(THEME.read().unwrap().text_muted)
+                    .bg(gutter_bg);
 
                 let sep_style = Style::default().fg(Color::Rgb(60, 60, 68)).bg(gutter_bg);
 
@@ -3945,10 +4309,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             .unwrap_or_else(|| " ".to_string());
                         line_spans.push(Span::styled(
                             prefix,
-                            Style::default().fg(THEME.text_muted).bg(actual_bg),
+                            Style::default()
+                                .fg(THEME.read().unwrap().text_muted)
+                                .bg(actual_bg),
                         ));
 
-                        let content_base = Style::default().fg(THEME.text_normal).bg(actual_bg);
+                        let content_base = Style::default()
+                            .fg(THEME.read().unwrap().text_normal)
+                            .bg(actual_bg);
                         let final_style = if is_cursor {
                             content_base
                                 .add_modifier(Modifier::UNDERLINED)
@@ -3960,7 +4328,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         if let Some(ref highlighted) = line.syntax_highlighted {
                             for (span_style, text) in highlighted {
                                 let merged = final_style
-                                    .fg(span_style.fg.unwrap_or(THEME.text_normal))
+                                    .fg(span_style.fg.unwrap_or(THEME.read().unwrap().text_normal))
                                     .add_modifier(span_style.add_modifier);
                                 line_spans.push(Span::styled(text.clone(), merged));
                             }
@@ -3974,34 +4342,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         }
                     }
                     crate::app::DiffLineType::Meta => {
-                        let mut s = Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
-                        if let Some(bg) = sel_bg {
-                            s = s.bg(bg);
-                        }
-                        let final_style = if is_cursor {
-                            s.add_modifier(Modifier::UNDERLINED)
-                                .add_modifier(Modifier::BOLD)
-                        } else {
-                            s
-                        };
-                        if let Some(ref highlighted) = line.syntax_highlighted {
-                            for (span_style, text) in highlighted {
-                                let merged = final_style
-                                    .fg(span_style.fg.unwrap_or(THEME.blue))
-                                    .add_modifier(span_style.add_modifier);
-                                if let Some(bg) = sel_bg {
-                                    line_spans.push(Span::styled(text.clone(), merged.bg(bg)));
-                                } else {
-                                    line_spans.push(Span::styled(text.clone(), merged));
-                                }
-                            }
-                        } else {
-                            line_spans.push(Span::styled(&line.content, final_style));
-                        }
-                    }
-                    crate::app::DiffLineType::HunkHeader => {
                         let mut s = Style::default()
-                            .fg(THEME.purple)
+                            .fg(THEME.read().unwrap().blue)
                             .add_modifier(Modifier::BOLD);
                         if let Some(bg) = sel_bg {
                             s = s.bg(bg);
@@ -4015,7 +4357,35 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         if let Some(ref highlighted) = line.syntax_highlighted {
                             for (span_style, text) in highlighted {
                                 let merged = final_style
-                                    .fg(span_style.fg.unwrap_or(THEME.purple))
+                                    .fg(span_style.fg.unwrap_or(THEME.read().unwrap().blue))
+                                    .add_modifier(span_style.add_modifier);
+                                if let Some(bg) = sel_bg {
+                                    line_spans.push(Span::styled(text.clone(), merged.bg(bg)));
+                                } else {
+                                    line_spans.push(Span::styled(text.clone(), merged));
+                                }
+                            }
+                        } else {
+                            line_spans.push(Span::styled(&line.content, final_style));
+                        }
+                    }
+                    crate::app::DiffLineType::HunkHeader => {
+                        let mut s = Style::default()
+                            .fg(THEME.read().unwrap().purple)
+                            .add_modifier(Modifier::BOLD);
+                        if let Some(bg) = sel_bg {
+                            s = s.bg(bg);
+                        }
+                        let final_style = if is_cursor {
+                            s.add_modifier(Modifier::UNDERLINED)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            s
+                        };
+                        if let Some(ref highlighted) = line.syntax_highlighted {
+                            for (span_style, text) in highlighted {
+                                let merged = final_style
+                                    .fg(span_style.fg.unwrap_or(THEME.read().unwrap().purple))
                                     .add_modifier(span_style.add_modifier);
                                 if let Some(bg) = sel_bg {
                                     line_spans.push(Span::styled(text.clone(), merged.bg(bg)));
@@ -4043,8 +4413,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .collect();
 
                 for comment in matching_comments {
-                    let comment_style =
-                        Style::default().fg(THEME.yellow).bg(Color::Rgb(45, 45, 20));
+                    let comment_style = Style::default()
+                        .fg(THEME.read().unwrap().yellow)
+                        .bg(Color::Rgb(45, 45, 20));
 
                     let range_info = match (comment.end_line_num, comment.end_old_line_num) {
                         (Some(end_l), _) if end_l != comment.line_num.unwrap_or(0) => {
@@ -4057,7 +4428,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     };
 
                     let prefix_style = Style::default()
-                        .fg(THEME.yellow)
+                        .fg(THEME.read().unwrap().yellow)
                         .add_modifier(Modifier::BOLD);
 
                     let right_prefix_first = format!(" 💬 Draft Note{}: ", range_info);
@@ -4109,9 +4480,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     .collect();
 
                 for comment in matching_current {
-                    let comment_style = Style::default().fg(THEME.blue).bg(Color::Rgb(20, 30, 45));
+                    let comment_style = Style::default()
+                        .fg(THEME.read().unwrap().blue)
+                        .bg(Color::Rgb(20, 30, 45));
 
-                    let prefix_style = Style::default().fg(THEME.blue).add_modifier(Modifier::BOLD);
+                    let prefix_style = Style::default()
+                        .fg(THEME.read().unwrap().blue)
+                        .add_modifier(Modifier::BOLD);
 
                     let right_prefix_first = format!(" 💬 @{}: ", comment.author.username);
 
@@ -4161,7 +4536,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let footer_p = Paragraph::new(" Esc/q: Exit • d: Toggle Diff Layout • Tab: Toggle Focus • h/l/Left/Right: Switch Panels • j/k/↑/↓: Navigate • J/K: Scroll Down/Up • v: Select Lines • c: Comment • e: Suggest Code • a: Comment Actions • r: Submit Review ")
             .alignment(Alignment::Center)
-            .style(Style::default().fg(THEME.text_muted).add_modifier(Modifier::ITALIC))
+            .style(Style::default().fg(THEME.read().unwrap().text_muted).add_modifier(Modifier::ITALIC))
             .wrap(ratatui::widgets::Wrap { trim: true });
 
         f.render_widget(Clear, area);
@@ -4212,14 +4587,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(format!(" {} ", menu.title))
             .title_style(
                 Style::default()
-                    .fg(THEME.header_fg)
+                    .fg(THEME.read().unwrap().header_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
+            .border_style(Style::default().fg(THEME.read().unwrap().border_focused))
             .style(Style::default().bg(Color::Reset));
 
-        let area = centered_rect(52, 48, size);
+        let area = centered_rect_min(52, 48, 42, 8, size);
 
         let label_width = menu
             .fields
@@ -4236,41 +4611,37 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .map(|(i, (label, val))| {
                 let is_selected = i == menu.selected_idx;
                 let item_bg = if is_selected {
-                    THEME.highlight_bg
+                    THEME.read().unwrap().highlight_bg
                 } else {
                     Color::Reset
                 };
 
                 let label_style = if is_selected {
                     Style::default()
-                        .fg(THEME.text_normal)
+                        .fg(THEME.read().unwrap().text_normal)
                         .bg(item_bg)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(THEME.text_muted).bg(item_bg)
+                    Style::default()
+                        .fg(THEME.read().unwrap().text_muted)
+                        .bg(item_bg)
                 };
 
                 let sep_style = if is_selected {
                     Style::default()
-                        .fg(THEME.text_normal)
+                        .fg(THEME.read().unwrap().text_normal)
                         .bg(item_bg)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(THEME.text_muted).bg(item_bg)
-                };
-
-                let val_style = if is_selected {
                     Style::default()
-                        .fg(THEME.text_normal)
+                        .fg(THEME.read().unwrap().text_muted)
                         .bg(item_bg)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(THEME.text_normal).bg(item_bg)
                 };
 
-                let (display_val, display_style) = if val.is_empty() {
-                    if is_selected {
-                        let action_hint = match label.as_str() {
+                let mut val_spans = Vec::new();
+                if val.is_empty() {
+                    let action_hint = if is_selected {
+                        match label.as_str() {
                             "Labels"
                             | "Assignees"
                             | "Reviewers"
@@ -4281,25 +4652,30 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             | "Source Branch"
                             | "Target Branch" => " <Enter to select>",
                             "Description" => " <Enter to edit>",
-                            "Description ($EDITOR)" => " <Enter to open editor>",
                             _ => " <Enter to edit>",
-                        };
-                        (
-                            format!("{} ▋", action_hint),
-                            Style::default()
-                                .fg(THEME.text_muted)
-                                .bg(item_bg)
-                                .add_modifier(Modifier::ITALIC),
-                        )
+                        }
                     } else {
-                        (
-                            " <empty>".to_string(),
-                            Style::default()
-                                .fg(THEME.border)
-                                .bg(item_bg)
-                                .add_modifier(Modifier::ITALIC),
-                        )
-                    }
+                        " <empty>"
+                    };
+                    let hint_style = if is_selected {
+                        Style::default()
+                            .fg(THEME.read().unwrap().text_muted)
+                            .bg(item_bg)
+                            .add_modifier(Modifier::ITALIC)
+                    } else {
+                        Style::default()
+                            .fg(THEME.read().unwrap().border)
+                            .bg(item_bg)
+                            .add_modifier(Modifier::ITALIC)
+                    };
+                    val_spans.push(Span::styled(
+                        if is_selected {
+                            format!("{} ▋", action_hint)
+                        } else {
+                            action_hint.to_string()
+                        },
+                        hint_style,
+                    ));
                 } else {
                     let truncated = if val.len() > 50 {
                         let mut s = val[..47].to_string();
@@ -4308,17 +4684,84 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     } else {
                         val.clone()
                     };
-                    (truncated, val_style)
-                };
+                    match label.as_str() {
+                        "Labels" => {
+                            let parts: Vec<&str> = truncated.split(',').collect();
+                            for (idx, part) in parts.iter().enumerate() {
+                                if idx > 0 {
+                                    val_spans.push(Span::styled(
+                                        ", ",
+                                        Style::default()
+                                            .fg(THEME.read().unwrap().text_normal)
+                                            .bg(item_bg),
+                                    ));
+                                }
+                                let trimmed = part.trim();
+                                let label_color = get_label_color(trimmed);
+                                let mut style = Style::default()
+                                    .fg(label_color)
+                                    .bg(item_bg)
+                                    .add_modifier(Modifier::BOLD);
+                                if is_selected {
+                                    style = style.add_modifier(Modifier::UNDERLINED);
+                                }
+                                val_spans.push(Span::styled(trimmed.to_string(), style));
+                            }
+                        }
+                        "Assignees" | "Reviewers" => {
+                            let parts: Vec<&str> = truncated.split(',').collect();
+                            for (idx, part) in parts.iter().enumerate() {
+                                if idx > 0 {
+                                    val_spans.push(Span::styled(
+                                        ", ",
+                                        Style::default()
+                                            .fg(THEME.read().unwrap().text_normal)
+                                            .bg(item_bg),
+                                    ));
+                                }
+                                let trimmed = part.trim();
+                                let mut style =
+                                    Style::default().fg(THEME.read().unwrap().blue).bg(item_bg);
+                                if is_selected {
+                                    style = style.add_modifier(Modifier::BOLD);
+                                }
+                                val_spans.push(Span::styled(trimmed.to_string(), style));
+                            }
+                        }
+                        _ => {
+                            let val_fg = match label.as_str() {
+                                "Milestone" => THEME.read().unwrap().purple,
+                                "Due Date" => THEME.read().unwrap().yellow,
+                                "Status (Draft/Ready)" | "Source Branch" | "Target Branch" => {
+                                    THEME.read().unwrap().purple
+                                }
+                                "Confidential" => {
+                                    if val.to_lowercase() == "yes" {
+                                        THEME.read().unwrap().red
+                                    } else {
+                                        THEME.read().unwrap().green
+                                    }
+                                }
+                                _ => THEME.read().unwrap().text_normal,
+                            };
+                            let mut style = Style::default().fg(val_fg).bg(item_bg);
+                            if is_selected {
+                                style = style.add_modifier(Modifier::BOLD);
+                            }
+                            val_spans.push(Span::styled(truncated, style));
+                        }
+                    }
+                }
 
-                let line = Line::from(vec![
+                let mut line_spans = vec![
                     Span::styled(
                         format!("  {:label_width$} ", label, label_width = label_width),
                         label_style,
                     ),
                     Span::styled(" ❯ ", sep_style),
-                    Span::styled(display_val, display_style),
-                ]);
+                ];
+                line_spans.extend(val_spans);
+                let line = Line::from(line_spans);
 
                 ListItem::new(line).style(Style::default().bg(item_bg))
             })
@@ -4329,14 +4772,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let all_items: Vec<ListItem> = if is_new_entity {
             let is_submit_selected = menu.selected_idx == submit_idx;
             let submit_bg = if is_submit_selected {
-                THEME.border_focused
+                THEME.read().unwrap().border_focused
             } else {
                 Color::Reset
             };
             let submit_fg = if is_submit_selected {
-                THEME.bg
+                THEME.read().unwrap().bg
             } else {
-                THEME.border_focused
+                THEME.read().unwrap().border_focused
             };
             let submit_line = Line::from(vec![Span::styled(
                 "          [ Submit ]          ",
@@ -4372,7 +4815,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let footer = Paragraph::new(footer_text)
             .style(
                 Style::default()
-                    .fg(THEME.text_muted)
+                    .fg(THEME.read().unwrap().text_muted)
                     .bg(Color::Reset)
                     .add_modifier(Modifier::ITALIC),
             )
@@ -4392,14 +4835,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .title(format!(" {} ", selector.title))
                 .title_style(
                     Style::default()
-                        .fg(THEME.header_fg)
+                        .fg(THEME.read().unwrap().header_fg)
                         .add_modifier(Modifier::BOLD),
                 )
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(THEME.border_focused))
+                .border_style(Style::default().fg(THEME.read().unwrap().border_focused))
                 .style(Style::default().bg(Color::Reset));
 
-            let area = centered_rect(50, 60, size);
+            let area = centered_rect_min(50, 60, 34, 6, size);
 
             let has_filter = selector.field_type != "comment_action_select"
                 && selector.field_type != "review_submit_status"
@@ -4431,9 +4874,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
             };
 
             let border_color_search = if selector.is_filtering {
-                THEME.border_focused
+                THEME.read().unwrap().border_focused
             } else {
-                THEME.border
+                THEME.read().unwrap().border
             };
             let search_block = Block::default()
                 .borders(Borders::ALL)
@@ -4450,11 +4893,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
             let search_style = if selector.search_query.is_empty() && !selector.is_filtering {
                 Style::default()
-                    .fg(THEME.text_muted)
+                    .fg(THEME.read().unwrap().text_muted)
                     .bg(Color::Reset)
                     .add_modifier(Modifier::ITALIC)
             } else {
-                Style::default().fg(THEME.text_normal).bg(Color::Reset)
+                Style::default()
+                    .fg(THEME.read().unwrap().text_normal)
+                    .bg(Color::Reset)
             };
 
             let search_p = Paragraph::new(search_text)
@@ -4472,7 +4917,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             let footer_p = Paragraph::new(footer_text)
                 .style(
                     Style::default()
-                        .fg(THEME.text_muted)
+                        .fg(THEME.read().unwrap().text_muted)
                         .bg(Color::Reset)
                         .add_modifier(Modifier::ITALIC),
                 )
@@ -4489,7 +4934,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let p = Paragraph::new("\n  Loading options from GitLab...")
                     .style(
                         Style::default()
-                            .fg(THEME.text_muted)
+                            .fg(THEME.read().unwrap().text_muted)
                             .bg(Color::Reset)
                             .add_modifier(Modifier::ITALIC),
                     )
@@ -4501,7 +4946,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     let p = Paragraph::new("\n  No matching options found.")
                         .style(
                             Style::default()
-                                .fg(THEME.text_muted)
+                                .fg(THEME.read().unwrap().text_muted)
                                 .bg(Color::Reset)
                                 .add_modifier(Modifier::ITALIC),
                         )
@@ -4521,13 +4966,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                             let marker = if is_selected { " ▣ " } else { " ☐ " };
                             let marker_color = if is_selected {
-                                THEME.green
+                                THEME.read().unwrap().green
                             } else {
-                                THEME.text_muted
+                                THEME.read().unwrap().text_muted
                             };
 
                             let item_bg = if i == selector.cursor_idx {
-                                THEME.highlight_bg
+                                THEME.read().unwrap().highlight_bg
                             } else {
                                 Color::Reset
                             };
@@ -4535,20 +4980,22 @@ pub fn render(f: &mut Frame, app: &mut App) {
                             let style = if i == selector.cursor_idx {
                                 Style::default()
                                     .bg(item_bg)
-                                    .fg(THEME.text_normal)
+                                    .fg(THEME.read().unwrap().text_normal)
                                     .add_modifier(Modifier::BOLD)
                             } else {
-                                Style::default().fg(THEME.text_normal).bg(item_bg)
+                                Style::default()
+                                    .fg(THEME.read().unwrap().text_normal)
+                                    .bg(item_bg)
                             };
 
                             let highlight_style = if i == selector.cursor_idx {
                                 Style::default()
                                     .bg(item_bg)
-                                    .fg(THEME.yellow)
+                                    .fg(THEME.read().unwrap().yellow)
                                     .add_modifier(Modifier::BOLD)
                             } else {
                                 Style::default()
-                                    .fg(THEME.yellow)
+                                    .fg(THEME.read().unwrap().yellow)
                                     .bg(item_bg)
                                     .add_modifier(Modifier::BOLD)
                             };
@@ -4592,14 +5039,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(format!(" {} ", text_input.title))
             .title_style(
                 Style::default()
-                    .fg(THEME.header_fg)
+                    .fg(THEME.read().unwrap().header_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
+            .border_style(Style::default().fg(THEME.read().unwrap().border_focused))
             .style(Style::default().bg(Color::Reset));
 
-        let area = centered_rect(60, 60, size);
+        let area = centered_rect_min(60, 60, 28, 4, size);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -4621,13 +5068,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
 
         let value_p = Paragraph::new(display_val)
-            .style(Style::default().fg(THEME.text_normal).bg(Color::Reset))
-            .wrap(ratatui::widgets::Wrap { trim: true });
-
-        let footer_p = Paragraph::new("  Enter: Confirm • Esc: Cancel  ")
             .style(
                 Style::default()
-                    .fg(THEME.text_muted)
+                    .fg(THEME.read().unwrap().text_normal)
+                    .bg(Color::Reset),
+            )
+            .wrap(ratatui::widgets::Wrap { trim: true });
+
+        let footer_p = Paragraph::new("  Enter: Confirm • Esc: Cancel • Ctrl-e: Open $EDITOR  ")
+            .style(
+                Style::default()
+                    .fg(THEME.read().unwrap().text_muted)
                     .bg(Color::Reset)
                     .add_modifier(Modifier::ITALIC),
             )
@@ -4639,308 +5090,437 @@ pub fn render(f: &mut Frame, app: &mut App) {
         f.render_widget(footer_p, chunks[1]);
     }
 
+    if let Some(date_picker) = &app.date_picker {
+        let block = Block::default()
+            .title(format!(" {} ", date_picker.title))
+            .title_style(
+                Style::default()
+                    .fg(THEME.read().unwrap().header_fg)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(THEME.read().unwrap().border_focused))
+            .style(Style::default().bg(Color::Reset));
+
+        // 36 columns wide, 11 rows high
+        let area = centered_rect_fixed(36, 11, size);
+        let inner_area = block.inner(area);
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(
+                [
+                    Constraint::Length(1), // Month/Year line
+                    Constraint::Min(0),    // Grid of days
+                    Constraint::Length(1), // Footer keys
+                ]
+                .as_ref(),
+            )
+            .split(inner_area);
+
+        let month_str = match date_picker.month {
+            1 => "January",
+            2 => "February",
+            3 => "March",
+            4 => "April",
+            5 => "May",
+            6 => "June",
+            7 => "July",
+            8 => "August",
+            9 => "September",
+            10 => "October",
+            11 => "November",
+            12 => "December",
+            _ => "",
+        };
+        let header_str = format!("◀  {} {}  ▶", month_str, date_picker.year);
+        let header_p = Paragraph::new(header_str)
+            .alignment(Alignment::Center)
+            .style(
+                Style::default()
+                    .fg(THEME.read().unwrap().header_fg)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+        // Weekday headers
+        let weekday_headers = vec!["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+        let col_headers = weekday_headers
+            .into_iter()
+            .map(|h| Cell::from(Line::from(h).alignment(Alignment::Center)));
+        let table_header =
+            Row::new(col_headers).style(Style::default().fg(THEME.read().unwrap().text_muted));
+
+        // Calculate days grid
+        let first_date =
+            chrono::NaiveDate::from_ymd_opt(date_picker.year, date_picker.month, 1).unwrap();
+        use chrono::Datelike;
+        let start_weekday = first_date.weekday().num_days_from_sunday(); // 0 = Sunday, 1 = Monday, etc.
+        let total_days = crate::app::days_in_month(date_picker.year, date_picker.month);
+
+        let mut rows = Vec::new();
+        for r in 0..6 {
+            let mut row_cells = Vec::new();
+            for c in 0..7 {
+                let cell_idx = r * 7 + c;
+                let day_num = (cell_idx as i32) - (start_weekday as i32) + 1;
+                if day_num >= 1 && day_num <= total_days as i32 {
+                    let is_selected = day_num as u32 == date_picker.day;
+                    let style = if is_selected {
+                        Style::default()
+                            .bg(THEME.read().unwrap().highlight_bg)
+                            .fg(THEME.read().unwrap().header_fg)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(THEME.read().unwrap().text_normal)
+                    };
+                    row_cells.push(Cell::from(
+                        Line::from(day_num.to_string())
+                            .alignment(Alignment::Center)
+                            .style(style),
+                    ));
+                } else {
+                    row_cells.push(Cell::from(""));
+                }
+            }
+            rows.push(Row::new(row_cells));
+        }
+
+        let widths = [
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(4),
+        ];
+
+        let table = Table::new(rows, widths)
+            .header(table_header)
+            .column_spacing(1);
+
+        let footer_p = Paragraph::new("←↓↑→/hjkl: Move • [/]: Month • Enter: Set")
+            .style(
+                Style::default()
+                    .fg(THEME.read().unwrap().text_muted)
+                    .bg(Color::Reset)
+                    .add_modifier(Modifier::ITALIC),
+            )
+            .alignment(Alignment::Center);
+
+        f.render_widget(Clear, area);
+        f.render_widget(block, area);
+        f.render_widget(header_p, chunks[0]);
+        f.render_widget(table, chunks[1]);
+        f.render_widget(footer_p, chunks[2]);
+    }
+
     if app.show_help {
         struct Shortcut {
             category: &'static str,
-            key: &'static str,
+            key: std::borrow::Cow<'static, str>,
             action: &'static str,
         }
 
-        let shortcuts = [
+        let s = |k: &'static str| std::borrow::Cow::Borrowed(k);
+        let d = |k: String| std::borrow::Cow::Owned(k);
+
+        let shortcuts: Vec<Shortcut> = vec![
             // Global & Nav
             Shortcut {
                 category: "Global & Nav",
-                key: "l / →",
+                key: s("l / →"),
                 action: "Next tab",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "h / ←",
+                key: s("h / ←"),
                 action: "Previous tab",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "Tab / t",
+                key: d(format!(
+                    "{}, / Tab / t",
+                    app.config.keybindings.global.configure
+                )),
                 action: "Toggle columns config popup",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "j / k / ↓ / ↑",
+                key: s("j / k / ↓ / ↑"),
                 action: "Select item / Scroll page",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "J / K",
+                key: s("J / K"),
                 action: "Scroll description / trace / notes",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "f / /",
+                key: d(format!("{} / f", app.config.keybindings.global.search)),
                 action: "Open fuzzy search / filter bar",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "F5 / Ctrl+R",
+                key: d(format!(
+                    "F5 / Ctrl+R / {}",
+                    app.config.keybindings.global.refresh
+                )),
                 action: "Refresh active tab data",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "Ctrl+S",
+                key: s("Ctrl+S"),
                 action: "Switch repository",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "u",
+                key: s("u"),
                 action: "Check for updates",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "? / F1",
+                key: d(format!("{} / F1", app.config.keybindings.global.help)),
                 action: "Show this help modal",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "q / Esc",
+                key: d(format!("q / {} / Esc", app.config.keybindings.global.quit)),
                 action: "Quit / Close overlay",
             },
             Shortcut {
                 category: "Global & Nav",
-                key: "Ctrl+C",
+                key: s("Ctrl+C"),
                 action: "Quit program",
             },
-            // Issues
             Shortcut {
                 category: "Issues",
-                key: "n",
+                key: s("n"),
                 action: "Create new Issue",
             },
             Shortcut {
                 category: "Issues",
-                key: "e",
+                key: s("e"),
                 action: "Open parameter edit menu",
             },
             Shortcut {
                 category: "Issues",
-                key: "c",
+                key: s("c"),
                 action: "Close selected Issue",
             },
             Shortcut {
                 category: "Issues",
-                key: "r",
+                key: s("r"),
                 action: "Reopen selected Issue",
             },
             Shortcut {
                 category: "Issues",
-                key: "o",
+                key: s("o"),
                 action: "Open selected Issue in browser",
             },
-            // Merge Requests
             Shortcut {
                 category: "Merge Requests",
-                key: "n",
+                key: s("n"),
                 action: "Create new Merge Request",
             },
             Shortcut {
                 category: "Merge Requests",
-                key: "e",
+                key: s("e"),
                 action: "Open parameter edit menu",
             },
             Shortcut {
                 category: "Merge Requests",
-                key: "a",
+                key: s("a"),
                 action: "Approve selected MR",
             },
             Shortcut {
                 category: "Merge Requests",
-                key: "m",
+                key: s("m"),
                 action: "Merge selected MR (squash + delete)",
             },
             Shortcut {
                 category: "Merge Requests",
-                key: "s",
+                key: s("s"),
                 action: "Toggle Draft / Ready status",
             },
             Shortcut {
                 category: "Merge Requests",
-                key: "v",
+                key: s("v"),
                 action: "View Merge Request diff changes",
             },
             Shortcut {
                 category: "Merge Requests",
-                key: "c",
+                key: s("c"),
                 action: "Close selected MR",
             },
             Shortcut {
                 category: "Merge Requests",
-                key: "r",
+                key: s("r"),
                 action: "Reopen selected MR",
             },
             Shortcut {
                 category: "Merge Requests",
-                key: "o",
+                key: s("o"),
                 action: "Open selected MR in browser",
             },
-            // Pipelines
             Shortcut {
                 category: "Pipelines",
-                key: "Enter",
+                key: s("Enter"),
                 action: "View pipeline jobs list",
             },
             Shortcut {
                 category: "Pipelines",
-                key: "p",
+                key: s("p"),
                 action: "Trigger new pipeline from MR",
             },
             Shortcut {
                 category: "Pipelines",
-                key: "r",
+                key: s("r"),
                 action: "Retry selected pipeline(s)",
             },
             Shortcut {
                 category: "Pipelines",
-                key: "c",
+                key: s("c"),
                 action: "Cancel pipeline execution",
             },
             Shortcut {
                 category: "Pipelines",
-                key: "Space",
+                key: s("Space"),
                 action: "Check / uncheck pipeline for bulk retry",
             },
             Shortcut {
                 category: "Pipelines",
-                key: "o",
+                key: s("o"),
                 action: "Open pipeline in browser",
             },
-            // Jobs
             Shortcut {
                 category: "Jobs",
-                key: "Enter",
+                key: s("Enter"),
                 action: "View job trace (toggle zoom)",
             },
             Shortcut {
                 category: "Jobs",
-                key: "Esc / Backspc",
+                key: s("Esc / Backspc"),
                 action: "Go back to Pipelines list",
             },
             Shortcut {
                 category: "Jobs",
-                key: "r",
+                key: s("r"),
                 action: "Retry selected job(s)",
             },
             Shortcut {
                 category: "Jobs",
-                key: "c",
+                key: s("c"),
                 action: "Cancel selected job(s)",
             },
             Shortcut {
                 category: "Jobs",
-                key: "Space",
+                key: s("Space"),
                 action: "Check / uncheck job for bulk retry/cancel",
             },
             Shortcut {
                 category: "Jobs",
-                key: "s",
+                key: s("s"),
                 action: "Select all jobs in stage",
             },
             Shortcut {
                 category: "Jobs",
-                key: "d",
+                key: s("d"),
                 action: "Download job artifact",
             },
             Shortcut {
                 category: "Jobs",
-                key: "e",
+                key: s("e"),
                 action: "Open job trace in external $EDITOR",
             },
             Shortcut {
                 category: "Jobs",
-                key: "o",
+                key: s("o"),
                 action: "Open selected job in browser",
             },
-            // Milestones
             Shortcut {
                 category: "Milestones",
-                key: "J / K",
+                key: s("n"),
+                action: "Create new milestone",
+            },
+            Shortcut {
+                category: "Milestones",
+                key: s("J / K"),
                 action: "Scroll milestone issues list",
             },
-            // Runners
             Shortcut {
                 category: "Runners",
-                key: "p / r",
+                key: s("p / r"),
                 action: "Pause / Resume runner",
             },
             Shortcut {
                 category: "Runners",
-                key: "e",
+                key: s("e"),
                 action: "Edit runner description text",
             },
-            // Releases
             Shortcut {
                 category: "Releases",
-                key: "Enter",
+                key: s("Enter"),
                 action: "View release notes (toggle zoom)",
             },
             Shortcut {
                 category: "Releases",
-                key: "n",
+                key: s("n"),
                 action: "Create new release tag & changelog",
             },
             Shortcut {
                 category: "Releases",
-                key: "o",
+                key: s("o"),
                 action: "Open release in browser",
             },
-            // TODOs
             Shortcut {
                 category: "TODOs",
-                key: "Enter / o",
+                key: s("Enter / o"),
                 action: "Open todo target & mark read",
             },
-            // Terminal
             Shortcut {
                 category: "Terminal",
-                key: "j / k / ↑ / ↓",
+                key: s("j / k / ↑ / ↓"),
                 action: "Scroll terminal log",
             },
-            // Diff View
             Shortcut {
                 category: "Diff View",
-                key: "q / Esc",
+                key: s("q / Esc"),
                 action: "Exit Diff View",
             },
             Shortcut {
                 category: "Diff View",
-                key: "Tab",
+                key: s("Tab"),
                 action: "Toggle Focus (Files / Diff)",
             },
             Shortcut {
                 category: "Diff View",
-                key: "h / l / Left / Right",
+                key: s("h / l / Left / Right"),
                 action: "Switch Panel Focus",
             },
             Shortcut {
                 category: "Diff View",
-                key: "j / k / ↓ / ↑",
+                key: s("j / k / ↓ / ↑"),
                 action: "Navigate files or diff lines",
             },
             Shortcut {
                 category: "Diff View",
-                key: "J / K",
+                key: s("J / K"),
                 action: "Next / Previous Hunk",
             },
             Shortcut {
                 category: "Diff View",
-                key: "c",
+                key: s("c"),
                 action: "Add Comment on Line",
             },
             Shortcut {
                 category: "Diff View",
-                key: "r",
+                key: s("r"),
                 action: "Submit Review (approve/changes/comment)",
             },
             Shortcut {
                 category: "Diff View",
-                key: "? / F1",
+                key: s("? / F1"),
                 action: "Show this help modal",
             },
         ];
@@ -4970,11 +5550,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(" Keyboard Shortcuts ")
             .title_style(
                 Style::default()
-                    .fg(THEME.header_fg)
+                    .fg(THEME.read().unwrap().header_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
+            .border_style(Style::default().fg(THEME.read().unwrap().border_focused))
             .border_type(BorderType::Double)
             .style(Style::default().bg(Color::Reset));
 
@@ -4994,9 +5574,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .split(area);
 
         let border_color = if app.help_search_query.is_empty() {
-            THEME.border
+            THEME.read().unwrap().border
         } else {
-            THEME.border_focused
+            THEME.read().unwrap().border_focused
         };
         let search_block = Block::default()
             .borders(Borders::ALL)
@@ -5004,7 +5584,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(" Filter Shortcuts (Type to filter, Esc/Enter to exit) ")
             .title_style(
                 Style::default()
-                    .fg(THEME.text_muted)
+                    .fg(THEME.read().unwrap().text_muted)
                     .add_modifier(Modifier::BOLD),
             );
 
@@ -5016,10 +5596,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let search_style = if app.help_search_query.is_empty() {
             Style::default()
-                .fg(THEME.text_muted)
+                .fg(THEME.read().unwrap().text_muted)
                 .add_modifier(Modifier::ITALIC)
         } else {
-            Style::default().fg(THEME.text_normal)
+            Style::default().fg(THEME.read().unwrap().text_normal)
         };
 
         let search_p = Paragraph::new(search_text)
@@ -5043,18 +5623,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         Cell::from(Span::styled(
                             s.category,
                             Style::default()
-                                .fg(THEME.purple)
+                                .fg(THEME.read().unwrap().purple)
                                 .add_modifier(Modifier::BOLD),
                         )),
                         Cell::from(Span::styled(
-                            s.key,
+                            s.key.clone(),
                             Style::default()
-                                .fg(THEME.text_normal)
+                                .fg(THEME.read().unwrap().text_normal)
                                 .add_modifier(Modifier::BOLD),
                         )),
                         Cell::from(Span::styled(
                             s.action,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                         )),
                     ]));
                     last_category = s.category;
@@ -5062,14 +5642,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     result_rows.push(Row::new(vec![
                         Cell::from(""),
                         Cell::from(Span::styled(
-                            s.key,
+                            s.key.clone(),
                             Style::default()
-                                .fg(THEME.text_normal)
+                                .fg(THEME.read().unwrap().text_normal)
                                 .add_modifier(Modifier::BOLD),
                         )),
                         Cell::from(Span::styled(
                             s.action,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                         )),
                     ]));
                 }
@@ -5089,18 +5669,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
                         Cell::from(Span::styled(
                             s.category,
                             Style::default()
-                                .fg(THEME.purple)
+                                .fg(THEME.read().unwrap().purple)
                                 .add_modifier(Modifier::BOLD),
                         )),
                         Cell::from(Span::styled(
-                            s.key,
+                            s.key.clone(),
                             Style::default()
-                                .fg(THEME.text_normal)
+                                .fg(THEME.read().unwrap().text_normal)
                                 .add_modifier(Modifier::BOLD),
                         )),
                         Cell::from(Span::styled(
                             s.action,
-                            Style::default().fg(THEME.text_normal),
+                            Style::default().fg(THEME.read().unwrap().text_normal),
                         )),
                     ])
                 })
@@ -5114,7 +5694,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         ];
 
         let header_style = Style::default()
-            .fg(THEME.header_fg)
+            .fg(THEME.read().unwrap().header_fg)
             .add_modifier(Modifier::BOLD);
         let table = Table::new(rows, widths)
             .header(
@@ -5133,7 +5713,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .alignment(Alignment::Center)
             .style(
                 Style::default()
-                    .fg(THEME.text_muted)
+                    .fg(THEME.read().unwrap().text_muted)
                     .add_modifier(Modifier::ITALIC),
             )
             .wrap(ratatui::widgets::Wrap { trim: true });
@@ -5146,7 +5726,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     if app.focus_column_checklist {
         let tab = app.active_tab;
-        let cols = tab.columns();
+        let is_github = app
+            .gitlab_client
+            .as_ref()
+            .map(|c| c.is_github)
+            .unwrap_or(false);
+        let cols = tab.columns(is_github);
         let active_idx = app.column_checklist_idx;
 
         let group_cols: Vec<&str> = cols.iter().copied().collect();
@@ -5155,17 +5740,19 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let cols_end = cols.len();
         let group_end = cols_end + group_cols.len();
+        let theme_list_len = crate::config::THEME_PRESETS.len();
         let width = 48;
-        let height = (columns_list.len() + group_cols.len() + 4 + 2 + 6) as u16;
+        let height =
+            (columns_list.len() + group_cols.len() + theme_list_len + 4 + 2 + 2 + 6 + 6) as u16;
         let area = centered_rect_fixed(width, height, size);
 
         let checklist_block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
+            .border_style(Style::default().fg(THEME.read().unwrap().border_focused))
             .title(format!(" Configure View: {} ", tab.title(is_github)))
             .title_style(
                 Style::default()
-                    .fg(THEME.border_focused)
+                    .fg(THEME.read().unwrap().border_focused)
                     .add_modifier(Modifier::BOLD),
             );
 
@@ -5174,17 +5761,22 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let inner_area = checklist_block.inner(area);
 
+        let themes = crate::config::THEME_PRESETS;
+        let order_end = group_end + 2;
+
         let mut constraints: Vec<Constraint> = Vec::new();
-        // COLUMNS header + list
-        constraints.push(Constraint::Length(1));
+        constraints.push(Constraint::Length(1)); // COLUMNS header
         constraints.push(Constraint::Length(columns_list.len() as u16));
         constraints.push(Constraint::Length(1)); // spacer
         constraints.push(Constraint::Length(1)); // GROUP BY header
-        constraints.push(Constraint::Length(group_cols.len() as u16)); // GROUP BY list
+        constraints.push(Constraint::Length(group_cols.len() as u16));
         constraints.push(Constraint::Length(1)); // spacer
         constraints.push(Constraint::Length(1)); // ORDER header
-        constraints.push(Constraint::Length(2)); // ORDER list
-        constraints.push(Constraint::Min(0));
+        constraints.push(Constraint::Length(2));
+        constraints.push(Constraint::Length(1)); // spacer
+        constraints.push(Constraint::Length(1)); // THEME header
+        constraints.push(Constraint::Length(themes.len() as u16));
+        constraints.push(Constraint::Min(0)); // footer
 
         let popup_layout = Layout::default()
             .direction(Direction::Vertical)
@@ -5193,16 +5785,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         let mut chunk_idx = 0;
 
-        // Render COLUMNS header
         let columns_header = Paragraph::new("  COLUMNS").style(
             Style::default()
-                .fg(THEME.header_fg)
+                .fg(THEME.read().unwrap().header_fg)
                 .add_modifier(Modifier::BOLD),
         );
         f.render_widget(columns_header, popup_layout[chunk_idx]);
         chunk_idx += 1;
 
-        // Render COLUMNS list
         let col_items: Vec<ListItem> = columns_list
             .iter()
             .map(|&(orig_idx, col)| {
@@ -5224,13 +5814,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let is_active = orig_idx == active_idx;
                 let style = if is_active {
                     Style::default()
-                        .fg(THEME.bg)
-                        .bg(THEME.border_focused)
+                        .fg(THEME.read().unwrap().bg)
+                        .bg(THEME.read().unwrap().border_focused)
                         .add_modifier(Modifier::BOLD)
                 } else if checked {
-                    Style::default().fg(THEME.text_normal)
+                    Style::default().fg(THEME.read().unwrap().text_normal)
                 } else {
-                    Style::default().fg(THEME.text_muted)
+                    Style::default().fg(THEME.read().unwrap().text_muted)
                 };
                 ListItem::new(text).style(style)
             })
@@ -5240,16 +5830,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         chunk_idx += 1; // spacer
 
-        // Render GROUP BY header
         let group_header = Paragraph::new("  GROUP BY").style(
             Style::default()
-                .fg(THEME.green)
+                .fg(THEME.read().unwrap().green)
                 .add_modifier(Modifier::BOLD),
         );
         f.render_widget(group_header, popup_layout[chunk_idx]);
         chunk_idx += 1;
 
-        // Render GROUP BY list
         let group_items: Vec<ListItem> = group_cols
             .iter()
             .enumerate()
@@ -5260,13 +5848,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let is_active = flat_idx == active_idx;
                 let style = if is_active {
                     Style::default()
-                        .fg(THEME.bg)
-                        .bg(THEME.border_focused)
+                        .fg(THEME.read().unwrap().bg)
+                        .bg(THEME.read().unwrap().border_focused)
                         .add_modifier(Modifier::BOLD)
                 } else if is_selected {
-                    Style::default().fg(THEME.green)
+                    Style::default().fg(THEME.read().unwrap().green)
                 } else {
-                    Style::default().fg(THEME.text_normal)
+                    Style::default().fg(THEME.read().unwrap().text_normal)
                 };
                 ListItem::new(text).style(style)
             })
@@ -5276,16 +5864,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
         chunk_idx += 1; // spacer
 
-        // Render ORDER header
         let order_header = Paragraph::new("  ORDER").style(
             Style::default()
-                .fg(THEME.yellow)
+                .fg(THEME.read().unwrap().yellow)
                 .add_modifier(Modifier::BOLD),
         );
         f.render_widget(order_header, popup_layout[chunk_idx]);
         chunk_idx += 1;
 
-        // Render ORDER list (two items: Ascending / Descending)
         let order_items: Vec<ListItem> = ["Ascending", "Descending"]
             .iter()
             .enumerate()
@@ -5296,13 +5882,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 let is_active = flat_idx == active_idx;
                 let style = if is_active {
                     Style::default()
-                        .fg(THEME.bg)
-                        .bg(THEME.border_focused)
+                        .fg(THEME.read().unwrap().bg)
+                        .bg(THEME.read().unwrap().border_focused)
                         .add_modifier(Modifier::BOLD)
                 } else if is_selected {
-                    Style::default().fg(THEME.yellow)
+                    Style::default().fg(THEME.read().unwrap().yellow)
                 } else {
-                    Style::default().fg(THEME.text_normal)
+                    Style::default().fg(THEME.read().unwrap().text_normal)
                 };
                 ListItem::new(text).style(style)
             })
@@ -5310,12 +5896,45 @@ pub fn render(f: &mut Frame, app: &mut App) {
         f.render_widget(List::new(order_items), popup_layout[chunk_idx]);
         chunk_idx += 1;
 
-        // Footer
+        chunk_idx += 1; // spacer
+
+        let theme_header = Paragraph::new("  THEME").style(
+            Style::default()
+                .fg(THEME.read().unwrap().purple)
+                .add_modifier(Modifier::BOLD),
+        );
+        f.render_widget(theme_header, popup_layout[chunk_idx]);
+        chunk_idx += 1;
+
+        let theme_items: Vec<ListItem> = themes
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let flat_idx = order_end + i;
+                let is_selected = app.config.theme_preset.as_deref().unwrap_or("default") == *name;
+                let text = format!("  {} {}", if is_selected { "◉" } else { "○" }, name);
+                let is_active = flat_idx == active_idx;
+                let style = if is_active {
+                    Style::default()
+                        .fg(THEME.read().unwrap().bg)
+                        .bg(THEME.read().unwrap().border_focused)
+                        .add_modifier(Modifier::BOLD)
+                } else if is_selected {
+                    Style::default().fg(THEME.read().unwrap().purple)
+                } else {
+                    Style::default().fg(THEME.read().unwrap().text_normal)
+                };
+                ListItem::new(text).style(style)
+            })
+            .collect();
+        f.render_widget(List::new(theme_items), popup_layout[chunk_idx]);
+        chunk_idx += 1;
+
         let footer_p = Paragraph::new(" [Spc/Enter] Toggle • [,/Esc] Close ")
             .alignment(Alignment::Center)
             .style(
                 Style::default()
-                    .fg(THEME.text_muted)
+                    .fg(THEME.read().unwrap().text_muted)
                     .add_modifier(Modifier::ITALIC),
             )
             .wrap(ratatui::widgets::Wrap { trim: true });
@@ -5329,11 +5948,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .title(format!(" {} ", selector.title))
                 .title_style(
                     Style::default()
-                        .fg(THEME.header_fg)
+                        .fg(THEME.read().unwrap().header_fg)
                         .add_modifier(Modifier::BOLD),
                 )
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(THEME.border_focused))
+                .border_style(Style::default().fg(THEME.read().unwrap().border_focused))
                 .style(Style::default().bg(Color::Reset));
 
             let area = centered_rect_fixed(44, 44, size);
@@ -5355,9 +5974,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
             let (search_chunk, list_chunk, footer_chunk) = (chunks[0], chunks[1], chunks[2]);
 
             let border_color_search = if selector.is_filtering {
-                THEME.border_focused
+                THEME.read().unwrap().border_focused
             } else {
-                THEME.border
+                THEME.read().unwrap().border
             };
             let search_block = Block::default()
                 .borders(Borders::ALL)
@@ -5373,7 +5992,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             };
             let search_p = Paragraph::new(search_text)
                 .block(search_block)
-                .style(Style::default().fg(THEME.text_normal));
+                .style(Style::default().fg(THEME.read().unwrap().text_normal));
 
             f.render_widget(Clear, area);
             f.render_widget(block, area);
@@ -5389,13 +6008,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
                     let marker = if is_selected { " ▣ " } else { " ☐ " };
                     let marker_color = if is_selected {
-                        THEME.green
+                        THEME.read().unwrap().green
                     } else {
-                        THEME.text_muted
+                        THEME.read().unwrap().text_muted
                     };
 
                     let item_bg = if i == selector.cursor_idx {
-                        THEME.highlight_bg
+                        THEME.read().unwrap().highlight_bg
                     } else {
                         Color::Reset
                     };
@@ -5403,20 +6022,22 @@ pub fn render(f: &mut Frame, app: &mut App) {
                     let style = if i == selector.cursor_idx {
                         Style::default()
                             .bg(item_bg)
-                            .fg(THEME.text_normal)
+                            .fg(THEME.read().unwrap().text_normal)
                             .add_modifier(Modifier::BOLD)
                     } else {
-                        Style::default().fg(THEME.text_normal).bg(item_bg)
+                        Style::default()
+                            .fg(THEME.read().unwrap().text_normal)
+                            .bg(item_bg)
                     };
 
                     let highlight_style = if i == selector.cursor_idx {
                         Style::default()
                             .bg(item_bg)
-                            .fg(THEME.yellow)
+                            .fg(THEME.read().unwrap().yellow)
                             .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
-                            .fg(THEME.yellow)
+                            .fg(THEME.read().unwrap().yellow)
                             .bg(item_bg)
                             .add_modifier(Modifier::BOLD)
                     };
@@ -5453,7 +6074,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .alignment(Alignment::Center)
                 .style(
                     Style::default()
-                        .fg(THEME.text_muted)
+                        .fg(THEME.read().unwrap().text_muted)
                         .add_modifier(Modifier::ITALIC),
                 )
                 .wrap(ratatui::widgets::Wrap { trim: true });
@@ -5466,11 +6087,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(" Submit Review? ")
             .title_style(
                 Style::default()
-                    .fg(THEME.header_fg)
+                    .fg(THEME.read().unwrap().header_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
+            .border_style(Style::default().fg(THEME.read().unwrap().border_focused))
             .border_type(BorderType::Double)
             .style(Style::default().bg(Color::Reset));
 
@@ -5492,14 +6113,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
             ),
         ])
         .alignment(Alignment::Center)
-        .style(Style::default().fg(THEME.text_normal))
+        .style(Style::default().fg(THEME.read().unwrap().text_normal))
         .wrap(ratatui::widgets::Wrap { trim: true });
 
         let footer_p = Paragraph::new(" y: Yes (Submit) • n: No (Discard & Exit) • Esc: Cancel ")
             .alignment(Alignment::Center)
             .style(
                 Style::default()
-                    .fg(THEME.text_muted)
+                    .fg(THEME.read().unwrap().text_muted)
                     .add_modifier(Modifier::ITALIC),
             )
             .wrap(ratatui::widgets::Wrap { trim: true });
@@ -5582,7 +6203,7 @@ fn format_comment_with_suggestions(
                 prefix_style,
                 vec![(
                     Style::default()
-                        .fg(THEME.green)
+                        .fg(THEME.read().unwrap().green)
                         .add_modifier(Modifier::BOLD),
                     "┌─── Code Suggestion ───".to_string(),
                 )],
@@ -5634,7 +6255,7 @@ fn format_comment_with_suggestions(
                 prefix_style,
                 vec![(
                     Style::default()
-                        .fg(THEME.green)
+                        .fg(THEME.read().unwrap().green)
                         .add_modifier(Modifier::BOLD),
                     "└─── End of Suggestion ───".to_string(),
                 )],
@@ -5674,7 +6295,7 @@ fn format_comment_with_suggestions(
                 current_prefix,
                 prefix_style,
                 vec![(
-                    Style::default().fg(THEME.text_normal),
+                    Style::default().fg(THEME.read().unwrap().text_normal),
                     body_line.to_string(),
                 )],
             ));
@@ -5685,7 +6306,10 @@ fn format_comment_with_suggestions(
         result_lines.push((
             prefix.to_string(),
             prefix_style,
-            vec![(Style::default().fg(THEME.text_normal), String::new())],
+            vec![(
+                Style::default().fg(THEME.read().unwrap().text_normal),
+                String::new(),
+            )],
         ));
     }
 
@@ -5711,6 +6335,17 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+/// Like centered_rect but enforces minimum dimensions so overlays remain usable
+/// on small terminals. Will not exceed the available rect `r`.
+fn centered_rect_min(percent_x: u16, percent_y: u16, min_w: u16, min_h: u16, r: Rect) -> Rect {
+    let rect = centered_rect(percent_x, percent_y, r);
+    let w = rect.width.max(min_w).min(r.width);
+    let h = rect.height.max(min_h).min(r.height);
+    let x = r.x + (r.width - w) / 2;
+    let y = r.y + (r.height - h) / 2;
+    Rect::new(x, y, w, h)
 }
 
 fn centered_rect_fixed(width: u16, height: u16, r: Rect) -> Rect {

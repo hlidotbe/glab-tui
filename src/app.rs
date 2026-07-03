@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::config::Config;
 use crate::utils::ui::StatefulTable;
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -141,17 +142,16 @@ impl Tab {
         }
     }
 
-    pub fn columns(&self) -> Vec<&'static str> {
+    pub fn columns(&self, is_github: bool) -> Vec<&'static str> {
         match self {
-            Tab::Issues => vec![
-                "ID",
-                "State",
-                "Title",
-                "Assignees",
-                "Labels",
-                "Milestone",
-                "Author",
-            ],
+            Tab::Issues => {
+                let mut cols = vec!["ID", "State", "Title", "Assignees", "Labels", "Milestone"];
+                if !is_github {
+                    cols.push("Due Date");
+                }
+                cols.push("Author");
+                cols
+            }
             Tab::MergeRequests => vec![
                 "ID",
                 "State",
@@ -166,23 +166,50 @@ impl Tab {
             Tab::Pipelines => vec!["ID", "Status", "Stages", "Ref"],
             Tab::Jobs => vec!["ID", "Stage", "Status", "Name", "Matrix"],
             Tab::Runners => vec!["ID", "Description", "Status", "Active"],
-            Tab::Releases => vec!["Tag", "Release Name", "Date"],
+            Tab::Releases => vec![
+                "Tag",
+                "Release Name",
+                "Date",
+                "Description",
+                "Author",
+                "Assets",
+            ],
             Tab::Todos => vec!["State", "Project", "Type", "ID", "Title"],
-            Tab::Milestones => vec!["ID", "Title", "State", "Start Date", "Due Date"],
+            Tab::Milestones => {
+                let mut cols = vec!["ID", "Title", "State"];
+                if !is_github {
+                    cols.push("Start Date");
+                }
+                cols.push("Due Date");
+                cols
+            }
             Tab::Terminal => vec![],
         }
     }
 
-    pub fn default_columns(&self) -> Vec<&'static str> {
+    pub fn default_columns(&self, is_github: bool) -> Vec<&'static str> {
         match self {
-            Tab::Issues => vec!["ID", "State", "Title", "Labels"],
+            Tab::Issues => {
+                let mut cols = vec!["ID", "State", "Title", "Labels"];
+                if !is_github {
+                    cols.push("Due Date");
+                }
+                cols
+            }
             Tab::MergeRequests => vec!["ID", "State", "Status", "Title", "Labels"],
             Tab::Pipelines => vec!["ID", "Status", "Stages", "Ref"],
             Tab::Jobs => vec!["ID", "Stage", "Status", "Name", "Matrix"],
             Tab::Runners => vec!["ID", "Description", "Status", "Active"],
             Tab::Releases => vec!["Tag", "Release Name", "Date"],
             Tab::Todos => vec!["State", "Project", "Type", "ID", "Title"],
-            Tab::Milestones => vec!["ID", "Title", "State", "Due Date"],
+            Tab::Milestones => {
+                let mut cols = vec!["ID", "Title", "State"];
+                if !is_github {
+                    cols.push("Start Date");
+                }
+                cols.push("Due Date");
+                cols
+            }
             Tab::Terminal => vec![],
         }
     }
@@ -1025,6 +1052,7 @@ pub enum TextInputAction {
     },
     EnterPipelineId,
     CreateRelease,
+    CreateMilestone,
     SubmitReviewFinal {
         mr_iid: u64,
         status: String,
@@ -1044,6 +1072,99 @@ pub struct TextInput {
     pub action: TextInputAction,
 }
 
+#[derive(Clone, Debug)]
+pub struct DatePicker {
+    pub title: String,
+    pub year: i32,
+    pub month: u32,
+    pub day: u32,
+    pub action: DatePickerAction,
+}
+
+#[derive(Clone, Debug)]
+pub enum DatePickerAction {
+    EditField {
+        entity_iid: u64,
+        entity_type: String,
+        field_type: String,
+    },
+    EditNewField {
+        field_idx: usize,
+    },
+}
+
+pub fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30,
+    }
+}
+
+impl DatePicker {
+    pub fn new(title: String, initial_date_str: &str, action: DatePickerAction) -> Self {
+        use chrono::Datelike;
+        let parsed_date = chrono::NaiveDate::parse_from_str(initial_date_str.trim(), "%Y-%m-%d")
+            .ok()
+            .or_else(|| {
+                let now = chrono::Local::now();
+                chrono::NaiveDate::from_ymd_opt(now.year(), now.month(), now.day())
+            })
+            .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(2026, 7, 3).unwrap());
+
+        Self {
+            title,
+            year: parsed_date.year(),
+            month: parsed_date.month(),
+            day: parsed_date.day(),
+            action,
+        }
+    }
+
+    pub fn value_string(&self) -> String {
+        format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)
+    }
+
+    pub fn move_day(&mut self, offset: i32) {
+        use chrono::Datelike;
+        if let Some(current_date) = chrono::NaiveDate::from_ymd_opt(self.year, self.month, self.day)
+        {
+            let duration = chrono::Duration::days(offset as i64);
+            if let Some(new_date) = current_date.checked_add_signed(duration) {
+                self.year = new_date.year();
+                self.month = new_date.month();
+                self.day = new_date.day();
+            }
+        }
+    }
+
+    pub fn move_month(&mut self, offset: i32) {
+        let mut new_month = self.month as i32 + offset;
+        let mut new_year = self.year;
+        while new_month > 12 {
+            new_month -= 12;
+            new_year += 1;
+        }
+        while new_month < 1 {
+            new_month += 12;
+            new_year -= 1;
+        }
+        self.year = new_year;
+        self.month = new_month as u32;
+        let max_days = days_in_month(self.year, self.month);
+        if self.day > max_days {
+            self.day = max_days;
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TerminalCommand {
     pub timestamp: String,
@@ -1058,6 +1179,7 @@ pub enum GroupItem {
 }
 
 pub struct App {
+    pub config: Config,
     pub active_tab: Tab,
     pub running: bool,
     pub project_context: String,
@@ -1082,6 +1204,7 @@ pub struct App {
     pub edit_menu: Option<EditMenu>,
     pub selector: Option<Selector>,
     pub text_input: Option<TextInput>,
+    pub date_picker: Option<DatePicker>,
     pub jobs_list_state: TableState,
     pub job_trace_scroll: u16,
     pub issues_scroll: u16,
@@ -1123,7 +1246,9 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
+        let config = Config::load();
         Self {
+            config,
             active_tab: Tab::default(),
             running: true,
             project_context: "group/repository".to_string(),
@@ -1148,6 +1273,7 @@ impl Default for App {
             edit_menu: None,
             selector: None,
             text_input: None,
+            date_picker: None,
             jobs_list_state: TableState::default(),
             job_trace_scroll: 0,
             issues_scroll: 0,
@@ -1171,7 +1297,7 @@ impl Default for App {
                 let mut ec = std::collections::HashMap::new();
                 for tab in Tab::ALL {
                     let set: std::collections::HashSet<String> = tab
-                        .default_columns()
+                        .default_columns(false)
                         .iter()
                         .map(|s| s.to_string())
                         .collect();
@@ -1211,6 +1337,19 @@ impl App {
     }
 
     pub fn is_column_visible(&self, tab: Tab, col: &str) -> bool {
+        let is_github = self
+            .gitlab_client
+            .as_ref()
+            .map(|c| c.is_github)
+            .unwrap_or(false);
+        if is_github {
+            if tab == Tab::Issues && col == "Due Date" {
+                return false;
+            }
+            if tab == Tab::Milestones && col == "Start Date" {
+                return false;
+            }
+        }
         if let Some(set) = self.enabled_columns.get(&tab) {
             set.contains(col)
         } else {
@@ -1253,7 +1392,37 @@ impl App {
     }
 
     pub fn new() -> Self {
-        Self::default()
+        let mut app = Self::default();
+        app.apply_config();
+        app
+    }
+
+    pub fn apply_config(&mut self) {
+        for tab in Tab::ALL {
+            let pane = match tab {
+                Tab::Issues => &self.config.issues,
+                Tab::MergeRequests => &self.config.mrs,
+                Tab::Pipelines => &self.config.pipelines,
+                Tab::Jobs => &self.config.jobs,
+                Tab::Runners => &self.config.runners,
+                Tab::Releases => &self.config.releases,
+                Tab::Todos => &self.config.todos,
+                Tab::Milestones => &self.config.milestones,
+                Tab::Terminal => &self.config.terminal,
+            };
+            if let Some(cols) = &pane.columns {
+                let col_set: std::collections::HashSet<String> = cols.iter().cloned().collect();
+                self.enabled_columns.insert(tab, col_set);
+            }
+            if let Some(col) = &pane.group_by_column {
+                self.group_by_column = Some(col.clone());
+            }
+            self.group_ascending = pane.group_ascending;
+            for (col, vals) in &pane.column_filters {
+                let entry = self.column_filters.entry(tab).or_default();
+                entry.insert(col.clone(), vals.iter().cloned().collect());
+            }
+        }
     }
 
     pub fn tick(&mut self) {}
@@ -1991,6 +2160,16 @@ impl App {
                     check_match(&item.released_at);
                     check_match(&crate::utils::format::time_ago(&item.released_at));
                 }
+                if enabled_cols.contains("Description") {
+                    if let Some(ref desc) = item.description {
+                        check_match(desc);
+                    }
+                }
+                if enabled_cols.contains("Author") {
+                    if let Some(ref a) = item.author_name {
+                        check_match(a);
+                    }
+                }
                 matches
             })
             .collect()
@@ -2011,6 +2190,16 @@ impl App {
             |item, col| match col {
                 "Tag" => vec![item.tag_name.clone()],
                 "Release Name" => vec![item.name.clone()],
+                "Description" => item
+                    .description
+                    .clone()
+                    .map(|d| vec![d])
+                    .unwrap_or_default(),
+                "Author" => item
+                    .author_name
+                    .clone()
+                    .map(|a| vec![a])
+                    .unwrap_or_default(),
                 _ => vec![],
             },
         );
@@ -2365,6 +2554,11 @@ impl App {
                         }
                         "Release Name" => {
                             values.insert(item.name.clone());
+                        }
+                        "Author" => {
+                            if let Some(ref a) = item.author_name {
+                                values.insert(a.clone());
+                            }
                         }
                         _ => {}
                     }
@@ -2746,6 +2940,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_date_picker_navigation() {
+        let mut dp = DatePicker::new(
+            "Select Date".to_string(),
+            "2026-07-03",
+            DatePickerAction::EditNewField { field_idx: 0 },
+        );
+
+        assert_eq!(dp.year, 2026);
+        assert_eq!(dp.month, 7);
+        assert_eq!(dp.day, 3);
+        assert_eq!(dp.value_string(), "2026-07-03");
+
+        // Move day forward by 1
+        dp.move_day(1);
+        assert_eq!(dp.value_string(), "2026-07-04");
+
+        // Move day backward by 5
+        dp.move_day(-5);
+        assert_eq!(dp.value_string(), "2026-06-29");
+
+        // Move month forward by 1
+        dp.move_month(1);
+        assert_eq!(dp.value_string(), "2026-07-29");
+
+        // Move month backward by 2
+        dp.move_month(-2);
+        assert_eq!(dp.value_string(), "2026-05-29");
+    }
+
+    #[test]
     fn test_selector_fuzzy_matching() {
         let selector = Selector {
             title: "Labels".to_string(),
@@ -2835,7 +3059,7 @@ mod tests {
 
         let items = vec![mr_draft_meta, mr_draft_title, mr_ready];
         let enabled_cols: std::collections::HashSet<String> = Tab::MergeRequests
-            .columns()
+            .columns(false)
             .iter()
             .map(|s| s.to_string())
             .collect();

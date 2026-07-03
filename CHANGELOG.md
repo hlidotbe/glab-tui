@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.3.0] - 2026-07-02
+
+### Added
+- **TOML config file** — `~/.config/glab-tui/config.toml` (or `$GLAB_TUI_CONFIG`) auto-generated on first run with all options documented inline.
+- **Theme system** — choose from six bundled presets (`default`, `tokyo-night`, `gruvbox`, `nord`, `catppuccin-mocha`, `dracula`) via `theme_preset` in config; full per-color overrides supported under `[theme]`.
+- **Custom theme files** — place additional `<name>.toml` files in `~/.config/glab-tui/themes/` to create and share your own themes.
+- **Fully configurable keybindings** — every action across all panes is remappable in `config.toml` under `[keybindings.global]`, `[keybindings.issues]`, `[keybindings.mrs]`, `[keybindings.pipelines]`, and `[keybindings.releases]`.
+- **Interactive calendar date picker** — press `Enter` on Due Date / Start Date in the edit menu to open an inline calendar widget; navigate with `h`/`l` (month) and `j`/`k` (day).
+- **Due Date column in Issues** — new `Due Date` column in the issues table; hidden automatically when connected to GitHub.
+- **Start Date column in Milestones** — new `Start Date` column; hidden automatically when connected to GitHub.
+- **Runner details panel** — selecting a runner now opens a structured side-panel showing Runner ID, description, status, tags, and live job/queue metrics.
+- **Per-pane column config in TOML** — set default visible columns, column filters, and group-by column persistently via `[issues]`, `[mrs]`, etc. sections in `config.toml`.
+
+### Fixed
+- **Small terminal handling** — gracefully degrade layout when the terminal is too small rather than panicking.
+- **Pipeline job cache persistence** — pipeline jobs are now saved to and restored from disk cache.
+- **Selector "Create New" entry** — always appears at the top of the list even when a filter is active.
+- **Empty description on GitHub** — creating issues/MRs on GitHub no longer inserts a blank description field.
+- **GitLab-only fields hidden on GitHub** — due date, weight, confidential, and start-date fields are excluded from GitHub issue/MR forms.
+- **`Ctrl+E` to open editor** — unified shortcut to open `$EDITOR` for description fields across all edit menus.
+
+### Changed
+- **Config architecture refactor** — keybindings, column visibility, and themes were extracted from hard-coded constants in `ui.rs` into a dedicated `config.rs` module; `FormattingConfig` struct removed.
+- **Keybinding matching** — all hardcoded `KeyCode::Char` match arms replaced with `keybinding_matches()` helper, enabling full runtime override from `config.toml`.
+- **Edit menu UI polish** — edit popup border and title rendered in focused accent color; field values colored to match the details pane; date picker styled to match the details pane theme.
+- **`cancel` pipeline keybinding** — default changed from `c` to `d` (resolves conflict with `download_artifact`, which was also `d`).
+- **Runner tab layout** — rebuilt runner details rendering: removed old flat list in favor of a structured two-pane layout (table + details panel).
+
+### Dependencies
+- Bump `anyhow` from `1.0.98` to `1.0.103`
+- Bump `ratatui` from `0.30.1` to `0.30.2`
+- Bump `actions/checkout` from 4 to 7 (CI)
+- Bump `actions/stale` from 9 to 10 (CI)
+
+---
+
 ## [2.2.0] - 2026-06-13
 
 ### Added
@@ -80,11 +116,11 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **Dual-Engine GitHub & GitLab Support**: glab-tui now automatically detects if a project is hosted on GitHub or GitLab, translating TUI views and actions to `gh` or `glab` CLI commands under the hood.
 - **CLI Configuration Options**: Added option flags `--repo <namespace>` (to override project context) and `--dir <path>` (to target a custom repository directory) on launch.
-- **Columns Config Modal Overlay**: Replaced the sidebar panel with a centered columns checkbox toggler popup overlay, triggered by pressing `Tab` or `t`.
+- **Columns Config Modal Overlay**: Replaced the sidebar panel with a centered columns checkbox toggler popup overlay, triggered by pressing `Tab` or `,`.
 - **Hashed Multi-colored Labels**: Implemented individual label coloring based on a hashed color scheme in the Issues and Merge Requests tables, preserving fuzzy-search query highlights.
 - **Runner Diagnostics Dashboard**: Integrated simulated performance statistics, utilizing gauges, utilization percentages, queue depths, and average queue wait times.
 
 ### Changed
 - Expanded the Navigation sidebar pane to take full vertical height when columns config panel is hidden.
-- Updated the Keyboard Shortcuts help menu to reflect the new `Tab`/`t` column toggle binding.
+- Updated the Keyboard Shortcuts help menu to reflect the new `Tab` / `,` column toggle binding.
 - Auto-formatted and cleaned up import structures across all code modules to fix compiler lint warnings.

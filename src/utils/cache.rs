@@ -12,10 +12,7 @@ pub struct ProjectCache {
     pub releases: Vec<crate::gitlab::releases::Release>,
     pub todos: Vec<crate::gitlab::notifications::Notification>,
     pub milestones: Vec<crate::gitlab::milestones::Milestone>,
-    pub enabled_columns: HashMap<String, Vec<String>>,
-    pub group_by_column: Option<String>,
-    pub group_ascending: bool,
-    pub column_filters: HashMap<String, HashMap<String, Vec<String>>>,
+    pub pipeline_jobs: HashMap<u64, Vec<crate::gitlab::pipelines::Job>>,
 }
 
 fn get_cache_file_path(project_context: &str) -> PathBuf {

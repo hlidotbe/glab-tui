@@ -12,19 +12,22 @@ A terminal user interface (TUI) for GitLab and GitHub, built on top of [`glab`](
 - **Code Reviews** — draft inline comments, multi-line selections, code suggestions with syntax highlighting, and atomic review submission
 - **Side-by-Side Diff** — toggle between unified and side-by-side diff layouts with syntax highlighting
 - **Pipelines / Actions** — inspect pipelines and their jobs, retry/cancel pipelines/actions and individual jobs, stream build traces
-- **Runners** — list runners, pause/resume, edit descriptions, and monitor live performance/queue metrics
+- **Runners** — list runners with structured details panel; pause/resume, edit descriptions, and monitor live performance/queue metrics
 - **Releases** — browse project releases and view details in the terminal
 - **Multi-colored Labels** — table columns render labels with their individual unique hashed colors, preserving search highlights
-- **Columns Config Modal** — press `,` to open a centered popup overlay to toggle column visibility, group by any column, and set sort order
+- **Columns Config Modal** — press `Tab` / `,` to open a centered popup overlay to toggle column visibility, group by any column, and set sort order
 - **Value-based Column Filtering** — filter table rows by specific column values from the configure popup
-- **Live Search** — fuzzy-filter across all visible columns by pressing `f`
+- **Live Search** — fuzzy-filter across all visible columns by pressing `/`
 - **Inline editing** — full edit menus with searchable multi-select selectors for labels, assignees, reviewers, and milestones
-- **External editor** — descriptions and freeform fields open in your `$EDITOR` / `$VISUAL`
+- **Interactive Date Picker** — calendar widget for Due Date / Start Date fields in edit menus
+- **External editor** — descriptions and freeform fields open in your `$EDITOR` / `$VISUAL` (also via `Ctrl+E`)
 - **Lazy-load tabs** — data for each tab is only fetched the first time you switch to it; refresh with `F5` / `Ctrl+R`
+- **Themes** — six built-in color themes; fully customizable via `config.toml` or custom `.toml` files
+- **Configurable keybindings** — every action is remappable in `~/.config/glab-tui/config.toml`
 
 ---
 
-<img width="2560" height="1600" alt="image" src="https://github.com/user-attachments/assets/5ddd589b-9abf-47d7-85d9-bcf31f762fcd" />
+![glab-tui screenshot](assets/screenshot.png)
 
 ## Prerequisites
 
@@ -66,17 +69,57 @@ cargo install --path .
 
 ## Configuration
 
-`glab-tui` has no config file of its own. All configuration is inherited from `glab`:
+### Authentication
+
+`glab-tui` delegates all API calls to the `glab` and `gh` CLIs — authenticate once and you're done:
 
 ```sh
-# Authenticate once:
-glab auth login
-
-# Verify:
-glab auth status
+glab auth login   # for GitLab repos
+gh auth login     # for GitHub repos
 ```
 
-The active project is detected automatically from the `origin` remote of the Git repository in the current working directory. Run `glab-tui` from inside a GitLab-backed repo.
+The active project is detected automatically from the `origin` remote in the current working directory.
+
+### Config file
+
+On first launch, `glab-tui` writes a default config to:
+
+```
+~/.config/glab-tui/config.toml          # Linux / macOS (XDG)
+$GLAB_TUI_CONFIG                         # override: set to the full file path
+```
+
+The generated file is fully annotated. Key sections:
+
+```toml
+# Pick a built-in theme preset
+theme_preset = "default"   # default | tokyo-night | gruvbox | nord | catppuccin-mocha | dracula
+
+# Override individual colors (takes precedence over theme_preset)
+# [theme]
+# bg = "#121214"
+# border_focused = "#31bf67"
+# ...19 color tokens total
+
+# Remap any keybinding
+[keybindings.global]
+next_tab = "l"
+# ...
+
+[keybindings.issues]
+create_issue = "n"
+edit_entity = "e"
+# ...
+
+# Persist default column visibility / grouping per pane
+# [issues]
+# columns = ["ID", "State", "Title", "Labels"]
+# group_by_column = "State"
+```
+
+### Custom themes
+
+Drop any `<name>.toml` file into `~/.config/glab-tui/themes/` and set `theme_preset = "<name>"` in `config.toml`. The file must define the same 19 color tokens as the bundled themes.
 
 ### Editor
 
@@ -86,7 +129,7 @@ Set `$EDITOR` or `$VISUAL` to control which editor opens for description and fre
 export EDITOR=nvim   # or vim, nano, hx, code, etc.
 ```
 
-The default fallback is `helix` (`hx`).
+The default fallback is `helix` (`hx`). Inside any edit menu you can also press `Ctrl+E` to open the editor directly.
 
 ---
 
@@ -118,16 +161,21 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 
 ### Global
 
+> All keys below are the defaults. Every binding is remappable in `config.toml` under `[keybindings.global]`.
+
 | Key | Action |
 |---|---|
 | `l` / `→` | Next tab |
 | `h` / `←` | Previous tab |
-| `,` | Toggle column configure popup (toggle columns, group, order) |
-| `Esc` | Close configure popup |
+| `Tab` / `,` | Toggle column configure popup (columns, group, order) |
+| `Esc` | Close configure popup / overlay |
 | `j` / `↓` | Move selection down |
 | `k` / `↑` | Move selection up |
-| `f` | Open search / filter bar |
+| `J` | Scroll description panel down |
+| `K` | Scroll description panel up |
+| `f` / `/` | Open search / filter bar |
 | `Enter` / `Esc` (in search) | Close search bar |
+| `?` | Show help |
 | `F5` / `Ctrl+R` | Refresh current tab |
 | `q` / `Esc` | Quit (or close current overlay) |
 
@@ -139,6 +187,8 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 |---|---|
 | `n` | Create new issue (prompts for title) |
 | `e` | Open edit menu for selected issue |
+| `c` | Close selected issue |
+| `r` | Reopen selected issue |
 | `J` | Scroll description panel down |
 | `K` | Scroll description panel up |
 
@@ -147,13 +197,13 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 | Field | Input method |
 |---|---|
 | Title | Inline text input |
-| Labels | Searchable multi-select (fetched from GitLab) |
-| Assignees | Searchable multi-select (fetched from GitLab members) |
-| Milestone | Searchable single-select (fetched from GitLab) |
-| Confidential | Single-select: Public / Confidential |
-| Due Date | Inline text input (`YYYY-MM-DD`) |
-| Weight | Inline text input (integer) |
-| Description | Opens `$EDITOR` |
+| Labels | Searchable multi-select (fetched from GitLab/GitHub) |
+| Assignees | Searchable multi-select (fetched from project members) |
+| Milestone | Searchable single-select (fetched from project) |
+| Confidential | Single-select: Public / Confidential *(GitLab only)* |
+| Due Date | Interactive calendar date picker (`Enter` to open; `h`/`l` month, `j`/`k` day) *(GitLab only)* |
+| Weight | Inline text input (integer) *(GitLab only)* |
+| Description | Opens `$EDITOR` (or press `Ctrl+E`) |
 
 ---
 
@@ -168,6 +218,8 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 | `v` | View diff of selected MR in terminal |
 | `o` | Open selected MR in browser |
 | `s` | Toggle Draft / Ready status |
+| `c` | Close selected MR |
+| `r` | Reopen selected MR |
 | `J` | Scroll description panel down |
 | `K` | Scroll description panel up |
 | `d` | Toggle unified/side-by-side diff layout (inside diff view) |
@@ -187,7 +239,7 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 | Milestone | Searchable single-select |
 | Target Branch | Inline text input |
 | Status (Draft/Ready) | Single-select |
-| Description | Opens `$EDITOR` |
+| Description | Opens `$EDITOR` (or press `Ctrl+E`) |
 
 ---
 
@@ -259,11 +311,12 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 
 | Crate | Version | Purpose |
 |---|---|---|
-| [`ratatui`](https://crates.io/crates/ratatui) | 0.30.1 | TUI rendering framework |
+| [`ratatui`](https://crates.io/crates/ratatui) | 0.30.2 | TUI rendering framework |
 | [`crossterm`](https://crates.io/crates/crossterm) | 0.29.0 | Cross-platform terminal I/O and event streaming |
 | [`tokio`](https://crates.io/crates/tokio) | 1.38 (full) | Async runtime for concurrent data fetching |
 | [`serde`](https://crates.io/crates/serde) | 1.0 (derive) | Serialization / deserialization |
 | [`serde_json`](https://crates.io/crates/serde_json) | 1.0 | Parsing JSON responses from `glab api` |
+| [`toml`](https://crates.io/crates/toml) | 0.8 | Parsing `config.toml` and theme files |
 | [`anyhow`](https://crates.io/crates/anyhow) | 1.0 | Ergonomic error handling |
 | [`chrono`](https://crates.io/crates/chrono) | 0.4 | Timestamp formatting ("2 hours ago") |
 | [`tempfile`](https://crates.io/crates/tempfile) | 3.10 | Temporary files for editor integration |
@@ -279,9 +332,11 @@ All API calls are made by shelling out to `gh api` or `glab api` — no personal
 ```
 src/
 ├── main.rs          # Entry point, event loop, all key-binding handlers
-├── app.rs           # App state, Tab enum, DiffView, filtering logic
+├── app.rs           # App state, Tab enum, DiffView, DatePicker, filtering logic
+├── config.rs        # Config/Theme loading, keybinding structs, TOML generation
 ├── event.rs         # Async event handler (keyboard, tick, async data events)
 ├── ui.rs            # Ratatui render functions for every tab and overlay
+├── themes/          # Bundled theme TOML files (default, tokyo-night, gruvbox, nord, catppuccin-mocha, dracula)
 ├── gitlab/
 │   ├── mod.rs       # Module declarations
 │   ├── client.rs    # GitlabClient (wraps `gh api` / `glab api`), endpoint translation

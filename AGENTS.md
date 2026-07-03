@@ -8,10 +8,11 @@ Welcome, AI Agent! This document contains essential context, architectural guide
 Instead of implementing full REST/GraphQL API clients, **`glab-tui` shells out to the official `glab` and `gh` CLIs** under the hood.
 
 * **Primary Language:** Rust (Edition 2024)
-* **TUI Framework:** `ratatui` (v0.30.1)
+* **TUI Framework:** `ratatui` (v0.30.2)
 * **Syntax Highlighting:** `syntect` (v5, `default-fancy` features)
 * **Async Runtime:** `tokio`
 * **Terminal Handling:** `crossterm`
+* **Config/Themes:** `toml` crate; config at `~/.config/glab-tui/config.toml`
 
 ### Dual-Engine Architecture
 The application detects whether the current repository is hosted on GitHub or GitLab (via `git remote get-url origin`). It translates GitLab-style API endpoints (`/projects/...`) to GitHub-style API endpoints (`/repos/...`) on the fly inside `GitlabClient` ([src/gitlab/client.rs](src/gitlab/client.rs)). 
@@ -20,13 +21,15 @@ The application detects whether the current repository is hosted on GitHub or Gi
 
 ## 2. Directory Structure
 
-* [src/main.rs](src/main.rs): Entry point. Sets up the terminal, initializes the `App`, handles the main `tokio` event loop, routes keypresses, and delegates UI rendering.
-* [src/app.rs](src/app.rs): Contains the global `App` state, data models for UI components (`EditMenu`, `Selector`, `DiffView`), and fuzzy-filtering logic.
+* [src/main.rs](src/main.rs): Entry point. Sets up the terminal, initializes the `App`, handles the main `tokio` event loop, routes keypresses (via `keybinding_matches()`), and delegates UI rendering.
+* [src/app.rs](src/app.rs): Contains the global `App` state, data models for UI components (`EditMenu`, `Selector`, `DiffView`, `DatePicker`), and fuzzy-filtering logic. `App` now holds a `config: Config` field loaded at startup.
+* [src/config.rs](src/config.rs): Config and theme system. Defines `Config`, `Theme`, `ThemeOverrides`, and all `KeybindingXxx` structs. Loads `~/.config/glab-tui/config.toml`, generates a default template on first run, and exposes `Theme::preset(name)` for built-in theme lookup.
 * [src/event.rs](src/event.rs): Defines the `Event` enum and the async `EventHandler` using `tokio::sync::mpsc`.
-* [src/ui.rs](src/ui.rs): The purely functional rendering layer. Translates `App` state into `ratatui` widgets. Contains the global `THEME` constants.
+* [src/ui.rs](src/ui.rs): The purely functional rendering layer. Translates `App` state into `ratatui` widgets. Reads theme colors from `app.config` (via the global `THEME` which is now initialized from config at startup).
+* [src/themes/](src/themes/): Bundled theme TOML files (`default`, `tokyo-night`, `gruvbox`, `nord`, `catppuccin-mocha`, `dracula`). Compiled into the binary via `include_str!`. Also written to `~/.config/glab-tui/themes/` on first run so users can copy/edit them.
 * [src/gitlab/](src/gitlab/): Domain modules interfacing with Git CLI wrapper.
     * [client.rs](src/gitlab/client.rs): The core wrapper around `gh api` and `glab api`.
-    * [issues.rs](src/gitlab/issues.rs): Issue structures and API integration.
+    * [issues.rs](src/gitlab/issues.rs): Issue structures and API integration. `Issue` now includes `due_date: Option<String>`.
     * [mr.rs](src/gitlab/mr.rs): Merge/Pull request structures and logic.
     * [pipelines.rs](src/gitlab/pipelines.rs): Pipeline and Job data models.
     * [runners.rs](src/gitlab/runners.rs): Runner configurations and actions.
@@ -78,18 +81,40 @@ The application detects whether the current repository is hosted on GitHub or Gi
 * `ProjectCache` now stores `enabled_columns`, `group_by_column`, `group_ascending`, and `column_filters` in addition to API data.
 * Cache is written on every successful data fetch; read on startup.
 
+### Config & Theme System
+* Config is loaded via `Config::load()` in [src/config.rs](src/config.rs) at startup and stored on `App` as `app.config`.
+* `Config::load()` writes a default `config.toml` if none exists, then merges any user overrides.
+* Theme selection: `Config` holds a `theme_preset: Option<String>` and optional per-color `ThemeOverrides`. At startup, `App::apply_config()` resolves the final `Theme` and writes it into the global `THEME` `RwLock`.
+* Built-in theme presets are compiled into the binary via `include_str!` in `BUNDLED_THEMES`. User themes in `~/.config/glab-tui/themes/` take precedence.
+* **Rule:** Never hard-code RGB colors outside `src/themes/*.toml`. Add new semantic tokens to `Theme` if needed.
+
+### Keybinding System
+* All keybinding defaults are defined via the `keybind_defaults!` macro in [src/config.rs](src/config.rs).
+* At runtime, every keypress is matched against the config using `keybinding_matches(binding: &str, event: &KeyEvent) -> bool` in [src/main.rs](src/main.rs).
+* **Pattern for all new action handlers:**
+  ```rust
+  _ if (key_event.code == KeyCode::Char('x')
+      || keybinding_matches(&app.config.keybindings.tab.action, &key_event)) => { ... }
+  ```
+* Never add bare `KeyCode::Char('x') =>` match arms for user-facing actions. Always go through `keybinding_matches()` so users can remap.
+
+### DatePicker
+* `DatePicker` in [src/app.rs](src/app.rs) is a modal widget for selecting dates. It holds `year`, `month`, `day` and a `DatePickerAction` enum identifying which field it's editing.
+* Open it by pushing `Some(DatePicker::new(...))` into `app.date_picker`; close it by setting to `None`.
+* Navigation: `h`/`l` → previous/next month, `j`/`k` → previous/next day, `Enter` → confirm, `Esc` → cancel.
+
 ### Column Configure Popup
-* The configure overlay (`Tab`/`t`) has three sections: **COLUMNS** (checkbox toggle), **GROUP BY** (single-select), and **ORDER** (Ascending/Descending).
+* The configure overlay (`Tab`) has three sections: **COLUMNS** (checkbox toggle), **GROUP BY** (single-select), and **ORDER** (Ascending/Descending).
 * Value-based column filtering is available by pressing `Enter` on a focused column item, which opens a selector overlay with distinct values for that column.
 * Column filter state is tracked via `app.column_filter_context` and `app.column_filters: HashMap<Tab, HashMap<String, Vec<String>>>`.
 * Group state is tracked via `app.group_by_column: Option<String>` and `app.group_ascending: bool`.
 
 ## 4. UI & Rendering Guidelines (`ratatui`)
 
-* **Colors & Theming:** Always use the constants defined in the `THEME` struct located in [src/ui.rs](src/ui.rs) (e.g., `THEME.bg`, `THEME.green`, `THEME.highlight_bg`). Do not hardcode raw RGB values unless implementing a specific unique component like the hashed label colors.
+* **Colors & Theming:** Always use the `THEME` global (a `RwLock<Theme>` initialized from `app.config` at startup). Access it as `crate::config::THEME.read().unwrap()` or via the re-export in `ui.rs`. Do not hard-code raw RGB values; add new semantic color tokens to `src/config.rs` and all theme TOML files if needed.
 * **Fuzzy Matching:** Use `SkimMatcherV2` from the `fuzzy-matcher` crate for filtering tables and selector overlays. The `render_fuzzy_cell` helper in [src/ui.rs](src/ui.rs) handles highlighting matched characters in yellow.
-* **Columns:** Table columns are dynamically configurable. Always check `app.is_column_visible(tab, "Column Name")` before rendering a cell or header.
-* **Layout:** Use `ratatui::layout::Layout` to split screens. Avoid hardcoded fixed sizes where possible, use `Constraint::Percentage` or `Constraint::Fill(1)`.
+* **Columns:** Table columns are dynamically configurable. Always check `app.is_column_visible(tab, "Column Name")` before rendering a cell or header. GitHub-only or GitLab-only columns must also gate on `app.gitlab_client.is_some()` / `is_github`.
+* **Layout:** Use `ratatui::layout::Layout` to split screens. Avoid hardcoded fixed sizes where possible, use `Constraint::Percentage` or `Constraint::Fill(1)`. Use `centered_rect_min()` for overlays to ensure minimum readable dimensions on small terminals.
 
 ## 5. Adding a New Feature (Workflow)
 
