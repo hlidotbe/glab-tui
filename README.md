@@ -27,7 +27,7 @@ A terminal user interface (TUI) for GitLab and GitHub, built on top of [`glab`](
 
 ---
 
-<img width="2560" height="1600" alt="image" src="https://github.com/user-attachments/assets/5ddd589b-9abf-47d7-85d9-bcf31f762fcd" />
+![glab-tui screenshot](assets/screenshot.png)
 
 ## Prerequisites
 
@@ -173,7 +173,7 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 | `k` / `↑` | Move selection up |
 | `J` | Scroll description panel down |
 | `K` | Scroll description panel up |
-| `/` | Open search / filter bar |
+| `f` / `/` | Open search / filter bar |
 | `Enter` / `Esc` (in search) | Close search bar |
 | `?` | Show help |
 | `F5` / `Ctrl+R` | Refresh current tab |
@@ -187,6 +187,8 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 |---|---|
 | `n` | Create new issue (prompts for title) |
 | `e` | Open edit menu for selected issue |
+| `c` | Close selected issue |
+| `r` | Reopen selected issue |
 | `J` | Scroll description panel down |
 | `K` | Scroll description panel up |
 
@@ -216,6 +218,8 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 | `v` | View diff of selected MR in terminal |
 | `o` | Open selected MR in browser |
 | `s` | Toggle Draft / Ready status |
+| `c` | Close selected MR |
+| `r` | Reopen selected MR |
 | `J` | Scroll description panel down |
 | `K` | Scroll description panel up |
 | `d` | Toggle unified/side-by-side diff layout (inside diff view) |
@@ -235,7 +239,7 @@ The TUI will launch in the terminal, auto-detecting the project context and fetc
 | Milestone | Searchable single-select |
 | Target Branch | Inline text input |
 | Status (Draft/Ready) | Single-select |
-| Description | Opens `$EDITOR` |
+| Description | Opens `$EDITOR` (or press `Ctrl+E`) |
 
 ---
 
