@@ -4250,11 +4250,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(format!(" {} ", menu.title))
             .title_style(
                 Style::default()
-                    .fg(THEME.header_fg)
+                    .fg(THEME.text_muted)
                     .add_modifier(Modifier::BOLD),
             )
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
+            .border_style(Style::default().fg(THEME.border))
             .style(Style::default().bg(Color::Reset));
 
         let area = centered_rect(52, 48, size);
@@ -4430,11 +4430,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
                 .title(format!(" {} ", selector.title))
                 .title_style(
                     Style::default()
-                        .fg(THEME.header_fg)
+                        .fg(THEME.text_muted)
                         .add_modifier(Modifier::BOLD),
                 )
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(THEME.border_focused))
+                .border_style(Style::default().fg(THEME.border))
                 .style(Style::default().bg(Color::Reset));
 
             let area = centered_rect(50, 60, size);
@@ -4630,11 +4630,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(format!(" {} ", text_input.title))
             .title_style(
                 Style::default()
-                    .fg(THEME.header_fg)
+                    .fg(THEME.text_muted)
                     .add_modifier(Modifier::BOLD),
             )
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
+            .border_style(Style::default().fg(THEME.border))
             .style(Style::default().bg(Color::Reset));
 
         let area = centered_rect(60, 60, size);
@@ -4682,11 +4682,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             .title(format!(" {} ", date_picker.title))
             .title_style(
                 Style::default()
-                    .fg(THEME.header_fg)
+                    .fg(THEME.text_muted)
                     .add_modifier(Modifier::BOLD),
             )
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(THEME.border_focused))
+            .border_style(Style::default().fg(THEME.border))
             .style(Style::default().bg(Color::Reset));
 
         // 36 columns wide, 11 rows high
